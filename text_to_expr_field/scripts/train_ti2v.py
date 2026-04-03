@@ -192,8 +192,8 @@ def main():
         resolution=cfg.get("resolution", 512),
         vae=None,
         device=str(device),
-        cache_dir=cfg.get("latent_cache_dir", "data/derived/vae_latent_cache"),
-        text_cache_dir=cfg.get("text_cache_dir", "data/derived/text_embed_cache"),
+        vae_latent_cache_dir=cfg.get("vae_latent_cache_dir", "data/derived/vae_latent_cache"),
+        prompt_latent_cache_dir=cfg.get("prompt_latent_cache_dir", "data/derived/text_embed_cache"),
         cached_only=cfg.get("cached_only", True),
     )
     log_rank0(f"Dataset: {len(dataset)} clips", is_main)

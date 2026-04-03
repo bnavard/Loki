@@ -58,7 +58,7 @@ def parse_args():
     p.add_argument("--target_frames", type=int, default=80)
     p.add_argument("--resolution", type=int, default=512)
     p.add_argument("--batch_size", type=int, default=1,
-                   help="Clips per GPU per batch (1 recommended — 1801-frame pseudo-videos are large)")
+                   help="Clips per GPU per batch")
     p.add_argument("--num_workers", type=int, default=0,
                    help="DataLoader workers (0 recommended — expression field computation uses CUDA)")
     p.add_argument("--test", action="store_true", help="Process one batch only")
@@ -126,7 +126,7 @@ def main():
 
     is_main = (rank == 0)
 
-    # Build dataset (no VAE, no cache — returns raw pseudo-videos)
+    # Build dataset
     from text_to_expr_field.src.dataset import ExprFieldDataset
 
     base_dataset = ExprFieldDataset(
@@ -136,7 +136,7 @@ def main():
         resolution=args.resolution,
         vae=None,
         device=str(device),
-        cache_dir=None,
+        vae_latent_cache_dir=None,
     )
 
     # Filter out already-cached clips

@@ -193,7 +193,7 @@ PYTHONPATH=. torchrun --nproc_per_node=4 text_to_expr_field/scripts/cache_text_e
 # Test:
 PYTHONPATH=. python text_to_expr_field/scripts/cache_text_embeddings.py --test
 
-# Output: data/derived/text_embed_cache/{clip_id}.pt
+# Output: data/derived/prompt_latent_cache/{clip_id}.pt
 ```
 
 Each cached `.pt` file contains:
@@ -236,7 +236,7 @@ Key training parameters (in `configs/train_config.yaml`):
 | `cfg_dropout` | 0.1 | Drop text conditioning 10% for CFG |
 | `mixed_precision` | bf16 | Native on H200 |
 
-The dataset loads precomputed VAE latents from `data/derived/vae_latent_cache/` and text embeddings from `data/derived/text_embed_cache/`. With `cached_only: true`, only clips with cached latents are included — no on-the-fly computation needed. Run `cache_vae_latents.py` and `cache_text_embeddings.py` before training.
+The dataset loads precomputed VAE latents from `data/derived/vae_latent_cache/` and text embeddings from `data/derived/prompt_latent_cache/`. With `cached_only: true`, only clips with cached latents are included — no on-the-fly computation needed. Run `cache_vae_latents.py` and `cache_text_embeddings.py` before training.
 
 Each clip is one training sample. Clips with ≥80 frames are included (truncated to the first 80 frames). Fully deterministic — same data every epoch.
 
@@ -300,7 +300,7 @@ Derived data produced by preprocessing:
 data/derived/
 ├── captions/{clip_id}.json           # Structured text captions (Step 1)
 ├── vae_latent_cache/{clip_id}.pt     # Precomputed VAE latents (Step 3)
-├── text_embed_cache/{clip_id}.pt    # Precomputed UMT5 text embeddings (Step 4)
+├── prompt_latent_cache/{clip_id}.pt    # Precomputed UMT5 text embeddings (Step 4)
 └── manifest.json                     # Training manifest (Step 2)
 ```
 

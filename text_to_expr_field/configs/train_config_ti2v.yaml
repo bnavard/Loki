@@ -19,8 +19,8 @@ manifest_path: "data/derived/manifest.json"
 flame_root: "data/flowface"
 resolution: 512
 target_frames: 80
-latent_cache_dir: "data/derived/vae_latent_cache"
-text_cache_dir: "data/derived/text_embed_cache"
+vae_latent_cache_dir: "data/derived/vae_latent_cache"
+prompt_latent_cache_dir: "data/derived/prompt_latent_cache"
 cached_only: true
 
 # ---- Training ----

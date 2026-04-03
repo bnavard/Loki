@@ -1,5 +1,5 @@
 """
-Step 2.2: Train text-to-expression-field model.
+Train text-to-expression-field model.
 
 Fine-tunes Wan2.2-T2V-A14B (MoE DiT) with LoRA to generate 45-channel
 FLAME expression dense field videos from text descriptions.
@@ -121,7 +121,6 @@ def main():
     )
 
     transformer = pipe.transformer
-    vae = pipe.vae
     scheduler = pipe.scheduler
 
     # Check for MoE dual-expert
@@ -129,12 +128,9 @@ def main():
     has_moe = transformer_2 is not None
     log_rank0(f"MoE: {'yes (dual expert)' if has_moe else 'no (single transformer)'}", is_main)
 
-    # Freeze VAE (text encoder is not needed — embeddings are loaded from cache)
-    vae.requires_grad_(False)
-    vae.eval()
+    # Free text encoder, tokenizer and VAE from GPU memory since we use cached embeddings
+    del pipe.text_encoder, pipe.vae, pipe.tokenizer
 
-    # Free text encoder and tokenizer from GPU memory since we use cached embeddings
-    del pipe.text_encoder, pipe.tokenizer
     torch.cuda.empty_cache()
     log_rank0("Text encoder freed — using cached text embeddings", is_main)
 
@@ -175,20 +171,20 @@ def main():
     # ---- Dataset ----
     from text_to_expr_field.src.dataset import ExprFieldDataset
 
-    cached_only = cfg.get("cached_only", False)
-    text_cache_dir = cfg.get("text_cache_dir", "data/derived/text_embed_cache")
+    prompt_latent_cache_dir = cfg.get("prompt_latent_cache_dir", "data/derived/text_embed_cache")
     dataset = ExprFieldDataset(
         manifest_path=cfg.get("manifest_path", "data/derived/manifest.json"),
         flame_root=cfg.get("flame_root", "data/flowface"),
         target_frames=cfg.get("target_frames", 80),
         resolution=cfg.get("resolution", 512),
-        vae=vae,
+        vae=None,
         device=str(device),
-        cache_dir=cfg.get("latent_cache_dir", "data/derived/vae_latent_cache"),
-        text_cache_dir=text_cache_dir,
-        cached_only=cached_only,
+        vae_latent_cache_dir=cfg.get("vae_latent_cache_dir", "data/derived/vae_latent_cache"),
+        prompt_latent_cache_dir=prompt_latent_cache_dir,
+        # we only do cached-only precompute, otherwise it will be very expensive
+        cached_only=True,
     )
-    log_rank0(f"Dataset: {len(dataset)} clips (cached_only={cached_only})", is_main)
+    log_rank0(f"Dataset: {len(dataset)} clips (VAE and prompt latent pre-cached only)", is_main)
 
     dataloader = DataLoader(
         dataset,

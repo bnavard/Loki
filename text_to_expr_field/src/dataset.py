@@ -28,28 +28,28 @@ class ExprFieldDataset(Dataset):
     to the first target_frames frames. Clips shorter are skipped.
 
     Two loading modes:
-      1. Cached latents: if a precomputed VAE latent exists in cache_dir,
-         load it directly (fast, no GPU needed in dataloader workers).
+      1. Cached latents: if precomputed VAE latent and prompt embedding exist
+         in their respective cache dirs, load them directly (fast).
       2. On-the-fly: compute expression field from fit.npz → reshape →
          VAE encode (slow, requires GPU — use cache_vae_latents.py first).
 
     Args:
-        manifest_path:    Path to data/derived/manifest.json
-        flame_root:       Root directory for FLAME data (data/flowface/)
-        target_frames:    Fixed number of frames per sample (default 80).
-                          Clips longer are randomly cropped, shorter are skipped.
-        resolution:       Expression field spatial resolution (default 512)
-        vae:              Optional frozen VAE for on-the-fly encoding.
-        device:           Device for on-the-fly computation.
-        cache_dir:        Directory with precomputed VAE latents from cache_vae_latents.py.
-                          If a clip's latent is found here, it is loaded directly.
+        manifest_path:           Path to data/derived/manifest.json
+        flame_root:              Root directory for FLAME data (data/flowface/)
+        target_frames:           Fixed number of frames per sample (default 80).
+        resolution:              Expression field spatial resolution (default 512)
+        vae:                     Optional frozen VAE for on-the-fly encoding.
+        device:                  Device for on-the-fly computation.
+        vae_latent_cache_dir:    Directory with precomputed VAE latents.
+        prompt_latent_cache_dir: Directory with precomputed UMT5 text embeddings.
+        cached_only:             Only include clips with cached VAE latents.
     """
 
     def __init__(self, manifest_path: str, flame_root: str = "data/flowface",
                  target_frames: int = 80, resolution: int = 512,
                  vae=None, device: str = "cuda",
-                 cache_dir: str = "data/derived/vae_latent_cache",
-                 text_cache_dir: str = "data/derived/text_embed_cache",
+                 vae_latent_cache_dir: str = "data/derived/vae_latent_cache",
+                 prompt_latent_cache_dir: str = "data/derived/prompt_latent_cache",
                  cached_only: bool = False):
         with open(manifest_path) as f:
             manifest = json.load(f)
@@ -59,8 +59,8 @@ class ExprFieldDataset(Dataset):
         self.resolution = resolution
         self.vae = vae
         self.device = device
-        self.cache_dir = Path(cache_dir) if cache_dir else None
-        self.text_cache_dir = Path(text_cache_dir) if text_cache_dir else None
+        self.vae_latent_cache_dir = Path(vae_latent_cache_dir) if vae_latent_cache_dir else None
+        self.prompt_latent_cache_dir = Path(prompt_latent_cache_dir) if prompt_latent_cache_dir else None
 
         # Lazy-init on first use to avoid GPU allocation at import time
         self._conditioning = None
@@ -74,12 +74,11 @@ class ExprFieldDataset(Dataset):
         ]
 
         # If cached_only=True, only include clips whose VAE latent has already
-        # been precomputed and saved to cache_dir. This skips on-the-fly
-        # expression field computation and VAE encoding entirely.
-        if cached_only and self.cache_dir:
+        # been precomputed and saved to vae_latent_cache_dir.
+        if cached_only and self.vae_latent_cache_dir:
             self.samples = [
                 entry for entry in self.samples
-                if (self.cache_dir / f"{entry['clip_id']}.pt").exists()
+                if (self.vae_latent_cache_dir / f"{entry['clip_id']}.pt").exists()
             ]
 
     def _get_conditioning(self):
@@ -125,11 +124,9 @@ class ExprFieldDataset(Dataset):
         conditioning, flame_skinner, head_vertex_ids = self._get_conditioning()
 
         fit = dict(np.load(str(self.flame_root / clip_id / "fit.npz")))
-        n_total = fit["expr"].shape[0]
         H = self.resolution
 
         # Always start from frame 0 for deterministic behavior.
-        # Clips longer than target_frames are truncated to target_frames.
         frame_indices = range(0, self.target_frames)
 
         frames = []
@@ -203,12 +200,12 @@ class ExprFieldDataset(Dataset):
 
         result = {"clip_id": clip_id}
 
-        # ---- Text embedding: try cache first, fallback to raw caption ----
+        # ---- Prompt embedding: load from cache or fallback to raw caption ----
         text_cached = False
-        if self.text_cache_dir:
-            text_cache_path = self.text_cache_dir / f"{clip_id}.pt"
-            if text_cache_path.exists():
-                text_data = torch.load(str(text_cache_path), map_location="cpu")
+        if self.prompt_latent_cache_dir:
+            cache_path = self.prompt_latent_cache_dir / f"{clip_id}.pt"
+            if cache_path.exists():
+                text_data = torch.load(str(cache_path), map_location="cpu")
                 result["text_embed"] = text_data["text_embed"]
                 result["caption"] = text_data.get("caption", "")
                 text_cached = True
@@ -218,9 +215,9 @@ class ExprFieldDataset(Dataset):
                 caption_data = json.load(f)
             result["caption"] = caption_data["caption"]
 
-        # ---- VAE latent: try cache first, fallback to on-the-fly ----
-        if self.cache_dir:
-            cache_path = self.cache_dir / f"{clip_id}.pt"
+        # ---- VAE latent: load from cache or compute on the fly ----
+        if self.vae_latent_cache_dir:
+            cache_path = self.vae_latent_cache_dir / f"{clip_id}.pt"
             if cache_path.exists():
                 cached = torch.load(str(cache_path), map_location="cpu")
                 result["latent"] = cached["latent"] if isinstance(cached, dict) else cached

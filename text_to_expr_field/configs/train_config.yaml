@@ -18,8 +18,8 @@ manifest_path: "data/derived/manifest.json"
 flame_root: "data/flowface"
 resolution: 512                                    # expression field spatial resolution
 target_frames: 80                                 # frames per clip (first 80 used)
-latent_cache_dir: "data/derived/vae_latent_cache"    # precomputed VAE latents (from cache_vae_latents.py)
-text_cache_dir: "data/derived/text_embed_cache"      # precomputed UMT5 text embeddings (from cache_text_embeddings.py)
+vae_latent_cache_dir: "data/derived/vae_latent_cache"    # precomputed VAE latents (from cache_vae_latents.py)
+prompt_latent_cache_dir: "data/derived/prompt_latent_cache"      # precomputed UMT5 text embeddings (from cache_text_embeddings.py)
 cached_only: true                                    # only train on clips with cached latents (no on-the-fly VAE)
 
 # ---- Training ----

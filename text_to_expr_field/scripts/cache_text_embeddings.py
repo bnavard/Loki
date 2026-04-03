@@ -8,7 +8,7 @@ the embedding tensor to disk.
 This eliminates the need to load the ~13B param UMT5 model during training,
 freeing significant GPU memory and speeding up the training loop.
 
-Output: data/derived/text_embed_cache/{clip_id}.pt
+Output: data/derived/prompt_latent_cache/{clip_id}.pt
 
 Usage:
     cd /data/pouyan/baseline/repository/cap4d
@@ -43,7 +43,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 os.chdir(REPO_ROOT)
 sys.path.insert(0, str(REPO_ROOT))
 
-OUTPUT_DIR = Path("data/derived/text_embed_cache")
+OUTPUT_DIR = Path("data/derived/prompt_latent_cache")
 
 
 def parse_args():
@@ -59,10 +59,6 @@ def parse_args():
     p.add_argument("--test", action="store_true")
     return p.parse_args()
 
-
-# ---------------------------------------------------------------------------
-# Simple caption dataset (just loads clip_id + caption text)
-# ---------------------------------------------------------------------------
 
 class CaptionDataset(Dataset):
     def __init__(self, manifest_path, output_dir):
@@ -126,10 +122,6 @@ def cleanup_distributed():
         dist.destroy_process_group()
 
 
-# ---------------------------------------------------------------------------
-# Main
-# ---------------------------------------------------------------------------
-
 def main():
     args = parse_args()
     rank, world_size, device = setup_distributed()
@@ -137,8 +129,8 @@ def main():
     output_dir.mkdir(parents=True, exist_ok=True)
     is_main = (rank == 0)
 
-    # Dataset
     dataset = CaptionDataset(args.manifest_path, args.output_dir)
+    
     if is_main:
         print(f"Captions to encode: {len(dataset)}")
 

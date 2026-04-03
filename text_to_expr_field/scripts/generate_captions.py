@@ -1,5 +1,5 @@
 """
-Step 1.2: Generate text captions from audio (ASR transcription + prosody description).
+Generate text captions from audio (ASR transcription + prosody description).
 
 For each clip, produces a structured caption combining:
   - ASR transcription via Whisper (what is said)
