@@ -1,7 +1,7 @@
 # =============================================================================
 # Text-to-Expression-Field Training Configuration
 #
-# Fine-tunes Wan2.2-T2V-A14B (MoE DiT) with LoRA to generate 45-channel
+# Fine-tunes Wan2.2-T2V-A14B DiT with LoRA to generate 45-channel
 # FLAME expression dense fields from text captions.
 # =============================================================================
 
@@ -9,8 +9,8 @@
 model_id: "Wan-AI/Wan2.2-T2V-A14B-Diffusers"
 
 # ---- LoRA ----
-lora_rank: 128
-lora_alpha: 128
+lora_rank: 16
+lora_alpha: 16
 lora_dropout: 0.05
 
 # ---- Data ----
@@ -23,8 +23,11 @@ prompt_latent_cache_dir: "data/derived/prompt_latent_cache"      # precomputed U
 cached_only: true                                    # only train on clips with cached latents (no on-the-fly VAE)
 
 # ---- Training ----
-batch_size: 1            # per GPU — MoE 14B + 61-frame latents are memory-heavy
-gradient_accumulation: 4  # effective batch size = batch_size × num_gpus × gradient_accumulation
+batch_size: 1            # per GPU — 14B + long latent sequences are memory-heavy
+gradient_accumulation: 1  # effective batch size = batch_size × num_gpus × gradient_accumulation
+gradient_checkpointing: true  # recompute activations in backward (~30% slower, saves ~40% memory)
+group_offload: true           # move inactive transformer blocks to CPU, prefetch via CUDA streams
+use_8bit_adam: true           # halve optimizer state memory via bitsandbytes
 lr: 1.0e-5
 weight_decay: 0.01
 warmup_steps: 500
@@ -33,9 +36,6 @@ grad_clip: 1.0
 
 # ---- CFG ----
 cfg_dropout: 0.1         # drop text conditioning 10% of the time
-
-# ---- MoE expert routing ----
-moe_boundary: 0.5        # timestep threshold: t > boundary → high-noise expert
 
 # ---- Logging ----
 output_dir: "outputs/text_to_expr_field"

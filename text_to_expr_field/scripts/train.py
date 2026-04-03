@@ -1,14 +1,14 @@
 """
 Train text-to-expression-field model.
 
-Fine-tunes Wan2.2-T2V-A14B (MoE DiT) with LoRA to generate 45-channel
+Fine-tunes Wan2.2-T2V-A14B DiT with LoRA to generate 45-channel
 FLAME expression dense field videos from text descriptions.
 
 The model learns to map text captions (transcription + prosody) to the
 expression field format expected by the downstream rendering UNet.
 
 Requirements:
-    - diffusers >= 0.34.0 (for Wan2.2-A14B MoE with transformer_2)
+    - diffusers >= 0.33.0
     - peft (for LoRA)
     - accelerate (for distributed training)
     - Preprocessed data: expression fields, captions, manifest
@@ -110,11 +110,14 @@ def main():
         marker.parent.mkdir(parents=True, exist_ok=True)
         marker.write_text(str(run_dir))
 
-    # ---- Load Wan2.2 pipeline components ----
+    # ---- Load Wan2.2 transformer via WanPipeline ----
+    # We load the full pipeline to get the correct Wan2.2 transformer class,
+    # then immediately free the text encoder, tokenizer, and VAE since we
+    # use precomputed caches for both text embeddings and VAE latents.
     from diffusers import WanPipeline
 
     model_id = cfg.get("model_id", "Wan-AI/Wan2.2-T2V-A14B-Diffusers")
-    log_rank0(f"Loading {model_id}...", is_main)
+    log_rank0(f"Loading pipeline from {model_id}...", is_main)
 
     pipe = WanPipeline.from_pretrained(
         model_id, torch_dtype=torch.bfloat16,
@@ -123,16 +126,34 @@ def main():
     transformer = pipe.transformer
     scheduler = pipe.scheduler
 
-    # Check for MoE dual-expert
-    transformer_2 = getattr(pipe, "transformer_2", None)
-    has_moe = transformer_2 is not None
-    log_rank0(f"MoE: {'yes (dual expert)' if has_moe else 'no (single transformer)'}", is_main)
-
-    # Free text encoder, tokenizer and VAE from GPU memory since we use cached embeddings
-    del pipe.text_encoder, pipe.vae, pipe.tokenizer
-
+    # Free text encoder, tokenizer and VAE to reclaim memory
+    del pipe.text_encoder, pipe.tokenizer, pipe.vae
+    del pipe
     torch.cuda.empty_cache()
-    log_rank0("Text encoder freed — using cached text embeddings", is_main)
+    log_rank0("Freed text encoder + VAE — using cached embeddings and latents", is_main)
+
+    # ---- Memory optimizations (following HF diffusers recommendations) ----
+
+    # 1. Gradient checkpointing: recompute activations during backward pass
+    #    instead of storing them. Saves ~40% activation memory, ~30% slower.
+    if cfg.get("gradient_checkpointing", True):
+        if hasattr(transformer, "enable_gradient_checkpointing"):
+            transformer.enable_gradient_checkpointing()
+        log_rank0("Gradient checkpointing enabled", is_main)
+
+    # 2. Group offloading: move inactive transformer blocks to CPU, prefetch
+    #    the next block to GPU via CUDA streams. Drastically reduces peak GPU
+    #    memory for the frozen base model weights.
+    if cfg.get("group_offload", True):
+        from diffusers.hooks import apply_group_offloading
+        apply_group_offloading(
+            transformer,
+            onload_device=device,
+            offload_device=torch.device("cpu"),
+            offload_type="leaf_level",
+            use_stream=True,
+        )
+        log_rank0("Group offloading enabled (leaf_level, CUDA streams)", is_main)
 
     # ---- Apply LoRA ----
     from peft import LoraConfig, get_peft_model
@@ -140,7 +161,6 @@ def main():
     lora_rank = cfg.get("lora_rank", 128)
     lora_alpha = cfg.get("lora_alpha", 128)
 
-    # Discover target modules
     target_modules = set()
     for name, mod in transformer.named_modules():
         if isinstance(mod, torch.nn.Linear):
@@ -160,18 +180,13 @@ def main():
     )
 
     transformer = get_peft_model(transformer, lora_config)
+    transformer = transformer.to(device)
     if is_main:
         transformer.print_trainable_parameters()
-
-    if has_moe:
-        transformer_2 = get_peft_model(transformer_2, lora_config)
-        if is_main:
-            transformer_2.print_trainable_parameters()
 
     # ---- Dataset ----
     from text_to_expr_field.src.dataset import ExprFieldDataset
 
-    prompt_latent_cache_dir = cfg.get("prompt_latent_cache_dir", "data/derived/text_embed_cache")
     dataset = ExprFieldDataset(
         manifest_path=cfg.get("manifest_path", "data/derived/manifest.json"),
         flame_root=cfg.get("flame_root", "data/flowface"),
@@ -180,7 +195,7 @@ def main():
         vae=None,
         device=str(device),
         vae_latent_cache_dir=cfg.get("vae_latent_cache_dir", "data/derived/vae_latent_cache"),
-        prompt_latent_cache_dir=prompt_latent_cache_dir,
+        prompt_latent_cache_dir=cfg.get("prompt_latent_cache_dir", "data/derived/text_embed_cache"),
         # we only do cached-only precompute, otherwise it will be very expensive
         cached_only=True,
     )
@@ -197,17 +212,33 @@ def main():
 
     # ---- Optimizer ----
     trainable_params = list(transformer.parameters())
-    if has_moe:
-        trainable_params += list(transformer_2.parameters())
-
-    optimizer = torch.optim.AdamW(
-        trainable_params,
-        lr=cfg.get("lr", 1e-5),
-        weight_decay=cfg.get("weight_decay", 0.01),
-    )
 
     max_steps = cfg.get("max_steps", 20000)
     warmup_steps = cfg.get("warmup_steps", 500)
+    lr = cfg.get("lr", 1e-5)
+
+    # 3. 8-bit Adam: halves optimizer state memory.
+    #    Install: pip install bitsandbytes
+    use_8bit_adam = cfg.get("use_8bit_adam", True)
+    if use_8bit_adam:
+        try:
+            import bitsandbytes as bnb
+            optimizer = bnb.optim.AdamW8bit(
+                trainable_params, lr=lr,
+                weight_decay=cfg.get("weight_decay", 0.01),
+            )
+            log_rank0("Using 8-bit AdamW (bitsandbytes)", is_main)
+        except ImportError:
+            log_rank0("bitsandbytes not found, falling back to standard AdamW", is_main)
+            optimizer = torch.optim.AdamW(
+                trainable_params, lr=lr,
+                weight_decay=cfg.get("weight_decay", 0.01),
+            )
+    else:
+        optimizer = torch.optim.AdamW(
+            trainable_params, lr=lr,
+            weight_decay=cfg.get("weight_decay", 0.01),
+        )
 
     def lr_lambda(step):
         if step < warmup_steps:
@@ -217,13 +248,11 @@ def main():
 
     lr_scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda)
 
-    # ---- Accelerate setup ----
+    # ---- Accelerate setup (plain DDP, no DeepSpeed) ----
     if accelerator is not None:
         transformer, optimizer, dataloader, lr_scheduler = accelerator.prepare(
             transformer, optimizer, dataloader, lr_scheduler,
         )
-        if has_moe:
-            transformer_2 = accelerator.prepare(transformer_2)
 
     # ---- Training loop ----
     cfg_dropout = cfg.get("cfg_dropout", 0.1)
@@ -233,8 +262,6 @@ def main():
 
     global_step = 0
     transformer.train()
-    if has_moe:
-        transformer_2.train()
 
     log_rank0(f"Starting training for {max_steps} steps...", is_main)
 
@@ -265,21 +292,8 @@ def main():
             noisy_latents = (1 - t_expand) * latents + t_expand * noise
             target_velocity = noise - latents
 
-            # Select expert based on timestep (for MoE)
-            if has_moe:
-                boundary = cfg.get("moe_boundary", 0.5)
-                high_noise_mask = timesteps > boundary
-                if high_noise_mask.all():
-                    model = transformer
-                elif (~high_noise_mask).all():
-                    model = transformer_2
-                else:
-                    model = transformer if high_noise_mask.sum() > B // 2 else transformer_2
-            else:
-                model = transformer
-
             # Forward
-            velocity_pred = model(
+            velocity_pred = transformer(
                 noisy_latents,
                 timestep=timesteps,
                 encoder_hidden_states=text_embeds,
@@ -319,11 +333,6 @@ def main():
 
                 unwrapped = accelerator.unwrap_model(transformer) if accelerator else transformer
                 unwrapped.save_pretrained(str(ckpt_dir / "lora_transformer"))
-
-                if has_moe:
-                    unwrapped_2 = accelerator.unwrap_model(transformer_2) if accelerator else transformer_2
-                    unwrapped_2.save_pretrained(str(ckpt_dir / "lora_transformer_2"))
-
                 log_rank0(f"Saved checkpoint: {ckpt_dir}", is_main)
 
     # Final save
@@ -332,9 +341,6 @@ def main():
         final_dir.mkdir(exist_ok=True)
         unwrapped = accelerator.unwrap_model(transformer) if accelerator else transformer
         unwrapped.save_pretrained(str(final_dir / "lora_transformer"))
-        if has_moe:
-            unwrapped_2 = accelerator.unwrap_model(transformer_2) if accelerator else transformer_2
-            unwrapped_2.save_pretrained(str(final_dir / "lora_transformer_2"))
         log_rank0(f"Training complete. Final checkpoint: {final_dir}", is_main)
 
 

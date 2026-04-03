@@ -139,7 +139,7 @@ def main():
         vae_latent_cache_dir=None,
     )
 
-    # Filter out already-cached clips
+    # skip already-cached clips
     dataset = CacheFilteredDataset(base_dataset, output_dir)
 
     if is_main:
