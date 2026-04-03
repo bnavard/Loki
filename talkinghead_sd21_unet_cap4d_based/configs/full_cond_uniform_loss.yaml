@@ -1,0 +1,179 @@
+# =============================================================================
+# Full Conditioning + Uniform Loss
+#
+# UNet conditioning:  46 channels (42ch pos enc + 3ch expr deform + 1ch ref mask)
+# Loss weighting:     Uniform (alpha=0.0, all pixels weighted equally)
+# Audio:              wav2vec2 cross-attention
+# Reference frame:    Identity passthrough via z_input
+#
+# Same conditioning as full_cond_weighted_loss.yaml but with uniform loss.
+# Baseline to measure the effect of expression-weighted loss.
+# =============================================================================
+
+learning_rate:     1.0e-4
+gpu_batch_size:    4
+virtual_batch_size: 4
+logger_freq:       50
+n_steps:           200000
+save_every_n_steps: 250
+
+# Path to SD 2.1 checkpoint for initialising the UNet and VAE weights
+init_path: "models/v2-1_512-ema-pruned.ckpt"
+
+# ---------------------------------------------------------------------------
+# Dataset
+# ---------------------------------------------------------------------------
+train_dataset:
+  target: talkinghead_sd21_unet_cap4d_based.data.video_dataset.TalkingHeadDataset
+  params:
+    id_list_path: "talkinghead_sd21_unet_cap4d_based/data/train_ids.txt"
+    video_root:   "data/talkvid/talkvid"
+    audio_root:   "data/talkvid/audio"
+    flame_root:   "data/flowface"
+    n_frames: 16
+    resolution: 512
+    downsample_ratio: 8
+    fps: 25.0
+    audio_context_frames: 2
+    use_ray_directions: false
+    add_mouth: true
+    stabilize_background: false # trick did not work as per expected
+    feather_radius: 5
+
+val_dataset:
+  target: talkinghead_sd21_unet_cap4d_based.data.video_dataset.TalkingHeadDataset
+  params:
+    id_list_path: "talkinghead_sd21_unet_cap4d_based/data/val_ids.txt"
+    video_root:   "/data/pouyan/talkvid/preprocessed/talkvid"
+    audio_root:   "/data/pouyan/talkvid/preprocessed/audio"
+    flame_root:   "/data/pouyan/flame_expression/flowface"
+    n_frames: 16
+    resolution: 512
+    downsample_ratio: 8
+    fps: 25.0
+    audio_context_frames: 2
+    use_ray_directions: false
+    add_mouth: true
+    stabilize_background: false
+    feather_radius: 5
+
+# Validation & visualization
+val_every_n_steps:    250
+n_val_batches:        20      # number of val batches per evaluation
+n_vis_samples:        8       # number of samples to visualize per evaluation (rotates through val set)
+vis_ddim_steps:       20      # DDIM steps for visualization (fewer = faster)
+
+# ---------------------------------------------------------------------------
+# Model
+# ---------------------------------------------------------------------------
+model:
+  target: talkinghead_sd21_unet_cap4d_based.model.th_diffusion.THDiffusion
+  params:
+    # Inputs
+    first_stage_key:  "jpg"
+    control_key:      "hint"
+    audio_key:        "audio"
+
+    # Video length
+    n_frames:         16
+
+    # Guidance
+    cfg_probability:  0.1
+
+    # Loss weighting
+    expr_weight_alpha: 0.0    # amplify loss on high-deformation regions (0 = uniform)
+
+    # Noise schedule
+    linear_start:     0.00085
+    linear_end:       0.0120
+    timesteps:        1000
+    zero_snr_shift:   true
+    shift_schedule_flag: true
+    sqrt_shift:       true
+    minus_one_shift:  true
+
+    # LDM base settings
+    num_timesteps_cond: 1
+    log_every_t:      200
+    image_size:       64          # latent spatial size (512 / 8)
+    channels:         4
+    cond_stage_trainable: false
+    conditioning_key: crossattn
+    monitor:          val/loss_simple_ema
+    scale_factor:     0.18215
+    use_ema:          false
+    only_mid_control: false
+    parameterization: eps
+
+    # ---- Audio encoder ----
+    audio_encoder_config:
+      target: talkinghead_sd21_unet_cap4d_based.model.audio_encoder.AudioEncoder
+      params:
+        model_name:      "facebook/wav2vec2-base-960h"
+        context_dim:     1024
+        freeze_backbone: true
+        use_pretrained:  true
+
+    # ---- UNet ----
+    unet_config:
+      target: talkinghead_sd21_unet_cap4d_based.model.th_unet.THUnetModel
+      params:
+        image_size:           64      # unused, required by parent
+        time_steps:           16      # must match n_frames
+        temporal_mode:        "3d"    # or "temporal"
+        in_channels:          4
+        out_channels:         4
+        model_channels:       320
+        condition_channels:   46      # 42 pos + 3 expr + 1 ref_mask
+        context_dim:          1024    # matches SD 2.1 checkpoint
+        attention_resolutions: [4, 2, 1]
+        num_res_blocks:       2
+        channel_mult:         [1, 2, 4, 4]
+        num_head_channels:    64
+        use_spatial_transformer: true
+        use_linear_in_transformer: true
+        transformer_depth:    1
+        use_checkpoint:       false
+        legacy:               false
+
+    # ---- VAE (frozen) ----
+    first_stage_config:
+      target: controlnet.ldm.models.autoencoder.AutoencoderKL
+      params:
+        embed_dim: 4
+        monitor: val/rec_loss
+        ddconfig:
+          double_z: true
+          z_channels: 4
+          resolution: 512
+          in_channels: 3
+          out_ch: 3
+          ch: 128
+          ch_mult: [1, 2, 4, 4]
+          num_res_blocks: 2
+          attn_resolutions: []
+          dropout: 0.0
+        lossconfig:
+          target: torch.nn.Identity
+
+    # ---- Conditioning module ----
+    cond_stage_config:
+      target: talkinghead_sd21_unet_cap4d_based.conditioning.th_conditioning.THConditioning
+      params:
+        image_size:           64
+        positional_channels:  42
+        positional_multiplier: 1.0
+        super_resolution:     2
+        use_ray_directions:   false   # set true + condition_channels=49 to enable
+        use_expr_deformation: true
+        use_crop_mask:        false
+
+# ---------------------------------------------------------------------------
+# Inference defaults (used by generate.py / THSampler)
+# ---------------------------------------------------------------------------
+inference:
+  n_ddim_steps:  50
+  cfg_scale:     2.0
+  eta:           0.0
+  n_frames:      16      # total frames including reference
+  seed:          42

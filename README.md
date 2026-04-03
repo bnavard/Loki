@@ -1,212 +1,158 @@
-# 🧢 CAP4D
-Official repository for the paper
+# Expressive Talking Head
 
-**CAP4D: Creating Animatable 4D Portrait Avatars with Morphable Multi-View Diffusion Models**, ***CVPR 2025 (Oral)***.
+A modular framework for audio-driven talking-head video generation, built on top of [CAP4D](https://github.com/felixtaubner/CAP4D) (CVPR 2025). The system generates temporally coherent talking-head videos from a reference portrait image, a driving video (providing facial expressions via FLAME 3DMM tracking), and an audio track. It combines a Stable Diffusion 2.1 UNet extended with 3D spatiotemporal attention for video generation, wav2vec2 audio cross-attention for lip sync, and FLAME expression maps for spatial facial control.
 
-<a href="https://felixtaubner.github.io/" target="_blank">Felix Taubner</a><sup>1,2</sup>, <a href="https://ruihangzhang97.github.io/" target="_blank">Ruihang Zhang</a><sup>1</sup>, <a href="https://mathieutuli.com/" target="_blank">Mathieu Tuli</a><sup>3</sup>, <a href="https://davidlindell.com/" target="_blank">David B. Lindell</a><sup>1,2</sup>
+The repository also includes a text-to-expression-field pipeline that fine-tunes Wan2.2-T2V (via LoRA) to synthesize FLAME expression dense fields directly from text descriptions, enabling a fully text-driven generation pathway without requiring a driving video.
 
-<sup>1</sup>University of Toronto, <sup>2</sup>Vector Institute, <sup>3</sup>LG Electronics
+## Table of Contents
 
-<a href='https://arxiv.org/abs/2412.12093'><img src='https://img.shields.io/badge/arXiv-2301.02379-red'></a> <a href='https://felixtaubner.github.io/cap4d/'><img src='https://img.shields.io/badge/project page-CAP4D-Green'></a> <a href='#citation'><img src='https://img.shields.io/badge/cite-blue'></a>
+- [Overview](#overview)
+- [Repository Structure](#repository-structure)
+- [Modules](#modules)
+  - [talkinghead_sd21_unet_cap4d_based](#talkinghead_sd21_unet_cap4d_based)
+  - [talkinghead_wan22_animate_14b](#talkinghead_wan22_animate_14b)
+  - [text_to_expr_field](#text_to_expr_field)
+- [Shared Dependencies](#shared-dependencies)
+- [Installation](#installation)
+- [Data Layout](#data-layout)
+- [Acknowledgements](#acknowledgements)
 
-![Preview](assets/banner.gif)
+## Overview
 
-TL;DR: CAP4D turns any number of reference images into an animatable avatar. 
+The framework consists of three independent but composable modules:
 
-## ⚡️ Quick start guide
+1. **Talking-Head Video Diffusion** (`talkinghead_sd21_unet_cap4d_based/`) — The core rendering pipeline. A latent video diffusion model (SD 2.1 UNet + 3D attention) generates talking-head videos conditioned on FLAME expression maps (spatial addition), audio (wav2vec2 cross-attention), and a reference frame (identity passthrough). Includes expression-weighted loss, ablation configs, and a sliding-window DDIM sampler for long video inference.
 
-### 🛠️ 1. Create conda environment and install requirements
+2. **Wan2.2-Animate Integration** (`talkinghead_wan22_animate_14b/`) — Exploration of replacing the SD 2.1 UNet with Wan2.2-Animate-14B DiT, combining Wan2.2's I2V (CLIP + VAE reference frame), FaceAdapter (expression conditioning), and S2V (audio injection via AdaIN). Work in progress.
+
+3. **Text-to-Expression Field** (`text_to_expr_field/`) — Removes the driving video dependency by training a generative model (Wan2.2-T2V-A14B, LoRA fine-tuned) to synthesize 45-channel FLAME expression dense fields from text captions. The generated field is a drop-in replacement for the FLAME tracking output consumed by the rendering UNet.
+
+## Repository Structure
+
+```
+.
+├── talkinghead_sd21_unet_cap4d_based/   # Core talking-head rendering (SD 2.1 UNet)
+│   ├── conditioning/                     # FLAME → spatial conditioning maps
+│   ├── model/                            # UNet, diffusion, sampler, audio encoder
+│   ├── flame/                            # FLAME 3DMM mesh computation
+│   ├── data/                             # Dataset, ID lists
+│   ├── utils/                            # Background utilities
+│   ├── configs/                          # Experiment configs (5 variants)
+│   ├── tests/                            # Unit + integration tests
+│   ├── train.py                          # Training entry point
+│   ├── generate.py                       # Inference entry point
+│   └── README.md                         # Full documentation
+│
+├── talkinghead_wan22_animate_14b/        # Wan2.2-Animate exploration (WIP)
+│   ├── wan/                              # Wan2.2 source (cloned, gitignored)
+│   ├── model/                            # Combined model wrapper
+│   ├── configs/                          # Config files
+│   └── README.md
+│
+├── text_to_expr_field/                   # Text → expression field generation
+│   ├── scripts/                          # Preprocessing, caching, training, inference
+│   ├── src/                              # Dataset, reshaping utilities
+│   ├── configs/                          # Training configs
+│   ├── setup_exprmap_env.sh              # Conda env setup
+│   └── README.md                         # Full documentation
+│
+├── controlnet/                           # Stable Diffusion LDM utilities (from CAP4D)
+├── data/assets/flame/                    # FLAME model assets (mesh, blendshapes)
+├── instructions/                         # Design documents and notes
+│   ├── cap4d-summary.md
+│   └── text-to-deformation-map-instructions.md
+├── requirements.txt                      # Base dependencies
+└── README.md                             # This file
+```
+
+## Modules
+
+### talkinghead_sd21_unet_cap4d_based
+
+The main talking-head video generation pipeline. Adapts CAP4D's Morphable Multi-View Latent Diffusion Model for temporal video generation with audio conditioning.
+
+**Key features:**
+- 3D spatiotemporal attention (SD 2.1 UNet inflated to video)
+- 46-channel FLAME expression map conditioning (spatial addition)
+- wav2vec2 audio cross-attention in every transformer block
+- Expression-weighted diffusion loss
+- Stochastic I/O sampling with reference frame passthrough
+- 5 experiment configs for ablation studies
+
+See [`talkinghead_sd21_unet_cap4d_based/README.md`](talkinghead_sd21_unet_cap4d_based/README.md) for full documentation.
+
+### talkinghead_wan22_animate_14b
+
+Exploration of using Wan2.2-Animate-14B as the backbone, combining its I2V mechanism (CLIP + VAE reference frame), FaceAdapter (expression conditioning via cross-attention), and S2V audio injection (AdaIN). This module is a work in progress.
+
+See [`talkinghead_wan22_animate_14b/`](talkinghead_wan22_animate_14b/) for current state.
+
+### text_to_expr_field
+
+Generates FLAME expression dense fields from text descriptions using a LoRA-fine-tuned Wan2.2-T2V model. Removes the need for a driving video at inference time.
+
+**Pipeline:**
+1. Generate text captions (Whisper ASR + Qwen2-Audio prosody)
+2. Build training manifest
+3. Cache VAE latents and text embeddings (DDP across GPUs)
+4. LoRA fine-tune Wan2.2-T2V on expression field ↔ caption pairs
+5. Inference: text prompt → expression dense field → rendering UNet
+
+See [`text_to_expr_field/README.md`](text_to_expr_field/README.md) for full documentation.
+
+## Shared Dependencies
+
+The `controlnet/` directory contains Stable Diffusion LDM utilities inherited from the CAP4D codebase. It provides `LatentDiffusion`, `UNetModel`, `AutoencoderKL`, and related classes used by `talkinghead_sd21_unet_cap4d_based/`.
+
+The `data/assets/flame/` directory contains FLAME 3DMM model files (mesh topology, blendshapes, vertex indices) required for expression map rasterization.
+
+## Installation
 
 ```bash
-# 1. Clone repo
-git clone https://github.com/felixtaubner/cap4d/
-cd cap4d
-
-# 2. Create conda environment for CAP4D:
-conda create --name cap4d_env python=3.10
+# Create conda environment
+conda create -n cap4d_env python=3.10 -y
 conda activate cap4d_env
 
-# 3. Install requirements
+# PyTorch 2.4.1 + CUDA 12.1
+pip install torch==2.4.1+cu121 torchvision==0.19.1+cu121 torchaudio==2.4.1+cu121 \
+    --index-url https://download.pytorch.org/whl/cu121
+
+# PyTorch3D
+pip install --no-index --no-cache-dir pytorch3d \
+    -f https://dl.fbaipublicfiles.com/pytorch3d/packaging/wheels/py310_cu121_pyt241/download.html
+
+# Dependencies
 pip install -r requirements.txt
-
-# 4. Set python path
-export PYTHONPATH=$(realpath "./"):$PYTHONPATH
-```
-Follow the [instructions](https://github.com/facebookresearch/pytorch3d/blob/main/INSTALL.md) and install Pytorch3D. Make sure to install with CUDA support. We recommend to install from source: 
-
-```bash
-export FORCE_CUDA=1
-pip install "git+https://github.com/facebookresearch/pytorch3d.git@stable"
 ```
 
-### 📦 2. Download FLAME and MMDM weights
-Setup your FLAME account at the [FLAME website](https://flame.is.tue.mpg.de/index.html) and set the username 
-and password environment variables:
-```bash
-export FLAME_USERNAME=your_flame_user_name
-export FLAME_PWD=your_flame_password
+For the text-to-expression-field pipeline, see [`text_to_expr_field/setup_exprmap_env.sh`](text_to_expr_field/setup_exprmap_env.sh).
+
+## Data Layout
+
+Training data is expected at (gitignored, not included in the repository):
+
+```
+data/
+├── talkvid/
+│   ├── talkvid/{clip_id}.mp4     # Source videos
+│   └── audio/{clip_id}.wav       # 16kHz mono audio
+├── flowface/
+│   └── {clip_id}/
+│       ├── fit.npz               # FLAME tracking parameters
+│       ├── images/cam0/*.jpg     # Extracted frames
+│       └── bg/cam0/*.png         # Foreground masks
+├── derived/                       # Generated by preprocessing scripts
+│   ├── captions/{clip_id}.json
+│   ├── vae_latent_cache/{clip_id}.pt
+│   ├── text_embed_cache/{clip_id}.pt
+│   └── manifest.json
+└── assets/flame/                  # FLAME model files (included in repo)
 ```
 
-Download FLAME and MMDM weights using the provided scripts:
+## Acknowledgements
 
-```bash 
-# 1. Download FLAME blendshapes
-# set your flame username and password
-bash scripts/download_flame.sh 
-
-# 2. Download CAP4D MMDM weights
-bash scripts/download_mmdm_weights.sh
-```
-
-If the FLAME download script did not work, download FLAME2023 from the [FLAME website](https://flame.is.tue.mpg.de/index.html) and place `flame2023_no_jaw.pkl` in `data/assets/flame/`.
-Then, fix the flame pkl file to be compatible with newer numpy versions:
-
-```bash
-python scripts/fixes/fix_flame_pickle.py --pickle_path data/assets/flame/flame2023_no_jaw.pkl
-```
-
-### ✅ 3. Check installation with a test run
-Run the pipeline in debug settings to test the installation.
-
-```bash
-bash scripts/test_pipeline.sh
-```
-
-Check if a video is exported to `examples/debug_output/tesla/sequence_00/renders.mp4`.
-If it appears to show a blurry cartoon Nicola Tesla, you're all set! 
-
-### 🎬 4. Inference 
-Run the provided scripts to generate avatars and animate them with a single script:
-
-```bash
-bash scripts/generate_felix.sh
-bash scripts/generate_lincoln.sh
-bash scripts/generate_tesla.sh
-```
-
-The output directories contain exported animations which you can view in real-time.
-Open the [real-time viewer](https://felixtaubner.github.io/cap4d/viewer/) in your browser (powered by [Brush](https://github.com/ArthurBrussee/brush/)). Click `Load file` and
-upload the exported animation found in `examples/output/{SUBJECT}/animation_{ID}/exported_animation.ply`.
-
-## 🔧 Custom inference
-
-See below for how to run your custom inference on your own reference images/videos and driving videos.
-
-### ⚙️ 1. Run FLAME 3D face tracking
-
-#### 1.1 FlowFace tracking
-Coming soon! For now, only generations using the provided identities with precomputed [FlowFace](https://felixtaubner.github.io/flowface/) annotations are supported. 
-
-#### 1.2 Pixel3DMM tracking
-Install [Pixel3DMM](https://github.com/SimonGiebenhain/pixel3dmm) using the provided script. Notice that this is prone to errors due to package version mismatches. Please report any errors as an issue!
-
-```bash
-export FLAME_USERNAME=your_flame_user_name
-export FLAME_PWD=your_flame_password
-export PIXEL3DMM_PATH=$(realpath "../PATH/TO/pixel3dmm")  # set this to where you would like to clone the Pixel3DMM repo (absolute path)
-export CAP4D_PATH=$(realpath "./")  # set this to the cap4d directory (absolute path)
-
-bash scripts/install_pixel3Dmm.sh
-```
-
-Run tracking and conversion on reference images/videos using the provided script. Note: If input is a directory of frames, it is assumed to be discontinous set of (monocular!) images. If input is a file, it will assume that it is a continous monocular video.
-
-```bash
-export PIXEL3DMM_PATH=$(realpath "../PATH/TO/pixel3dmm")
-export CAP4D_PATH=$(realpath "./") 
-
-mkdir examples/output/custom/
-
-# For more information on arguments
-bash scripts/track_video_pixel3dmm.sh --help
-
-# Process a directory of (reference) images
-bash scripts/track_video_pixel3dmm.sh examples/input/felix/images/cam0/ examples/output/custom/reference_tracking/
-
-# Optional: process a driving (or reference) video
-bash scripts/track_video_pixel3dmm.sh examples/input/animation/example_video.mp4 examples/output/custom/driving_video_tracking/
-```
-
-Notice that results will be slightly worse than with FlowFace tracking, since the MMDM is trained with FlowFace.
-
-### 🖼️ 2. Generate images using MMDM
-
-```bash
-# Generate images with single reference image
-python cap4d/inference/generate_images.py --config_path configs/generation/default.yaml --reference_data_path examples/output/custom/reference_tracking/ --output_path examples/output/custom/mmdm/
-```
-Note: the generation script will use all visible CUDA devices. The more available devices, the faster it runs! This will take hours, and requires lots of RAM (ideally > 64 GB) to run smoothly.
-
-### 👤 3. Fit Gaussian avatar 
-
-```bash
-python gaussianavatars/train.py --config_path configs/avatar/default.yaml --source_paths examples/output/custom/mmdm/reference_images/ examples/output/custom/mmdm/generated_images/ --model_path examples/output/custom/avatar/ --interval 5000
-```
-
-### 🕺 4. Animate your avatar
-
-Once the avatar is generated, it can be animated with the driving video computed in step 1 or the provided animations. 
-
-```bash
-# Animate the avatar with provided animation files
-python gaussianavatars/animate.py --model_path examples/output/custom/avatar/ --target_animation_path examples/input/animation/sequence_00/fit.npz  --target_cam_trajectory_path examples/input/animation/sequence_00/orbit.npz  --output_path examples/output/custom/animation_00/ --export_ply 1 --compress_ply 0
-
-# Animate the avatar with driving video (computed using Pixel3DMM)
-python gaussianavatars/animate.py --model_path examples/output/custom/avatar/ --target_animation_path examples/output/custom/driving_video_tracking/fit.npz  --target_cam_trajectory_path examples/output/custom/driving_video_tracking/cam_static.npz  --output_path examples/output/custom/animation_example/ --export_ply 1 --compress_ply 0
-```
-
-The `--target_animation_path` argument contains FLAME expressions and pose, while the (optional) `--target_cam_trajectory_path` argument contains the relative camera trajectory. 
-
-### ⚡️ 5. Full inference
-
-We provide a convenient script to run full inference using your reference images and optionally a driving video.
-
-```bash
-export PIXEL3DMM_PATH=$(realpath "../PATH/TO/pixel3dmm")
-export CAP4D_PATH=$(realpath "./") 
-
-# Generate avatar with custom input images/videos.
-bash scripts/generate_avatar.sh --help
-bash scripts/generate_avatar.sh {INPUT_VIDEO_PATH} {OUTPUT_PATH} [{QUALITY}] [{DRIVING_VIDEO_PATH}]
-
-# Example generation with default quality generation with input images and driving video.
-bash scripts/generate_avatar.sh examples/input/felix/images/cam0/ examples/output/felix_custom/ default examples/input/animation/example_video.mp4
-```
-
-### ✨ 6. View avatar in live viewer
-
-Open the [real-time viewer](https://felixtaubner.github.io/cap4d/viewer/) in your browser (powered by [Brush](https://github.com/ArthurBrussee/brush/)). Click `Load file` and
-upload the exported animation found in 
-`examples/output/custom/animation_00/exported_animation.ply` or
-`examples/output/custom/animation_example/exported_animation.ply`.
-
-## 📚 Related Resources
-
-The MMDM code is based on [ControlNet](https://github.com/lllyasviel/ControlNet). The 4D Gaussian avatar code is based on [GaussianAvatars](https://github.com/ShenhanQian/GaussianAvatars). Special thanks to the authors for making their code public!
-
-Related work: 
-- [CAT3D](https://cat3d.github.io/): Create Anything in 3D with Multi-View Diffusion Models
-- [GaussianAvatars](https://shenhanqian.github.io/gaussian-avatars): Photorealistic Head Avatars with Rigged 3D Gaussians
-- [FlowFace](https://felixtaubner.github.io/flowface/): 3D Face Tracking from 2D Video through Iterative Dense UV to Image Flow
-- [StableDiffusion](https://github.com/Stability-AI/stablediffusion): High-Resolution Image Synthesis with Latent Diffusion Models
-- [Pixel3DMM](https://github.com/SimonGiebenhain/pixel3dmm): Versatile Screen-Space Priors for Single-Image 3D Face Reconstruction
-
-Awesome concurrent work:
-- [Pippo](https://yashkant.github.io/pippo/): High-Resolution Multi-View Humans from a Single Image
-- [Avat3r](https://tobias-kirschstein.github.io/avat3r/): Large Animatable Gaussian Reconstruction Model for High-fidelity 3D Head Avatars
-
-## 📖 Citation
-
-```tex
-@inproceedings{taubner2025cap4d,
-    author    = {Taubner, Felix and Zhang, Ruihang and Tuli, Mathieu and Lindell, David B.},
-    title     = {{CAP4D}: Creating Animatable {4D} Portrait Avatars with Morphable Multi-View Diffusion Models},
-    booktitle = {Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR)},
-    month     = {June},
-    year      = {2025},
-    pages     = {5318-5330}
-}
-```
-
-## Acknowledgement
-This work was developed in collaboration with and with sponsorship from **LG Electronics**. We gratefully acknowledge their support and contributions throughout the course of this project.
+This project builds on:
+- [CAP4D](https://github.com/felixtaubner/CAP4D) — Creating Animatable 4D Portrait Avatars (CVPR 2025)
+- [Stable Diffusion 2.1](https://huggingface.co/stabilityai/stable-diffusion-2-1-base) — Latent diffusion backbone
+- [Wan2.2](https://github.com/Wan-Video/Wan2.2) — Video diffusion transformer
+- [FLAME](https://flame.is.tue.mpg.de/) — 3D morphable face model

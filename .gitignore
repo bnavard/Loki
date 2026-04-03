@@ -192,3 +192,41 @@ cython_debug/
 #  refer to https://docs.cursor.com/context/ignore-files
 .cursorignore
 .cursorindexingignore
+
+# ==== ExpressiveTalkingHead ====
+
+# Data (symlinks to external storage + derived features)
+data/talkvid
+data/flowface
+data/derived/
+data/weights/
+
+# Keep FLAME model assets (small, needed for inference)
+!data/assets/
+!data/assets/flame/
+
+# Outputs and checkpoints
+outputs/
+models/
+
+# Brainstorming / scratch
+brainstorming/
+
+# Large binary files
+*.pt
+*.ckpt
+*.safetensors
+*.pkl
+*.npy
+
+# Keep FLAME assets specifically
+!data/assets/flame/*.pkl
+!data/assets/flame/*.npy
+!data/assets/flame/*.obj
+!data/assets/flame/*.txt
+
+# Wan2.2 source (large, installed via pip or git clone)
+talkinghead_wan22_animate_14b/wan/
+
+# Misc
+.current_run_dir
