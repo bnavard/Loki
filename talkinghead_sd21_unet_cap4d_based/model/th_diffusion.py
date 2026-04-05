@@ -1,14 +1,17 @@
 """
-Adapted from cap4d/mmdm/mmdm.py.
+Latent video diffusion model for talking-head generation.
 
-Changes vs MMLDM:
-  1. Audio encoder integrated: batch["audio"] is encoded to per-frame context
-     vectors and stored in the control dict as "audio_context".
-  2. apply_model() reshapes audio_context to (B*T, S, D) and passes it as
-     `context` to the UNet (re-enabling cross-attention).
-  3. Unconditional conditioning zeros out both the spatial pos_enc AND
-     audio_context (for classifier-free guidance).
-  4. Import paths updated: talkinghead.*.
+Wraps the SD 2.1 UNet in a training loop with:
+  - Image → VAE latent encoding
+  - FLAME conditioning via THConditioning (spatial addition)
+  - Audio encoding via wav2vec2 (cross-attention context)
+  - Expression-weighted loss (amplify gradients on active face regions)
+  - Classifier-free guidance dropout
+  - Loss masking to non-reference frames
+
+The expr_weight_map is always available for loss weighting, even when the
+UNet's spatial conditioning is ablated (drop_expression_map=True). The
+expr_weight_alpha parameter controls amplification strength (0 = uniform).
 """
 
 import einops

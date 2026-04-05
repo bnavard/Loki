@@ -1,15 +1,17 @@
 """
 Dataset for text-to-expression-field training.
 
-Each clip is one training sample. Clips with more than target_frames (default
-80) are truncated to the first target_frames frames. Clips shorter than
-target_frames are skipped. Fully deterministic — always starts from frame 0.
+Two loading paths:
+  1. Cached: loads precomputed VAE latents + UMT5 text embeddings from disk
+     (fast, no GPU needed in workers). This is the primary training path.
+  2. On-the-fly: computes expression field from fit.npz via PyTorch3D
+     rasterization, reshapes 45ch → 15×3ch pseudo-video, VAE-encodes.
+     Only used when cached latents don't exist.
 
-The expression field is computed on the fly from fit.npz, or loaded from a
-precomputed VAE latent cache (data/derived/vae_latent_cache/) if available.
-
-The 45-channel expression field is split into 15 groups of 3 channels, stacked
-temporally into a pseudo-video, and encoded through the Wan2.2 VAE.
+Random temporal slicing: each __getitem__ call returns a random window of
+target_latent_T steps from the full cached latent, providing free temporal
+data augmentation across epochs. Text embeddings are NOT sliced — they
+condition the full clip at the sequence level.
 """
 
 import json
@@ -36,8 +38,13 @@ class ExprFieldDataset(Dataset):
     Args:
         manifest_path:           Path to data/derived/manifest.json
         flame_root:              Root directory for FLAME data (data/flowface/)
-        target_frames:           Fixed number of frames per sample (default 80).
+        target_frames:           Frames per clip for VAE caching (default 80).
         resolution:              Expression field spatial resolution (default 512)
+        target_real_frames:      Frames per training window (default 24, must be % 4 == 0).
+                                 A random temporal slice of this size is taken from the
+                                 cached latent at each __getitem__ call, providing free
+                                 temporal data augmentation. Latent T = 15*real_frames/4 + 1.
+                                 Valid options: 16→T=61, 20→T=76, 24→T=91, 28→T=106, 32→T=121.
         vae:                     Optional frozen VAE for on-the-fly encoding.
         device:                  Device for on-the-fly computation.
         vae_latent_cache_dir:    Directory with precomputed VAE latents.
@@ -47,6 +54,7 @@ class ExprFieldDataset(Dataset):
 
     def __init__(self, manifest_path: str, flame_root: str = "data/flowface",
                  target_frames: int = 80, resolution: int = 512,
+                 target_real_frames: int = 24,
                  vae=None, device: str = "cuda",
                  vae_latent_cache_dir: str = "data/derived/vae_latent_cache",
                  prompt_latent_cache_dir: str = "data/derived/prompt_latent_cache",
@@ -61,6 +69,22 @@ class ExprFieldDataset(Dataset):
         self.device = device
         self.vae_latent_cache_dir = Path(vae_latent_cache_dir) if vae_latent_cache_dir else None
         self.prompt_latent_cache_dir = Path(prompt_latent_cache_dir) if prompt_latent_cache_dir else None
+
+        # Random temporal slicing of cached VAE latents.
+        # The full cached latent has T_latent = (15 * target_frames) / 4 + 1 = 301 for 80 frames.
+        # Processing all 301 steps causes OOM. Instead, we randomly slice a smaller window
+        # at each __getitem__ call. This acts as free temporal data augmentation.
+        #
+        # Constraints on target_real_frames:
+        #   - Must be divisible by 4 (VAE temporal stride)
+        #   - Pseudo-frame count = 15 * real_frames + 1 (15 channel groups + 1 padding)
+        #   - Latent T = (15 * real_frames) / 4 + 1
+        #
+        # Valid options: 16fr→T=61, 20fr→T=76, 24fr→T=91, 28fr→T=106, 32fr→T=121
+        assert target_real_frames % 4 == 0, \
+            f"target_real_frames must be divisible by 4, got {target_real_frames}"
+        self.target_real_frames = target_real_frames
+        self.target_latent_T = (15 * target_real_frames) // 4 + 1
 
         # Lazy-init on first use to avoid GPU allocation at import time
         self._conditioning = None
@@ -80,6 +104,18 @@ class ExprFieldDataset(Dataset):
                 entry for entry in self.samples
                 if (self.vae_latent_cache_dir / f"{entry['clip_id']}.pt").exists()
             ]
+
+        # Validate that target_latent_T fits within all cached latents
+        if cached_only and self.vae_latent_cache_dir:
+            for entry in self.samples:
+                cache_path = self.vae_latent_cache_dir / f"{entry['clip_id']}.pt"
+                cached = torch.load(str(cache_path), map_location="cpu")
+                latent = cached["latent"] if isinstance(cached, dict) else cached
+                assert latent.shape[1] >= self.target_latent_T, (
+                    f"Clip {entry['clip_id']}: cached latent T={latent.shape[1]} < "
+                    f"target_latent_T={self.target_latent_T} (target_real_frames={target_real_frames})"
+                )
+                break  # check only the first clip (all should have the same T)
 
     def _get_conditioning(self):
         """Lazy-init THConditioning and FLAME skinner on first use."""
@@ -215,12 +251,20 @@ class ExprFieldDataset(Dataset):
                 caption_data = json.load(f)
             result["caption"] = caption_data["caption"]
 
-        # ---- VAE latent: load from cache or compute on the fly ----
+        # ---- VAE latent: load from cache, randomly slice temporal window ----
         if self.vae_latent_cache_dir:
             cache_path = self.vae_latent_cache_dir / f"{clip_id}.pt"
             if cache_path.exists():
+                import random
                 cached = torch.load(str(cache_path), map_location="cpu")
-                result["latent"] = cached["latent"] if isinstance(cached, dict) else cached
+                full_latent = cached["latent"] if isinstance(cached, dict) else cached
+                # full_latent: [C_latent, T_latent_full, H, W]
+                # Randomly slice a temporal window for data augmentation.
+                # Each training step sees a different window from the full clip.
+                full_T = full_latent.shape[1]
+                max_start = full_T - self.target_latent_T
+                start = random.randint(0, max_start)
+                result["latent"] = full_latent[:, start:start + self.target_latent_T, :, :]
                 return result
 
         # On-the-fly: compute expression field → reshape → VAE encode

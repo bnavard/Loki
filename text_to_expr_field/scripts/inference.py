@@ -54,21 +54,21 @@ def main():
         args.model_id, torch_dtype=torch.bfloat16,
     )
 
-    # Load LoRA weights for transformer(s)
+    # Extract latent normalization stats for manual denormalization if needed.
+    # The pipeline's __call__ handles this internally, but we store them for
+    # any manual latent → VAE decode path.
+    latents_mean = torch.tensor(pipe.vae.config.latents_mean).view(1, -1, 1, 1).to(device)
+    latents_std = torch.tensor(pipe.vae.config.latents_std).view(1, -1, 1, 1).to(device)
+
+    # Load LoRA weights
     from peft import PeftModel
 
     lora_path = checkpoint_dir / "lora_transformer"
     if lora_path.exists():
-        print(f"Loading LoRA (transformer): {lora_path}")
+        print(f"Loading LoRA: {lora_path}")
         pipe.transformer = PeftModel.from_pretrained(pipe.transformer, str(lora_path))
     else:
         print(f"WARNING: No LoRA found at {lora_path}")
-
-    # Check for MoE second expert
-    lora_path_2 = checkpoint_dir / "lora_transformer_2"
-    if lora_path_2.exists() and hasattr(pipe, "transformer_2"):
-        print(f"Loading LoRA (transformer_2): {lora_path_2}")
-        pipe.transformer_2 = PeftModel.from_pretrained(pipe.transformer_2, str(lora_path_2))
 
     pipe = pipe.to(device)
 

@@ -1,29 +1,13 @@
 """
 Video dataset for talking-head generation training.
 
-Data is spread across three root directories, linked by a shared clip ID:
-    video_root / {id}.mp4           — source video
-    audio_root / {id}.wav           — 16 kHz mono audio
-    flame_root / {id} / fit.npz     — FLAME tracking output
+Each clip is split into non-overlapping n_frames-sized windows (deterministic).
+Frame 0 of each window is the reference frame; frames 1:n_frames are the
+generation targets. Audio windows are extracted from the same temporal segment,
+ensuring audio-expression alignment.
 
-An ID list (plain text, one ID per line) specifies which clips to use.
-
-Each training sample contains:
-    - 1 reference frame  (randomly sampled from the video)
-    - T-1 consecutive target frames  (a random temporal window)
-    - FLAME conditioning maps for all T frames
-    - Raw audio window per frame (±context_frames)
-    - Reference mask: [1, 0, 0, ..., 0]  (only index 0 is the reference)
-
-The dataset returns a dict with keys matching THDiffusion.get_input():
-    "jpg"   : (T, H, W, 3)     float32 in [-1, 1]
-    "audio" : (T, window_len)  float32 raw 16 kHz waveform
-    "hint"  : {
-        "verts_2d"        : (T, V, 2)
-        "offsets_3d"      : (T, V, 3)
-        "reference_mask"  : (T, 1, h, w)   h=w=latent_res
-        "ray_map"         : (T, 3, h, w)   optional
-    }
+The flat sample index maps across all windows from all clips, so a 125-frame
+clip at n_frames=16 yields 7 training samples (windows starting at 0, 16, 32, ...).
 """
 
 from pathlib import Path

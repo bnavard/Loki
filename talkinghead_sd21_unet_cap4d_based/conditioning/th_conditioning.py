@@ -1,20 +1,23 @@
 """
-Adapted from cap4d/mmdm/conditioning/cap4dcond.py.
+FLAME → spatial conditioning for the talking-head UNet.
 
-Changes vs original CAP4DConditioning:
-  - use_ray_directions defaults to False (was True). Still fully supported — pass
-    use_ray_directions=True in the config to re-enable it.
-  - Import path updated: talkinghead.conditioning.mesh2img
-  - No other changes.
+Converts raw FLAME mesh parameters into dense spatial conditioning tensors by
+rasterizing vertices onto a 2D grid via PyTorch3D and applying sinusoidal
+positional encoding.
 
-Conditioning channel layout (defaults, use_ray_directions=False, use_crop_mask=False):
-  [0  :42] positional encoding of 3D vertex positions (sin/cos Fourier features)
-  [42 :45] expression deformation map (per-vertex offset from neutral, normalised)
-  [45]     reference mask (1 = reference frame, 0 = frame to be generated)
-  Total: 46 channels
+Channel layout (default: 46 channels):
+  [0  :42] Sinusoidal Fourier positional encoding of 3D vertex positions
+  [42 :45] Expression deformation (per-vertex Δx,Δy,Δz from neutral)
+  [45]     Reference mask (1 = reference frame, 0 = frame to generate)
 
-If use_ray_directions=True  → +3 channels  (ray direction in cam-0 frame)
-If use_crop_mask=True       → +1 channel   (valid-crop binary mask)
+Modes:
+  - Full (46ch): default, all spatial information
+  - drop_expression_map=True (1ch): only ref_mask, for ablating FLAME conditioning
+  - expr_deform_only=True (4ch): only deformation + ref_mask, drops positional encoding
+
+The full 46ch expression field is always computed internally (stored as
+expr_weight_map) so that expression-weighted loss can use it regardless of
+which mode the UNet sees.
 """
 
 import torch
@@ -64,7 +67,7 @@ class THConditioning(nn.Module):
         positional_channels: int = 42,
         positional_multiplier: float = 1.0,
         super_resolution: int = 2,
-        use_ray_directions: bool = False,   # ← default False; set True to re-enable
+        use_ray_directions: bool = False,
         use_expr_deformation: bool = True,
         use_crop_mask: bool = False,
         std_expr_deformation: float = 0.0104,
@@ -122,9 +125,6 @@ class THConditioning(nn.Module):
             n += 1
         return n
 
-    # ------------------------------------------------------------------
-    # Forward
-    # ------------------------------------------------------------------
     def forward(self, batch: dict, unconditional: bool = False) -> dict:
         """
         Args:
@@ -246,9 +246,6 @@ class THConditioning(nn.Module):
             "ref_mask":        ref_mask,
         }
 
-    # ------------------------------------------------------------------
-    # Visualisation helper (mirrors cap4d original)
-    # ------------------------------------------------------------------
     def get_vis(self, enc: torch.Tensor) -> dict:
         """Return named slices of the conditioning tensor for visualisation."""
         vis = {}

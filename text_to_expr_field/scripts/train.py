@@ -1,17 +1,15 @@
 """
-Train text-to-expression-field model.
+Train text → expression field model (Wan2.2-T2V-A14B, 14B DiT, LoRA).
 
-Fine-tunes Wan2.2-T2V-A14B DiT with LoRA to generate 45-channel
-FLAME expression dense field videos from text descriptions.
+Loads precomputed VAE latents and UMT5 text embeddings from disk — neither
+the VAE encoder nor text encoder is loaded during training, maximizing GPU
+memory for the 14B transformer.
 
-The model learns to map text captions (transcription + prosody) to the
-expression field format expected by the downstream rendering UNet.
+Each training step randomly slices a temporal window from the cached latent,
+normalizes with pretrained latents_mean/std, and trains with flow matching
+(velocity prediction) loss in float32.
 
-Requirements:
-    - diffusers >= 0.33.0
-    - peft (for LoRA)
-    - accelerate (for distributed training)
-    - Preprocessed data: expression fields, captions, manifest
+Requires: diffusers, peft, accelerate, precomputed caches.
 
 Usage:
     cd /data/pouyan/baseline/repository/cap4d
@@ -126,6 +124,13 @@ def main():
     transformer = pipe.transformer
     scheduler = pipe.scheduler
 
+    # Extract pretrained latent normalization stats before freeing the VAE.
+    # The DiT was pretrained with latents normalized by these channel-wise stats.
+    # Shape [1, C, 1, 1, 1] to broadcast over [B, C, T, H, W] latents
+    latents_mean = torch.tensor(pipe.vae.config.latents_mean).view(1, -1, 1, 1, 1)
+    latents_std = torch.tensor(pipe.vae.config.latents_std).view(1, -1, 1, 1, 1)
+    log_rank0(f"Latent normalization: mean shape={latents_mean.shape}, std shape={latents_std.shape}", is_main)
+
     # Free text encoder, tokenizer and VAE to reclaim memory
     del pipe.text_encoder, pipe.tokenizer, pipe.vae
     del pipe
@@ -187,16 +192,20 @@ def main():
     # ---- Dataset ----
     from text_to_expr_field.src.dataset import ExprFieldDataset
 
+    target_real_frames = cfg.get("target_real_frames", 24)
+    target_latent_T = (15 * target_real_frames) // 4 + 1
+    log_rank0(f"Training window: {target_real_frames} real frames → latent T={target_latent_T}", is_main)
+
     dataset = ExprFieldDataset(
         manifest_path=cfg.get("manifest_path", "data/derived/manifest.json"),
         flame_root=cfg.get("flame_root", "data/flowface"),
         target_frames=cfg.get("target_frames", 80),
         resolution=cfg.get("resolution", 512),
+        target_real_frames=target_real_frames,
         vae=None,
         device=str(device),
         vae_latent_cache_dir=cfg.get("vae_latent_cache_dir", "data/derived/vae_latent_cache"),
-        prompt_latent_cache_dir=cfg.get("prompt_latent_cache_dir", "data/derived/text_embed_cache"),
-        # we only do cached-only precompute, otherwise it will be very expensive
+        prompt_latent_cache_dir=cfg.get("prompt_latent_cache_dir", "data/derived/prompt_latent_cache"),
         cached_only=True,
     )
     log_rank0(f"Dataset: {len(dataset)} clips (VAE and prompt latent pre-cached only)", is_main)
@@ -219,7 +228,7 @@ def main():
 
     # 3. 8-bit Adam: halves optimizer state memory.
     #    Install: pip install bitsandbytes
-    use_8bit_adam = cfg.get("use_8bit_adam", True)
+    use_8bit_adam = cfg.get("use_8bit_adam", False)
     if use_8bit_adam:
         try:
             import bitsandbytes as bnb
@@ -270,7 +279,12 @@ def main():
             if global_step >= max_steps:
                 break
 
-            latents = batch["latent"].to(device, dtype=torch.bfloat16)
+            # Load cached latents (already temporally sliced by the dataset)
+            # and normalize with pretrained stats so the DiT sees the expected
+            # input distribution. Normalization is per-channel over (T, H, W).
+            raw_latents = batch["latent"].to(device, dtype=torch.bfloat16)
+            latents = (raw_latents - latents_mean.to(device, dtype=torch.bfloat16)) / \
+                      latents_std.to(device, dtype=torch.bfloat16)
             text_embeds = batch["text_embed"].to(device, dtype=torch.bfloat16)
 
             # CFG dropout: randomly replace text with null embeddings
@@ -299,7 +313,7 @@ def main():
                 encoder_hidden_states=text_embeds,
             ).sample
 
-            loss = F.mse_loss(velocity_pred, target_velocity)
+            loss = F.mse_loss(velocity_pred.float(), target_velocity.float())
 
             # Backward
             if accelerator is not None:

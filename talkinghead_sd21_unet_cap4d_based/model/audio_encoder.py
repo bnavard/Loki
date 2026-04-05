@@ -1,20 +1,13 @@
 """
-Audio encoder for talking-head generation.
+Audio encoder: raw 16kHz waveform → per-frame cross-attention tokens.
 
-Accepts a window of raw waveform samples per video frame and encodes them into
-a sequence of context vectors that are consumed by the UNet's cross-attention
-layers (one sequence per frame).
+A frozen wav2vec2-base-960h backbone encodes audio windows into token sequences.
+A learned linear projection maps from backbone dim (768) to the UNet's
+context_dim (1024, matching SD 2.1's pretrained cross-attention weights).
 
-Design:
-  - A pretrained wav2vec2 (or HuBERT) backbone extracts speech representations.
-  - A lightweight linear projection maps the backbone output dimension to the
-    UNet's context_dim (default 768).
-  - Temporal alignment: for a video at fps_video, each frame corresponds to
-    audio_window_samples = (sample_rate / fps_video) raw samples. A context
-    window of ±context_frames additional frames is appended, giving a total
-    window of (1 + 2*context_frames) * audio_window_samples per frame.
-    After wav2vec2's stride-320 downsampling this yields num_tokens tokens per
-    frame, which are the query context for that frame's cross-attention.
+Each video frame gets audio from ±context_frames neighbors (~200ms window).
+The backbone is frozen during training to preserve pretrained speech features;
+only the projection layer trains.
 
 Input / output shapes:
   AudioEncoder.forward(waveform):

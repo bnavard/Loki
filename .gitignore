@@ -228,5 +228,8 @@ brainstorming/
 # Wan2.2 source (large, installed via pip or git clone)
 talkinghead_wan22_animate_14b/wan/
 
+# Experimental / scratch work
+**/experimental/
+
 # Misc
 .current_run_dir

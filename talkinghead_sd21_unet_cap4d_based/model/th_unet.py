@@ -1,12 +1,11 @@
 """
-Adapted from cap4d/mmdm/net/mmdm_unet.py.
+SD 2.1 UNet extended for talking-head video generation.
 
-Changes vs MMDMUnetModel:
-  1. use_context = True  — cross-attention is enabled for audio conditioning.
-  2. Removed `assert context == None`.
-  3. audio_context extracted from control dict and reshaped to (B*T, S, D)
-     before being passed as `context` to every UNet block.
-  4. Import path updated: talkinghead.model.attention.
+Cross-attention is enabled (use_context=True) so audio tokens from wav2vec2
+flow through every transformer block. FLAME conditioning enters via spatial
+addition to the first feature map (cond_linear projects condition_channels →
+model_channels). Reference frames bypass denoising via the ref_mask + z_input
+passthrough mechanism.
 """
 
 import torch
@@ -68,9 +67,6 @@ class THUnetModel(UNetModel):
         # (added to the first UNet feature map; same mechanism as CAP4D)
         self.cond_linear = zero_module(nn.Linear(condition_channels, model_channels))
 
-    # ------------------------------------------------------------------
-    # Attention block factory  (called by parent UNetModel.__init__)
-    # ------------------------------------------------------------------
     def create_attention_block(
         self,
         ch,
@@ -100,9 +96,6 @@ class THUnetModel(UNetModel):
             num_timesteps=self.time_steps,
         )
 
-    # ------------------------------------------------------------------
-    # Forward pass
-    # ------------------------------------------------------------------
     def forward(self, x, timesteps=None, context=None, control=None, **kwargs):
         """
         Args:
@@ -167,7 +160,6 @@ class THUnetModel(UNetModel):
 
         h = self.out(h).type(x.dtype)
 
-        # ------- unflatten time dimension -------
         h = einops.rearrange(h, '(b t) c h w -> b t c h w', b=b_)
 
         # Pass reference frames through unchanged; return predicted noise elsewhere
