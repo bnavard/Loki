@@ -37,7 +37,6 @@ def parse_args():
     p.add_argument("--config",    required=True, help="Path to talking_head.yaml")
     p.add_argument("--resume",    default=None,  help="Checkpoint to resume from")
     p.add_argument("--gpus",      nargs="+", type=int, default=[0])
-    p.add_argument("--output_dir", default="outputs/talkinghead")
     p.add_argument("--seed",      type=int, default=SEED, help="Random seed for reproducibility")
     return p.parse_args()
 
@@ -467,13 +466,14 @@ def main():
     pl.seed_everything(args.seed, workers=True)
 
     # Create a timestamped run directory (rank 0 only to avoid duplicates in DDP)
+    output_dir = cfg.output_dir
     from datetime import datetime
     if is_rank_zero():
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        run_dir = Path(args.output_dir) / f"run_{timestamp}"
+        run_dir = Path(output_dir) / f"run_{timestamp}"
         run_dir.mkdir(parents=True, exist_ok=True)
         # Write run_dir to a tmp file so other ranks can read it
-        marker = Path(args.output_dir) / ".current_run_dir"
+        marker = Path(output_dir) / ".current_run_dir"
         marker.parent.mkdir(parents=True, exist_ok=True)
         marker.write_text(str(run_dir))
         # Copy config file to run directory for reproducibility
@@ -483,13 +483,13 @@ def main():
     else:
         # Wait for rank 0 to create the directory
         import time
-        marker = Path(args.output_dir) / ".current_run_dir"
+        marker = Path(output_dir) / ".current_run_dir"
         for _ in range(60):
             if marker.exists():
                 break
             time.sleep(0.5)
         run_dir = Path(marker.read_text().strip())
-    args.output_dir = str(run_dir)
+    output_dir = str(run_dir)
 
     model = load_model(cfg, init_path=cfg.get("init_path"))
     model.learning_rate = cfg.learning_rate
@@ -510,7 +510,7 @@ def main():
 
     # Checkpoint: save every N steps (keep all)
     periodic_ckpt = ModelCheckpoint(
-        dirpath=args.output_dir,
+        dirpath=output_dir,
         filename="th-{step:06d}",
         every_n_train_steps=cfg.save_every_n_steps,
         save_top_k=-1,
@@ -518,7 +518,7 @@ def main():
 
     # Checkpoint: save best by val loss
     best_ckpt = ModelCheckpoint(
-        dirpath=args.output_dir,
+        dirpath=output_dir,
         filename="th-best-{step:06d}-{val/loss:.4f}",
         monitor="val/loss",
         mode="min",
@@ -529,13 +529,13 @@ def main():
     vis_cb = VisualizationCallback(
         cfg=cfg,
         val_loader=val_loader,
-        output_dir=args.output_dir,
+        output_dir=output_dir,
         vis_every_n_steps=cfg.get("val_every_n_steps", 2000),
         n_vis_samples=cfg.get("n_vis_samples", 4),
         vis_ddim_steps=cfg.get("vis_ddim_steps", 20),
     )
 
-    logger = TensorBoardLogger(save_dir=args.output_dir, name="logs")
+    logger = TensorBoardLogger(save_dir=output_dir, name="logs")
 
     trainer = pl.Trainer(
         max_steps=cfg.n_steps,
@@ -543,7 +543,7 @@ def main():
         devices=args.gpus,
         strategy="ddp_find_unused_parameters_true" if len(args.gpus) > 1 else "auto",
         precision=16,
-        callbacks=[vis_cb],
+        callbacks=[vis_cb, best_ckpt],
         logger=logger,
         log_every_n_steps=cfg.logger_freq,
         accumulate_grad_batches=cfg.virtual_batch_size // cfg.gpu_batch_size,

@@ -10,6 +10,8 @@
 # Baseline to measure the effect of expression-weighted loss.
 # =============================================================================
 
+output_dir: "outputs/full_cond_uniform_loss"
+
 learning_rate:     1.0e-4
 gpu_batch_size:    4
 virtual_batch_size: 4

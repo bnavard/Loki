@@ -13,6 +13,8 @@
 # weighting can partially compensate for the absence of explicit conditioning.
 # =============================================================================
 
+output_dir: "outputs/no_expr_weighted_loss"
+
 learning_rate:     1.0e-4
 gpu_batch_size:    4
 virtual_batch_size: 4
