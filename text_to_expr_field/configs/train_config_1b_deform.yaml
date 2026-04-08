@@ -1,0 +1,54 @@
+# =============================================================================
+# Text-to-Deformation-Map Training — Wan2.1-T2V-1.3B (full fine-tuning)
+#
+# On-the-fly pipeline: computes 3ch deformation maps from fit.npz via
+# FLAME + PyTorch3D rasterization, then VAE-encodes each sample live.
+# No precomputed VAE latent cache needed. Text embeddings are still
+# loaded from the precomputed UMT5 cache.
+#
+# Full parameter tuning (no LoRA) — the 1.3B model is small enough to
+# fine-tune all parameters with gradient checkpointing.
+# =============================================================================
+
+# ---- Model ----
+model_id: "Wan-AI/Wan2.1-T2V-1.3B-Diffusers"
+
+# ---- Fine-tuning ----
+use_lora: false                                    # full parameter tuning
+
+# ---- Data ----
+manifest_path: "data/derived/manifest.json"
+flame_root: "data/flowface"
+resolution: 512
+target_frames: 81                                  # frames per clip (truncated to 4k+1 for VAE)
+target_real_frames: 80                             # must be divisible by 4
+target_latent_T: 21                                # (81 - 1) / 4 + 1 = 21; overrides the 45→15×3 formula
+mode: "deform"                                     # 3ch deformation map only
+on_the_fly: true                                   # compute deform + VAE encode on the fly
+prompt_latent_cache_dir: "data/derived/prompt_latent_cache"
+
+# ---- Training ----
+batch_size: 18
+gradient_accumulation: 1
+gradient_checkpointing: true
+group_offload: false
+lr: 1.0e-5
+weight_decay: 0.01
+warmup_steps: 500
+max_steps: 20000
+grad_clip: 1.0
+
+# ---- CFG ----
+cfg_dropout: 0.1
+
+# ---- Logging ----
+output_dir: "outputs/text_to_deform_1b"
+log_every: 1
+save_every: 750
+
+# ---- Precision ----
+mixed_precision: "bf16"
+
+# ---- Workers ----
+num_workers: 0                                     # must be 0: on-the-fly uses CUDA (PyTorch3D + VAE)
+gpu: 0

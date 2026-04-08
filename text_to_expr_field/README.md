@@ -4,18 +4,13 @@ Generate FLAME expression dense field videos from text descriptions, removing th
 
 The rendering UNet (`talkinghead_sd21_unet_cap4d_based/`) requires a 45-channel expression dense field extracted from a driving video via FLAME 3DMM tracking. This pipeline trains a generative model to synthesize that field directly from a text prompt. Combined with text-to-speech for audio, this enables a text-only interface: reference portrait + text prompt → talking-head video.
 
-The pipeline uses Wan2.2-T2V-A14B (14B DiT) fine-tuned with LoRA via flow matching on paired (caption, expression field) data. Text embeddings and VAE latents are precomputed and cached to disk to maximize training throughput.
-
 ## Table of Contents
 
 - [Architecture](#architecture)
 - [Expression Dense Field Format](#expression-dense-field-format)
 - [Channel Reshaping for VAE Compatibility](#channel-reshaping-for-vae-compatibility)
+- [Training Modes](#training-modes)
 - [Data Preparation](#data-preparation)
-  - [Step 1: Generate Text Captions](#step-1-generate-text-captions)
-  - [Step 2: Build Training Manifest](#step-2-build-training-manifest)
-  - [Step 3: Cache VAE Latents](#step-3-cache-vae-latents)
-  - [Step 4: Cache Text Embeddings](#step-4-cache-text-embeddings)
 - [Training](#training)
 - [Inference](#inference)
 - [Integration with the Rendering UNet](#integration-with-the-rendering-unet)
@@ -31,24 +26,23 @@ Text prompt
 ┌──────────────────┐
 │  UMT5 Encoder    │  (frozen, precomputed + cached)
 └─────┬────────────┘
-      │ text embeddings (loaded from cache)
+      │ text embeddings
       ▼
 ┌────────────────────────────────────┐
-│  Wan2.2 DiT (T2V-A14B, 14B)        │  ← LoRA fine-tuned
-│  Flow Matching loss                │
+│  Wan DiT Transformer               │  ← LoRA or full fine-tuning
+│  Flow Matching (velocity prediction)│
 └─────┬──────────────────────────────┘
       │ denoised latent
       ▼
 ┌──────────────────┐
-│  Wan2.2 VAE      │  (frozen, precomputed + cached)
-│  Decoder         │
+│  Wan VAE Decoder │  (frozen)
 └─────┬────────────┘
       │
       ▼
-  Reassemble → [T, 45, H, W] expression dense field
+  Expression dense field [T, C, H, W]
 ```
 
-Both VAE latents and UMT5 text embeddings are precomputed and cached to disk. During training, neither the VAE encoder nor the text encoder is loaded — the training loop only loads the DiT transformer + LoRA adapters, maximizing GPU memory for the model.
+Flow matching trains the model to predict the velocity `v = noise - clean` given the interpolant `x_t = (1-t) * clean + t * noise` at uniform `t ~ [0, 1]`. Latents are normalized with pretrained per-channel `latents_mean/std` so the DiT operates in its expected input distribution.
 
 ## Expression Dense Field Format
 
@@ -56,24 +50,42 @@ The 45-channel expression dense field is produced by the FLAME rasterization pip
 
 | Channels | Content | Description |
 |---|---|---|
-| 0:42 | Positional encoding | Sinusoidal Fourier features of rasterized 3D FLAME vertex positions (3 coords × 7 freq bands × sin/cos = 42ch). Encodes face geometry and pose. |
-| 42:45 | Expression deformation | Per-vertex displacement (Δx, Δy, Δz) from the neutral FLAME mesh. Encodes mouth opening, brow movement, jaw drop, etc. |
+| 0:42 | Positional encoding | Sinusoidal Fourier features of rasterized 3D FLAME vertex positions (3 coords x 7 freq bands x sin/cos = 42ch). Encodes face geometry and pose. |
+| 42:45 | Expression deformation | Per-vertex displacement (dx, dy, dz) from the neutral FLAME mesh. Encodes mouth opening, brow movement, jaw drop, etc. |
 
-Rasterized at 512×512 via PyTorch3D barycentric interpolation.
+Rasterized at 512x512 via PyTorch3D barycentric interpolation.
+
+For the **deformation-only** experiments, only channels 42:45 (3ch) are used. This is a direct 3-channel video — no channel reshaping needed.
 
 ## Channel Reshaping for VAE Compatibility
 
-The Wan2.2 VAE accepts 3-channel video. The 45-channel expression field is split into 15 groups of 3 channels, stacked temporally, and padded to satisfy the VAE's 4k+1 frame requirement:
+The Wan VAE accepts 3-channel video. For the full 45-channel expression field, the channels are split into 15 groups of 3, stacked temporally, and padded to 4k+1:
 
 ```
 [T=80, 45, 512, 512]
   → split: [80, 15, 3, 512, 512]
   → stack: [1200, 3, 512, 512]
-  → pad:   [1201, 3, 512, 512]  (4k+1 = 4×300+1)
-  → VAE:   latent tensor
+  → pad:   [1201, 3, 512, 512]  (4k+1 = 4x300+1)
+  → VAE:   [16, T_latent, 64, 64]
 ```
 
-At inference, the reverse: VAE decode → drop padding → reshape → [T, 45, H, W].
+For the 3ch deformation map, no reshaping is needed — it goes directly to the VAE as a standard video.
+
+At inference, latents are denormalized and decoded through the VAE directly (bypassing the pipeline's default `val * 0.5 + 0.5` clamp which would destroy expression field values).
+
+## Training Modes
+
+The pipeline supports multiple training configurations via YAML configs:
+
+| Config | Model | Data | Fine-tuning | Description |
+|---|---|---|---|---|
+| `train_config.yaml` | Wan2.2-T2V-A14B (14B) | Cached 45ch latents | LoRA | Full expression field, cached VAE latents |
+| `train_config_deform.yaml` | Wan2.2-T2V-A14B (14B) | Cached 3ch latents | LoRA | Deformation-only, cached VAE latents |
+| `train_config_1b_deform.yaml` | Wan2.1-T2V-1.3B | On-the-fly 3ch | Full | Deformation-only, on-the-fly VAE encoding |
+
+**Cached mode**: VAE latents and text embeddings are precomputed to disk. Neither the VAE nor text encoder is loaded during training — all GPU memory goes to the DiT.
+
+**On-the-fly mode**: Expression fields are computed from `fit.npz` via FLAME + PyTorch3D rasterization and VAE-encoded live. Requires `num_workers=0` (CUDA in dataset). Used with smaller models (1.3B) where the VAE fits alongside the transformer.
 
 ## Data Preparation
 
@@ -82,40 +94,31 @@ At inference, the reverse: VAE decode → drop padding → reshape → [T, 45, H
 ```
 data/
 ├── talkvid/
-│   ├── talkvid/{clip_id}.mp4     # source videos
-│   └── audio/{clip_id}.wav       # 16kHz mono audio
+│   ├── {clip_id}.mp4           # source videos
+│   └── audio/{clip_id}.wav     # 16kHz mono audio
 └── flowface/
     └── {clip_id}/
-        ├── fit.npz               # FLAME tracking parameters
-        └── images/cam0/*.jpg     # extracted frames
+        ├── fit.npz             # FLAME tracking parameters
+        └── images/cam0/*.jpg   # extracted frames
 ```
 
 ### Step 1: Generate Text Captions
 
-Combines Whisper large-v3 ASR transcription with Qwen2-Audio prosody description. The prompt instructs the model to describe vocal delivery style (tone, pace, emphasis) without transcribing words.
+Combines Whisper large-v3 ASR transcription with Qwen2-Audio prosody description.
 
 ```bash
-conda activate cap4d_env
-export PYTHONPATH=/data/pouyan/baseline/repository/cap4d:$PYTHONPATH
-
-# Parallel across GPUs:
 python text_to_expr_field/scripts/generate_captions.py --gpu 0 --num_gpus 8
-
 # Output: data/derived/captions/{clip_id}.json
 ```
 
 ### Step 2: Build Training Manifest
-
-Validates that each clip has both FLAME tracking data and a caption.
 
 ```bash
 python text_to_expr_field/scripts/build_manifest.py
 # Output: data/derived/manifest.json
 ```
 
-### Step 3: Cache VAE Latents
-
-Encodes expression fields through the Wan2.2 VAE using DDP. For each clip, computes the 45-channel expression field on the fly from `fit.npz` (first 80 frames, deterministic), reshapes into a pseudo-video, and saves the latent tensor. The `DistributedSampler` shards clips across GPUs automatically.
+### Step 3: Cache VAE Latents (for cached training mode)
 
 ```bash
 PYTHONPATH=. torchrun --nproc_per_node=4 text_to_expr_field/scripts/cache_vae_latents.py
@@ -124,8 +127,6 @@ PYTHONPATH=. torchrun --nproc_per_node=4 text_to_expr_field/scripts/cache_vae_la
 
 ### Step 4: Cache Text Embeddings
 
-Encodes captions through the frozen UMT5-XXL text encoder. This frees ~13B params of GPU memory during training.
-
 ```bash
 PYTHONPATH=. torchrun --nproc_per_node=4 text_to_expr_field/scripts/cache_text_embeddings.py
 # Output: data/derived/prompt_latent_cache/{clip_id}.pt
@@ -133,47 +134,67 @@ PYTHONPATH=. torchrun --nproc_per_node=4 text_to_expr_field/scripts/cache_text_e
 
 ## Training
 
-Fine-tunes Wan2.2-T2V-A14B with LoRA using flow matching loss. Both VAE latents and text embeddings are loaded from precomputed caches — neither the VAE encoder nor UMT5 text encoder is loaded during training.
-
-Each training step:
-1. Loads a cached VAE latent and randomly slices a temporal window (`target_real_frames` setting)
-2. Normalizes the latent with pretrained `latents_mean` / `latents_std`
-3. Adds noise via flow matching interpolation
-4. Runs the DiT forward pass with cached text embeddings
-5. Computes MSE velocity loss in float32
-
 ```bash
-CUDA_VISIBLE_DEVICES=0,1,2,3 PYTHONPATH=. accelerate launch \
-    --num_processes 4 --mixed_precision bf16 \
+# Cached latent training (14B, LoRA):
+PYTHONPATH=. accelerate launch --num_processes 4 --mixed_precision bf16 \
     text_to_expr_field/scripts/train.py \
     --config text_to_expr_field/configs/train_config.yaml
+
+# On-the-fly deform training (1.3B, full fine-tuning):
+PYTHONPATH=. accelerate launch --num_processes 4 --mixed_precision bf16 \
+    text_to_expr_field/scripts/train.py \
+    --config text_to_expr_field/configs/train_config_1b_deform.yaml
 ```
 
-Key parameters (`train_config.yaml`):
+Key config parameters:
 
-| Parameter | Default | Description |
-|---|---|---|
-| `model_id` | `Wan-AI/Wan2.2-T2V-A14B-Diffusers` | Base model |
-| `lora_rank` | 64 | LoRA rank |
-| `target_real_frames` | 24 | Frames per training window (random temporal slice) |
-| `gradient_checkpointing` | true | Recompute activations in backward pass |
-| `cfg_dropout` | 0.1 | Drop text conditioning 10% for CFG |
-| `cached_only` | true | Only train on clips with cached latents |
+| Parameter | Description |
+|---|---|
+| `model_id` | HuggingFace model ID (e.g. `Wan-AI/Wan2.2-T2V-A14B-Diffusers`) |
+| `use_lora` | `true` for LoRA, `false` for full fine-tuning |
+| `mode` | `expr_field` (45ch) or `deform` (3ch) |
+| `on_the_fly` | `true` to compute + VAE-encode live, `false` to load cached latents |
+| `target_latent_T` | Direct latent temporal window size (overrides the 45ch formula) |
+| `cfg_dropout` | Text conditioning dropout rate for classifier-free guidance |
 
 ## Inference
 
+Supports multi-GPU parallelism via torchrun. Each GPU processes a disjoint subset of prompts.
+
 ```bash
+# Single GPU:
 PYTHONPATH=. python text_to_expr_field/scripts/inference.py \
-    --prompt "A person says: 'Hello, welcome.' Warm tone, moderate pace." \
-    --checkpoint outputs/text_to_expr_field/run_YYYYMMDD/final \
-    --output outputs/generated_expr_field.pt
+    --prompts text_to_expr_field/configs/eval_prompts.json \
+    --checkpoint outputs/text_to_expr_field/run_YYYYMMDD/final
+
+# Multi-GPU:
+PYTHONPATH=. torchrun --nproc_per_node=4 \
+    text_to_expr_field/scripts/inference.py \
+    --prompts text_to_expr_field/configs/eval_prompts.json \
+    --checkpoint outputs/text_to_expr_field/run_YYYYMMDD/final
+
+# Deformation-only inference:
+PYTHONPATH=. python text_to_expr_field/scripts/inference.py \
+    --prompts text_to_expr_field/configs/eval_prompts.json \
+    --checkpoint outputs/text_to_deform_1b/run_YYYYMMDD/step_000250 \
+    --mode deform --target_real_frames 84 --num_frames 81
 ```
 
-Output: expression dense field tensor + deformation visualizations.
+Output per prompt: saved tensor (`.pt`), `prompt.txt`, and visualization videos (deformation map, positional encoding bands, combined grid). Results are saved alongside the checkpoint at `{checkpoint}/inference/{prompt_id}/`.
+
+### Visualize Ground Truth
+
+Compare generated outputs against real FLAME-tracked expression fields:
+
+```bash
+PYTHONPATH=. python text_to_expr_field/scripts/visualize_ground_truth.py \
+    --clip_id 39Y_gFC9SmY_NA_1123.760_1128.801 \
+    --num_frames 24 --output_dir outputs/ground_truth
+```
 
 ## Integration with the Rendering UNet
 
-The generated expression field is a drop-in replacement for FLAME tracking output. To produce the final talking-head video:
+The generated expression field is a drop-in replacement for FLAME tracking output:
 
 1. Generate expression field from text → `[T, 45, H, W]`
 2. Generate audio from text via TTS
@@ -186,20 +207,34 @@ No modifications to the rendering UNet are needed.
 ```
 text_to_expr_field/
 ├── scripts/
-│   ├── generate_captions.py          # Whisper ASR + Qwen2-Audio prosody → captions
+│   ├── generate_captions.py          # Whisper ASR + Qwen2-Audio prosody
 │   ├── build_manifest.py             # Validate data + build manifest.json
 │   ├── cache_vae_latents.py          # DDP: expression field → VAE latent → disk
 │   ├── cache_text_embeddings.py      # DDP: caption → UMT5 embedding → disk
-│   ├── train.py                      # LoRA fine-tuning (14B T2V-A14B)
-│   ├── train_ti2v.py                 # LoRA fine-tuning (TI2V variant)
-│   └── inference.py                  # Generate expression fields from text
+│   ├── train.py                      # Training loop (LoRA or full fine-tuning)
+│   ├── inference.py                  # Multi-GPU inference from text prompts
+│   └── visualize_ground_truth.py     # Visualize real FLAME expression fields
 ├── src/
-│   ├── dataset.py                    # Training dataset (cached latents + text embeddings)
-│   └── utils.py                      # Channel reshaping utilities
-├── configs/
-│   ├── train_config.yaml             # T2V-A14B training config
-│   └── train_config_ti2v.yaml        # TI2V variant config
-└── README.md
+│   ├── data/
+│   │   ├── base_dataset.py           # Base class: manifest + text embed loading
+│   │   ├── cached_dataset.py         # Loads precomputed VAE latents, temporal slicing
+│   │   ├── onthefly_dataset.py       # FLAME → rasterize → VAE encode live
+│   │   └── collate.py                # Variable-length text embedding padding
+│   ├── model/
+│   │   ├── pipeline.py               # Load pipelines for training and inference
+│   │   ├── lora.py                   # LoRA and full fine-tuning setup
+│   │   └── checkpoint.py             # Checkpoint saving
+│   ├── vis/
+│   │   ├── video.py                  # normalize_to_uint8, save_video
+│   │   └── expr_field.py             # visualize_expr_field, visualize_deform
+│   └── utils/
+│       └── reshape.py                # Pseudo-video ↔ expression field reshaping
+└── configs/
+    ├── train_config.yaml             # 14B, LoRA, cached 45ch
+    ├── train_config_deform.yaml      # 14B, LoRA, cached 3ch deform
+    ├── train_config_1b_deform.yaml   # 1.3B, full fine-tuning, on-the-fly 3ch
+    ├── eval_prompts.json             # 10 OOD evaluation prompts
+    └── eval_prompts_single.json      # Single training prompt for quick testing
 ```
 
 Derived data:
@@ -207,22 +242,25 @@ Derived data:
 ```
 data/derived/
 ├── captions/{clip_id}.json           # text captions
-├── vae_latent_cache/{clip_id}.pt     # precomputed VAE latents
+├── vae_latent_cache/{clip_id}.pt     # precomputed VAE latents (45ch)
+├── vae_latent_cache_deform/{clip_id}.pt  # precomputed VAE latents (3ch deform)
 ├── prompt_latent_cache/{clip_id}.pt  # precomputed UMT5 text embeddings
 └── manifest.json                     # training manifest
 ```
 
 ## Dependencies
 
-**`cap4d_env`** (PyTorch 2.4.1, PyTorch3D, diffusers 0.33):
-- Required for VAE latent caching (uses PyTorch3D for FLAME rasterization)
+**`cap4d_env`** (PyTorch 2.4.1, PyTorch3D, diffusers):
+- Required for FLAME rasterization (data preparation, on-the-fly training, ground truth visualization)
 - Required for text embedding caching (loads UMT5)
 
-**For training** (same env or separate):
 ```
 diffusers>=0.33.0
 peft>=0.10
 accelerate>=0.30
-bitsandbytes  (optional, for 8-bit Adam)
+safetensors
 pyyaml
+einops
+opencv-python
+pytorch3d
 ```

@@ -1,0 +1,42 @@
+[
+  {
+    "id": "whisper_secret",
+    "prompt": "A person says: 'Come closer, I have something important to tell you.' The overall delivery style is hushed and intimate. The speaker barely raises their voice above a whisper, leaning in as if sharing a secret. The pace is deliberately slow with long pauses between phrases, creating a sense of suspense. Key words like 'important' receive a slight lift in pitch but remain quiet. The temporal dynamics show a gradual build in intensity from the opening to the final word, though the volume never rises above a murmur."
+  },
+  {
+    "id": "angry_argument",
+    "prompt": "A person says: 'No, absolutely not. That is completely unacceptable and you know it.' The overall delivery style is forceful and confrontational. The speaker's tone is sharp and clipped, with visible tension in the jaw and brow. The pace starts measured but accelerates through the middle of the sentence, peaking at 'unacceptable' which is delivered with a hard stop and strong emphasis. There are brief pauses after 'No' and after 'not' that punctuate the anger. The energy remains elevated throughout with no softening toward the end."
+  },
+  {
+    "id": "joyful_surprise",
+    "prompt": "A person says: 'Oh my gosh, are you serious right now? I can't believe this is happening!' The overall delivery style is exuberant and overwhelmed with positive emotion. The speaker's voice jumps sharply in pitch at the opening exclamation and stays elevated. The pace is rapid and breathless, with words tumbling out in quick succession. 'Serious' and 'believe' carry extra emphasis through elongation rather than volume. The temporal dynamics show an initial spike of energy that sustains through the entire utterance without any dips."
+  },
+  {
+    "id": "sad_reflection",
+    "prompt": "A person says: 'I just wish things could have been different, you know?' The overall delivery style is melancholic and wistful. The speaker's tone is soft and low, with a slight tremor on certain words. The pace is noticeably slower than conversational, with drawn-out vowels on 'wish' and 'different.' There is a long, heavy pause before 'you know' which is delivered almost as an afterthought. The energy gradually diminishes across the utterance, ending at a near-whisper. The rhythm feels uneven, as if the speaker is choosing words carefully through emotion."
+  },
+  {
+    "id": "professional_presentation",
+    "prompt": "A person says: 'If we look at the quarterly results, the growth trajectory exceeds our initial projections by a significant margin.' The overall delivery style is confident and polished. The speaker maintains a steady, authoritative tone throughout with clear enunciation. The pace is moderate and measured, with deliberate pauses after 'results' and before 'by a significant margin' to let key figures land. 'Exceeds' receives a slight rise in pitch and volume for emphasis. The temporal dynamics are remarkably even, reflecting a rehearsed and controlled presentation style."
+  },
+  {
+    "id": "sarcastic_remark",
+    "prompt": "A person says: 'Oh sure, that sounds like a totally brilliant plan. What could possibly go wrong.' The overall delivery style is dry and sardonic. The speaker's tone is flat and monotone on words that would normally carry enthusiasm, creating a deliberate mismatch between content and delivery. 'Totally brilliant' is drawn out with exaggerated slowness. The final sentence is delivered as a statement rather than a question, with falling intonation where rising would be expected. There are subtle eye movements and a slight head tilt that reinforce the ironic intent."
+  },
+  {
+    "id": "excited_storytelling",
+    "prompt": "A person says: 'And then, right when we thought it was over, the whole place just erupted. People were screaming, jumping, it was incredible.' The overall delivery style is animated and immersive. The speaker builds momentum through the narrative, starting at a moderate pace that accelerates dramatically at 'erupted.' The voice rises in both pitch and volume through the climax. 'Screaming' and 'jumping' are delivered in staccato bursts that mimic the chaos being described. There is a brief pause and a shift to a warmer, more reflective tone on 'it was incredible,' as the speaker savors the memory."
+  },
+  {
+    "id": "nervous_apology",
+    "prompt": "A person says: 'I'm really sorry, I didn't mean for any of this to happen. I should have said something sooner.' The overall delivery style is anxious and halting. The speaker's voice wavers with uncertainty, and the pace is uneven with false starts and self-corrections. 'Really sorry' is spoken quickly as if trying to get the hardest part out first. There are audible swallows and brief pauses mid-sentence that suggest emotional difficulty. The energy dips at 'should have said something sooner,' trailing off with a sense of regret and self-blame."
+  },
+  {
+    "id": "calm_meditation",
+    "prompt": "A person says: 'Breathe in slowly. Hold it. And now, gently release.' The overall delivery style is serene and measured. The speaker's voice is low, smooth, and resonant with minimal variation in pitch. Each instruction is separated by a deliberate three-second pause. The pace is extremely slow, roughly half of normal conversational speed. 'Gently' is elongated and softened, almost dissolving into the following word. The temporal dynamics are intentionally flat and calming, with energy held at a consistent low level throughout."
+  },
+  {
+    "id": "rapid_sports_commentary",
+    "prompt": "A person says: 'He cuts left, dodges the defender, fires from the three-point line and it's good! What a shot!' The overall delivery style is urgent and electrifying. The speaker's pace is extremely fast, with words compressed together to match the real-time action. The pitch climbs steadily through the sequence of events, reaching a peak at 'it's good' where the voice cracks slightly from excitement. 'What a shot' is delivered at a lower pitch but with sustained volume, allowing the moment to resonate. Brief gasps between phrases convey breathlessness."
+  }
+]

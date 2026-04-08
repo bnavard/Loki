@@ -1,137 +1,160 @@
 """
-Step 3.1: Inference — generate expression dense fields from text.
+Inference — generate expression dense fields or deformation maps from text.
 
-Loads the LoRA-fine-tuned Wan2.2 model, generates a latent from a text
-prompt, decodes through the VAE, and reassembles into a 45-channel
-expression dense field that can be fed to the rendering UNet.
+Supports multi-GPU parallelism via torchrun: each GPU processes a disjoint
+subset of prompts. No gradient sync or communication needed.
 
 Usage:
     cd /data/pouyan/baseline/repository/cap4d
+
+    # Single GPU:
     PYTHONPATH=. python text_to_expr_field/scripts/inference.py \
-        --prompt "A person says: 'Hello, welcome.' Warm tone, moderate pace." \
-        --checkpoint outputs/text_to_expr_field/run_YYYYMMDD/final \
-        --output outputs/generated_expr_field.pt
+        --prompts text_to_expr_field/configs/eval_prompts.json \
+        --checkpoint outputs/text_to_expr_field/run_YYYYMMDD/final
+
+    # Multi-GPU:
+    PYTHONPATH=. torchrun --nproc_per_node=4 \
+        text_to_expr_field/scripts/inference.py \
+        --prompts text_to_expr_field/configs/eval_prompts.json \
+        --checkpoint outputs/text_to_expr_field/run_YYYYMMDD/final
 """
 
 import argparse
+import json
+import os
 from pathlib import Path
 
 import torch
 torch.backends.cudnn.enabled = False
 
+from text_to_expr_field.src.model import load_inference_pipeline
 from text_to_expr_field.src.utils import pseudo_video_to_expr_field
+from text_to_expr_field.src.vis import visualize_expr_field, visualize_deform
 
 
 def parse_args():
     p = argparse.ArgumentParser()
-    p.add_argument("--prompt", required=True, help="Text caption describing the speech")
-    p.add_argument("--checkpoint", required=True, help="Path to LoRA checkpoint directory")
+    p.add_argument("--prompts", required=True,
+                   help="Path to JSON file with list of {id, prompt} entries")
+    p.add_argument("--checkpoint", required=True,
+                   help="Path to checkpoint directory")
     p.add_argument("--model_id", default="Wan-AI/Wan2.2-T2V-A14B-Diffusers")
-    p.add_argument("--output", default="outputs/generated_expr_field.pt")
-    p.add_argument("--num_frames", type=int, default=241,
-                   help="Total pseudo-video frames (must satisfy 4k+1; 241 for 16 expr frames)")
+    p.add_argument("--mode", choices=["expr_field", "deform"], default="expr_field",
+                   help="expr_field: full 45ch, deform: 3ch deformation map")
+    p.add_argument("--target_real_frames", type=int, default=24,
+                   help="Expression frames to generate (must be divisible by 4)")
+    p.add_argument("--num_frames", type=int, default=None,
+                   help="Override VAE-level frame count (for deform mode)")
     p.add_argument("--height", type=int, default=512)
     p.add_argument("--width", type=int, default=512)
     p.add_argument("--guidance_scale", type=float, default=7.5)
     p.add_argument("--num_inference_steps", type=int, default=50)
     p.add_argument("--seed", type=int, default=42)
-    p.add_argument("--device", default="cuda")
+    p.add_argument("--fps", type=int, default=25)
     return p.parse_args()
+
+
+def compute_num_frames(args):
+    """Derive the pseudo-video frame count from args."""
+    assert args.target_real_frames % 4 == 0
+
+    if args.mode == "deform":
+        if args.num_frames is not None:
+            return args.num_frames
+        n = args.target_real_frames
+        if (n - 1) % 4 != 0:
+            n = 4 * (n // 4) + 1
+        return n
+    else:
+        return 15 * args.target_real_frames + 1
+
+
+def decode_latents(pipe, latents):
+    """Denormalize latents and VAE decode without clamping."""
+    latents_mean = (
+        torch.tensor(pipe.vae.config.latents_mean)
+        .view(1, pipe.vae.config.z_dim, 1, 1, 1)
+        .to(latents.device, latents.dtype)
+    )
+    latents_std_inv = (
+        1.0 / torch.tensor(pipe.vae.config.latents_std)
+        .view(1, pipe.vae.config.z_dim, 1, 1, 1)
+        .to(latents.device, latents.dtype)
+    )
+    latents = latents / latents_std_inv + latents_mean
+
+    with torch.no_grad():
+        decoded = pipe.vae.decode(latents.to(pipe.vae.dtype), return_dict=False)[0]
+
+    # [1, C, T, H, W] -> [T, C, H, W]
+    return decoded.squeeze(0).permute(1, 0, 2, 3).float().cpu()
 
 
 def main():
     args = parse_args()
-    device = torch.device(args.device)
     checkpoint_dir = Path(args.checkpoint)
 
-    torch.manual_seed(args.seed)
-    torch.cuda.manual_seed_all(args.seed)
+    rank = int(os.environ.get("LOCAL_RANK", 0))
+    world_size = int(os.environ.get("WORLD_SIZE", 1))
+    device = torch.device(f"cuda:{rank}")
+    num_pseudo_frames = compute_num_frames(args)
 
-    # Load base pipeline
-    from diffusers import WanPipeline
-    print(f"Loading {args.model_id}...")
-    pipe = WanPipeline.from_pretrained(
-        args.model_id, torch_dtype=torch.bfloat16,
-    )
+    # Load prompts, shard by rank
+    with open(args.prompts) as f:
+        all_prompts = json.load(f)
+    prompts = [p for i, p in enumerate(all_prompts) if i % world_size == rank]
+    prompt_indices = [i for i in range(len(all_prompts)) if i % world_size == rank]
 
-    # Extract latent normalization stats for manual denormalization if needed.
-    # The pipeline's __call__ handles this internally, but we store them for
-    # any manual latent → VAE decode path.
-    latents_mean = torch.tensor(pipe.vae.config.latents_mean).view(1, -1, 1, 1).to(device)
-    latents_std = torch.tensor(pipe.vae.config.latents_std).view(1, -1, 1, 1).to(device)
+    if rank == 0:
+        print(f"Distributed: {world_size} GPU(s), {len(all_prompts)} prompts")
 
-    # Load LoRA weights
-    from peft import PeftModel
+    # Load pipeline + checkpoint
+    if rank == 0:
+        print(f"Loading {args.model_id} + checkpoint {checkpoint_dir}...")
+    pipe = load_inference_pipeline(args.model_id, checkpoint_dir, device)
 
-    lora_path = checkpoint_dir / "lora_transformer"
-    if lora_path.exists():
-        print(f"Loading LoRA: {lora_path}")
-        pipe.transformer = PeftModel.from_pretrained(pipe.transformer, str(lora_path))
-    else:
-        print(f"WARNING: No LoRA found at {lora_path}")
+    # Output alongside checkpoint
+    run_output_dir = checkpoint_dir / "inference"
+    run_output_dir.mkdir(parents=True, exist_ok=True)
 
-    pipe = pipe.to(device)
+    for local_i, (global_i, entry) in enumerate(zip(prompt_indices, prompts)):
+        prompt_id = entry["id"]
+        prompt_text = entry["prompt"]
+        print(f"[GPU {rank}] [{local_i+1}/{len(prompts)}] Generating: {prompt_id}")
 
-    # Generate
-    print(f"Generating with prompt: '{args.prompt}'")
-    output = pipe(
-        prompt=args.prompt,
-        num_frames=args.num_frames,
-        height=args.height,
-        width=args.width,
-        guidance_scale=args.guidance_scale,
-        num_inference_steps=args.num_inference_steps,
-    )
+        torch.manual_seed(args.seed + global_i)
+        torch.cuda.manual_seed_all(args.seed + global_i)
 
-    # The pipeline output format depends on the diffusers version.
-    # Extract the generated video tensor.
-    if hasattr(output, "frames"):
-        generated = output.frames
-        if isinstance(generated, list):
-            generated = torch.stack([torch.tensor(f) for f in generated])
-    else:
-        generated = output[0]
+        output = pipe(
+            prompt=prompt_text,
+            num_frames=num_pseudo_frames,
+            height=args.height,
+            width=args.width,
+            guidance_scale=args.guidance_scale,
+            num_inference_steps=args.num_inference_steps,
+            output_type="latent",
+        )
 
-    # Ensure shape is [T, 3, H, W]
-    if generated.ndim == 5:
-        generated = generated.squeeze(0)
-    if generated.shape[1] != 3 and generated.shape[-1] == 3:
-        generated = generated.permute(0, 3, 1, 2)
+        generated = decode_latents(pipe, output.frames)
+        print(f"[GPU {rank}]   Decoded video: {generated.shape}")
 
-    print(f"Generated pseudo-video: {generated.shape}")
+        sample_dir = run_output_dir / prompt_id
+        sample_dir.mkdir(parents=True, exist_ok=True)
 
-    # Reassemble to 45-channel expression field
-    expr_field = pseudo_video_to_expr_field(generated, num_frames=16)
-    print(f"Expression field: {expr_field.shape}")
-    print(f"Value range: [{expr_field.min():.4f}, {expr_field.max():.4f}]")
+        if args.mode == "deform":
+            print(f"[GPU {rank}]   Deformation: range [{generated.min():.4f}, {generated.max():.4f}]")
+            torch.save(generated, str(sample_dir / "deform_field.pt"))
+            visualize_deform(generated, sample_dir, args.fps, verbose=(rank == 0))
+        else:
+            expr_field = pseudo_video_to_expr_field(generated, num_frames=args.target_real_frames)
+            print(f"[GPU {rank}]   Expression field: {expr_field.shape}, range [{expr_field.min():.4f}, {expr_field.max():.4f}]")
+            torch.save(expr_field, str(sample_dir / "expr_field.pt"))
+            visualize_expr_field(expr_field, sample_dir, args.fps, verbose=(rank == 0))
 
-    # Save
-    output_path = Path(args.output)
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    torch.save(expr_field, str(output_path))
-    print(f"Saved: {output_path}")
+        with open(sample_dir / "prompt.txt", "w") as f:
+            f.write(prompt_text)
 
-    # Also save a visualization
-    _visualize(expr_field, output_path.with_suffix(""))
-
-
-def _visualize(expr_field, output_dir):
-    """Save deformation heatmap frames for visual inspection."""
-    import cv2
-    import numpy as np
-
-    output_dir = Path(output_dir)
-    vis_dir = output_dir / "vis"
-    vis_dir.mkdir(parents=True, exist_ok=True)
-
-    T = expr_field.shape[0]
-    for t in range(T):
-        deform = expr_field[t, 42:45].numpy().transpose(1, 2, 0)
-        abs_max = np.abs(deform).max() + 1e-8
-        vis = ((deform / abs_max + 1) / 2 * 255).clip(0, 255).astype(np.uint8)
-        cv2.imwrite(str(vis_dir / f"deform_{t:04d}.png"), vis[..., ::-1])
-
-    print(f"Visualizations: {vis_dir}/")
+    print(f"[GPU {rank}] Done. Results saved to {run_output_dir}/")
 
 
 if __name__ == "__main__":
