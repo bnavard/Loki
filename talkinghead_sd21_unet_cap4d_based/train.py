@@ -29,15 +29,11 @@ from controlnet.ldm.util import instantiate_from_config
 from talkinghead_sd21_unet_cap4d_based.data.video_dataset import TalkingHeadDataset
 
 
-SEED = 42
-
-
 def parse_args():
     p = argparse.ArgumentParser()
     p.add_argument("--config",    required=True, help="Path to talking_head.yaml")
     p.add_argument("--resume",    default=None,  help="Checkpoint to resume from")
     p.add_argument("--gpus",      nargs="+", type=int, default=[0])
-    p.add_argument("--seed",      type=int, default=SEED, help="Random seed for reproducibility")
     return p.parse_args()
 
 
@@ -463,7 +459,7 @@ def main():
     cfg  = OmegaConf.load(args.config)
 
     # Set seeds for reproducibility
-    pl.seed_everything(args.seed, workers=True)
+    pl.seed_everything(cfg.seed, workers=True)
 
     # Create a timestamped run directory (rank 0 only to avoid duplicates in DDP)
     output_dir = cfg.output_dir

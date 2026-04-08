@@ -81,7 +81,6 @@ def parse_args():
     p.add_argument("--fps",          type=float, default=25.0)
     p.add_argument("--cfg_scale",    type=float, default=2.0)
     p.add_argument("--n_ddim_steps", type=int, default=50)
-    p.add_argument("--seed",         type=int, default=42)
     p.add_argument("--device",       default="cuda")
     # Background stabilization
     p.add_argument("--bg_mask_dir",  default=None,
@@ -99,9 +98,10 @@ def main():
     cfg    = OmegaConf.load(args.config)
 
     # Set all seeds for reproducibility
-    torch.manual_seed(args.seed)
-    torch.cuda.manual_seed_all(args.seed)
-    np.random.seed(args.seed)
+    seed = cfg.seed
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
+    np.random.seed(seed)
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
     os.makedirs(args.output_dir, exist_ok=True)
