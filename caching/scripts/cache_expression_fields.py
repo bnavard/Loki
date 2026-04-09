@@ -3,9 +3,9 @@ Precompute and cache 45-channel expression fields for all clips.
 
 For each clip with a fit.npz, computes the full expression field via
 FLAME + PyTorch3D rasterization and saves:
-  - data/derived/expression_field/{clip_id}/expr_field.pt   (45ch tensor)
   - data/derived/expression_field/{clip_id}/deformation.mp4 (channels 42:45 as video)
   - data/derived/expression_field/{clip_id}/deform_rgb/     (per-frame deformation PNGs)
+  - data/derived/expression_field/{clip_id}/expr_field.pt   (45ch tensor, optional with --save_tensor)
 
 Supports multi-GPU via manual sharding (--gpu / --num_gpus).
 
@@ -14,6 +14,9 @@ Usage:
 
     # Single GPU:
     PYTHONPATH=. python caching/scripts/cache_expression_fields.py
+
+    # Also save the full 45ch tensor (~5GB each):
+    PYTHONPATH=. python caching/scripts/cache_expression_fields.py --save_tensor
 
     # Parallel across 4 GPUs:
     PYTHONPATH=. python caching/scripts/cache_expression_fields.py --gpu 0 --num_gpus 4
@@ -49,6 +52,8 @@ def parse_args():
     p.add_argument("--num_gpus", type=int, default=1)
     p.add_argument("--test", action="store_true")
     p.add_argument("--clip", type=str, default=None, help="Process a specific clip")
+    p.add_argument("--save_tensor", action="store_true",
+                   help="Save full 45ch expr_field.pt (~5GB each). Default: only save deformation video + PNGs.")
     return p.parse_args()
 
 
@@ -181,9 +186,10 @@ def main():
         print(f"Test mode: processing {my_clips[0]}")
 
     # Skip already processed
+    done_marker = "expr_field.pt" if args.save_tensor else "deformation.mp4"
     to_process = [
         c for c in my_clips
-        if not (output_dir / c / "expr_field.pt").exists()
+        if not (output_dir / c / done_marker).exists()
     ]
     print(f"To process: {len(to_process)} | Already done: {len(my_clips) - len(to_process)}")
 
@@ -201,8 +207,9 @@ def main():
             clip_dir = output_dir / clip_id
             clip_dir.mkdir(parents=True, exist_ok=True)
 
-            # Save full 45ch tensor
-            torch.save(expr_field, str(clip_dir / "expr_field.pt"))
+            # Save full 45ch tensor (optional — ~5GB each)
+            if args.save_tensor:
+                torch.save(expr_field, str(clip_dir / "expr_field.pt"))
 
             # Save deformation video + per-frame images
             save_deform_outputs(expr_field, clip_dir, args.fps)
