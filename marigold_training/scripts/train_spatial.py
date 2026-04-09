@@ -9,7 +9,7 @@ This is the "deflation" stage — ~900k image pairs from ~7150 clips.
 The trained spatial weights transfer to Stage 2 (video) directly.
 
 Usage:
-    cd /data/pouyan/baseline/repository/cap4d
+    cd <repo_root>
 
     PYTHONPATH=. accelerate launch --num_processes 4 --mixed_precision bf16 \
         marigold_training/scripts/train_spatial.py \

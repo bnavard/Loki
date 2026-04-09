@@ -4,7 +4,7 @@ Loads samples with and without background stabilization,
 saves side-by-side comparisons.
 
 Run:
-    cd /data/pouyan/baseline/repository/cap4d
+    cd <repo_root>
     python talkinghead/tests/test_dataset.py
 
 Outputs saved to: outputs/dataset_vis/

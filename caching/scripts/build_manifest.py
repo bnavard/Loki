@@ -8,7 +8,7 @@ during training, so only captions need to be precomputed.
 Output: data/derived/manifest.json
 
 Usage:
-    cd /data/pouyan/baseline/repository/cap4d
+    cd <repo_root>
     python caching/scripts/build_manifest.py
 """
 

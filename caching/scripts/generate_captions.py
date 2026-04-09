@@ -9,7 +9,7 @@ Input:  data/talkvid/audio/{clip_id}.wav
 Output: data/derived/captions/{clip_id}.json
 
 Usage:
-    cd /data/pouyan/baseline/repository/cap4d
+    cd <repo_root>
     
 
     # ASR only (faster, no Qwen2-Audio):

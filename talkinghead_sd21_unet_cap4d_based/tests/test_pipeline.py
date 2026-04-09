@@ -6,7 +6,7 @@ are required. The tests verify that tensor shapes flow correctly through each
 module and that no assertion / shape error fires.
 
 Run:
-    cd /data/pouyan/baseline/repository/cap4d
+    cd <repo_root>
     python talkinghead/tests/test_pipeline.py
   or:
     python -m pytest talkinghead/tests/test_pipeline.py -v   (if pytest installed)

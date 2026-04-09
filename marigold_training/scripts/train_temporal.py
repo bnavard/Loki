@@ -8,7 +8,7 @@ spatial mapping from Stage 1 — Stage 2 teaches temporal coherence.
 Uses a lower learning rate than Stage 1 to preserve the spatial prior.
 
 Usage:
-    cd /data/pouyan/baseline/repository/cap4d
+    cd <repo_root>
 
     PYTHONPATH=. accelerate launch --num_processes 4 --mixed_precision bf16 \
         marigold_training/scripts/train_temporal.py \

@@ -11,7 +11,7 @@ freeing significant GPU memory and speeding up the training loop.
 Output: data/derived/prompt_latent_cache/{clip_id}.pt
 
 Usage:
-    cd /data/pouyan/baseline/repository/cap4d
+    cd <repo_root>
 
     # Single GPU:
     PYTHONPATH=. python caching/scripts/cache_text_embeddings.py

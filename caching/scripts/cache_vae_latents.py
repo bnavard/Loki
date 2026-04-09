@@ -12,7 +12,7 @@ current batch, keeping the GPU utilized.
 Output: data/derived/vae_latent_cache/{clip_id}.pt
 
 Usage:
-    cd /data/pouyan/baseline/repository/cap4d
+    cd <repo_root>
 
     # Single GPU:
     PYTHONPATH=. python caching/scripts/cache_vae_latents.py

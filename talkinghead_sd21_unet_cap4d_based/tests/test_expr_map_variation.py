@@ -4,7 +4,7 @@ Loads one real clip, computes THConditioning output, and reports per-channel
 statistics across the T=16 frames.
 
 Run:
-    cd /data/pouyan/baseline/repository/cap4d
+    cd <repo_root>
     PYTHONPATH=. python talkinghead/tests/test_expr_map_variation.py
 """
 

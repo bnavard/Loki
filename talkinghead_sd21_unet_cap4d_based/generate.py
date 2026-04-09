@@ -11,9 +11,9 @@ Two FLAME sources (matching CAP4D's ReferenceDataset / GenerationDataset split):
                  else is inherited from the reference subject.
 
 Usage:
-    python talkinghead/generate.py \
+    python talkinghead_sd21_unet_cap4d_based/generate.py \
         --checkpoint  outputs/talkinghead/th-100000.ckpt \
-        --config      talkinghead/configs/talking_head.yaml \
+        --config      talkinghead_sd21_unet_cap4d_based/configs/talking_head.yaml \
         --ref_data    /path/to/subject_dir/ \
         --ref_frame   0 \
         --driving_fit /path/to/driving/fit.npz \

@@ -10,7 +10,7 @@ FLAME + PyTorch3D rasterization and saves:
 Supports multi-GPU via manual sharding (--gpu / --num_gpus).
 
 Usage:
-    cd /data/pouyan/baseline/repository/cap4d
+    cd <repo_root>
 
     # Single GPU:
     PYTHONPATH=. python caching/scripts/cache_expression_fields.py

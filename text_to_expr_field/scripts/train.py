@@ -6,7 +6,7 @@ Supports two data modes:
   - On-the-fly: computes deform/expr fields from fit.npz + VAE-encodes live
 
 Usage:
-    cd /data/pouyan/baseline/repository/cap4d
+    cd <repo_root>
 
     # Single GPU:
     PYTHONPATH=. python text_to_expr_field/scripts/train.py \

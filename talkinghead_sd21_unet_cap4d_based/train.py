@@ -2,12 +2,13 @@
 Training script for the Talking-Head Diffusion Model.
 
 Usage:
-    python talkinghead/train.py --config talkinghead/configs/talking_head.yaml \
-                                 [--resume /path/to/checkpoint.ckpt] \
-                                 [--gpus 0 1]
+    python talkinghead_sd21_unet_cap4d_based/train.py \
+        --config talkinghead_sd21_unet_cap4d_based/configs/talking_head.yaml \
+        [--resume /path/to/checkpoint.ckpt] \
+        [--gpus 0 1]
 
 Data paths (video_root, audio_root, flame_root, id_list_path) are read from the
-YAML config.  The script uses PyTorch Lightning for training loop, checkpointing,
+YAML config. The script uses PyTorch Lightning for training loop, checkpointing,
 and logging.
 """
 

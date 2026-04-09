@@ -5,7 +5,7 @@ Supports multi-GPU parallelism via torchrun: each GPU processes a disjoint
 subset of prompts. No gradient sync or communication needed.
 
 Usage:
-    cd /data/pouyan/baseline/repository/cap4d
+    cd <repo_root>
 
     # Single GPU:
     PYTHONPATH=. python text_to_expr_field/scripts/inference.py \

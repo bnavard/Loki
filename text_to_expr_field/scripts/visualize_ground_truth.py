@@ -5,7 +5,7 @@ Computes the 45-channel expression field via THConditioning + PyTorch3D
 rasterization, then saves visualization videos.
 
 Usage:
-    cd /data/pouyan/baseline/repository/cap4d
+    cd <repo_root>
     PYTHONPATH=. python text_to_expr_field/scripts/visualize_ground_truth.py \
         --clip_id 39Y_gFC9SmY_NA_1123.760_1128.801 \
         --num_frames 24 \

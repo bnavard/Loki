@@ -3,7 +3,7 @@ Audio encoder: raw 16kHz waveform → per-frame cross-attention tokens.
 
 A frozen wav2vec2-base-960h backbone encodes audio windows into token sequences.
 A learned linear projection maps from backbone dim (768) to the UNet's
-context_dim (1024, matching SD 2.1's pretrained cross-attention weights).
+context_dim (768 by default, configurable to match the target cross-attention dim).
 
 Each video frame gets audio from ±context_frames neighbors (~200ms window).
 The backbone is frozen during training to preserve pretrained speech features;

@@ -10,7 +10,7 @@ At each step, concatenates [current_noisy_deform | clean_natural_video]
 along channel dim and passes to the modified DiT (32ch input).
 
 Usage:
-    cd /data/pouyan/baseline/repository/cap4d
+    cd <repo_root>
 
     PYTHONPATH=. python marigold_training/scripts/inference.py \
         --clip_id CLIP_ID \

@@ -6,7 +6,7 @@ the full pipeline works end-to-end: dataset loading, VAE encoding, conditioning,
 UNet forward, loss computation, backward pass.
 
 Usage:
-    cd /data/pouyan/baseline/repository/cap4d
+    cd <repo_root>
     PYTHONPATH=. python talkinghead/tests/test_training_integration.py
 """
 
