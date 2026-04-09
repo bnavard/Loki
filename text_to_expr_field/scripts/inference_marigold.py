@@ -15,7 +15,6 @@ Usage:
     cd /data/pouyan/baseline/repository/cap4d
 
     PYTHONPATH=. python text_to_expr_field/scripts/inference_marigold.py \
-        --video_dir data/flowface/CLIP_ID/images/cam0 \
         --clip_id CLIP_ID \
         --checkpoint outputs/marigold_deform/run_YYYYMMDD/step_NNNNNN \
         --prompt "A person says: '...' The delivery is calm and measured."
@@ -83,20 +82,17 @@ def encode_video(vae, video_tensor, latents_mean, latents_std):
     return latent
 
 
-def load_natural_video_and_deform(clip_id, flame_root, target_frames, resolution):
+def compute_deformation_gt(clip_id, flame_root, target_frames, resolution):
     """
-    Compute deformation map + load natural video with matching crops.
+    Compute ground-truth deformation maps from FLAME fits.
 
     Returns:
-        natural_video: [3, T_padded, H, W] float32 in [-1, 1]
-        deform_gt:     [T, 3, H, W] float32 (for reference/comparison)
+        deform_gt:  [T, 3, H, W] float32
+        crop_boxes: list of per-frame crop boxes (for use by load_natural_video)
     """
-    from text_to_expr_field.src.utils.reshape import to_pseudo_video
     from talkinghead_sd21_unet_cap4d_based.conditioning.th_conditioning import THConditioning
     from talkinghead_sd21_unet_cap4d_based.flame.flame import CAP4DFlameSkinner, compute_flame
-    from talkinghead_sd21_unet_cap4d_based.data.utils import (
-        get_bbox_from_verts, verts_to_pytorch3d, crop_image, rescale_image,
-    )
+    from talkinghead_sd21_unet_cap4d_based.data.utils import get_bbox_from_verts, verts_to_pytorch3d
 
     flame_root = Path(flame_root)
     H = resolution
@@ -112,10 +108,9 @@ def load_natural_video_and_deform(clip_id, flame_root, target_frames, resolution
     )
     head_vertex_ids = np.genfromtxt("data/assets/flame/head_vertices.txt").astype(int)
     fit = dict(np.load(str(flame_root / clip_id / "fit.npz")))
-    frames_dir = flame_root / clip_id / "images" / "cam0"
 
-    natural_frames = []
     deform_frames = []
+    crop_boxes = []
 
     for t in range(target_frames):
         flame_item = {
@@ -133,8 +128,8 @@ def load_natural_video_and_deform(clip_id, flame_root, target_frames, resolution
         verts_2d = flame_out["verts_2d"][0, 0]
         offsets_3d = flame_out["offsets_3d"][0]
         crop_box = get_bbox_from_verts(verts_2d.copy(), head_vertex_ids)
+        crop_boxes.append(crop_box)
 
-        # Deform
         verts_2d_p3d = verts_to_pytorch3d(verts_2d.copy(), np.array(crop_box))
         dummy_ref = torch.zeros(1, 1, 1, H, H, device="cuda")
         batch = {
@@ -146,29 +141,46 @@ def load_natural_video_and_deform(clip_id, flame_root, target_frames, resolution
             out = conditioning(batch, unconditional=False)
         deform_frames.append(out["pos_enc"][0, 0, :, :, 42:45].permute(2, 0, 1).cpu())
 
-        # Natural video (same crop)
+    deform_gt = torch.stack(deform_frames, dim=0)  # [T, 3, H, W]
+    return deform_gt, crop_boxes
+
+
+def load_natural_video(clip_id, flame_root, crop_boxes, target_frames, resolution):
+    """
+    Load and crop natural video frames using precomputed crop boxes.
+
+    Returns:
+        natural_video: [3, T_padded, H, W] float32 in [-1, 1]
+    """
+    from text_to_expr_field.src.utils.reshape import to_pseudo_video
+    from talkinghead_sd21_unet_cap4d_based.data.utils import crop_image, rescale_image
+
+    frames_dir = Path(flame_root) / clip_id / "images" / "cam0"
+    H = resolution
+
+    natural_frames = []
+    for t in range(target_frames):
         img_path = frames_dir / f"{t:05d}.jpg"
         img = cv2.imread(str(img_path))
         if img is not None:
             img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-            img = crop_image(img, crop_box, bg_value=0)
+            img = crop_image(img, crop_boxes[t], bg_value=0)
             img = rescale_image(img, H)
             img = img.astype(np.float32) / 127.5 - 1.0
         else:
             img = np.zeros((H, H, 3), dtype=np.float32)
         natural_frames.append(torch.from_numpy(img).permute(2, 0, 1))
 
-    deform_gt = torch.stack(deform_frames, dim=0)  # [T, 3, H, W]
-
-    # Pad natural video to 4k+1
     natural_video = torch.stack(natural_frames, dim=1)  # [3, T, H, W]
-    T_padded = to_pseudo_video(deform_gt).shape[0]
+
+    # Pad to 4k+1 for VAE
+    T_padded = to_pseudo_video(torch.zeros(target_frames, 3, H, H)).shape[0]
     T_nat = natural_video.shape[1]
     if T_nat < T_padded:
         pad = natural_video[:, -1:].repeat(1, T_padded - T_nat, 1, 1)
         natural_video = torch.cat([natural_video, pad], dim=1)
 
-    return natural_video, deform_gt
+    return natural_video
 
 
 def main():
@@ -197,6 +209,34 @@ def main():
     vae.requires_grad_(False)
     transformer = pipe.transformer
 
+    # ---- Encode all prompts with the text encoder before freeing it ----
+    tokenizer = pipe.tokenizer
+    text_encoder = pipe.text_encoder.to(device).eval()
+
+    prompt_embeddings = {}
+    for entry in prompts:
+        pid = entry["id"]
+        text_cache = Path("data/derived/prompt_latent_cache") / f"{args.clip_id}.pt"
+        if text_cache.exists():
+            text_data = torch.load(str(text_cache), map_location="cpu", weights_only=True)
+            prompt_embeddings[pid] = text_data["text_embed"].unsqueeze(0).to(device, dtype=torch.bfloat16)
+            print(f"  [{pid}] Loaded cached text embedding")
+        else:
+            text_inputs = tokenizer(
+                [entry["prompt"]],
+                padding=True,
+                truncation=True,
+                max_length=512,
+                return_tensors="pt",
+            ).to(device)
+            with torch.no_grad():
+                text_embeds = text_encoder(**text_inputs)[0]  # (1, seq_len, dim)
+            prompt_embeddings[pid] = text_embeds.to(dtype=torch.bfloat16)
+            print(f"  [{pid}] Encoded text with text encoder (shape {text_embeds.shape})")
+
+    del text_encoder, tokenizer
+    torch.cuda.empty_cache()
+
     # Double input layer (same modification as training)
     transformer = double_patch_embedding(transformer)
 
@@ -221,10 +261,14 @@ def main():
     del pipe
     torch.cuda.empty_cache()
 
-    # ---- Prepare natural video ----
-    print(f"Computing natural video + deformation for clip {args.clip_id}...")
-    natural_video, deform_gt = load_natural_video_and_deform(
+    # ---- Prepare natural video + ground-truth deformation ----
+    print(f"Computing deformation for clip {args.clip_id}...")
+    deform_gt, crop_boxes = compute_deformation_gt(
         args.clip_id, args.flame_root, args.target_frames, args.resolution,
+    )
+    print(f"Loading natural video for clip {args.clip_id}...")
+    natural_video = load_natural_video(
+        args.clip_id, args.flame_root, crop_boxes, args.target_frames, args.resolution,
     )
     # natural_video: [3, T_padded, H, W]
 
@@ -247,15 +291,7 @@ def main():
         torch.manual_seed(args.seed + i)
         torch.cuda.manual_seed_all(args.seed + i)
 
-        # Encode text using cached embeddings if available
-        text_cache = Path("data/derived/prompt_latent_cache") / f"{args.clip_id}.pt"
-        if text_cache.exists():
-            text_data = torch.load(str(text_cache), map_location="cpu", weights_only=True)
-            text_embeds = text_data["text_embed"].unsqueeze(0).to(device, dtype=torch.bfloat16)
-        else:
-            # Fallback: null text (like original Marigold)
-            print("  No cached text embedding, using null text")
-            text_embeds = torch.zeros(1, 1, 4096, device=device, dtype=torch.bfloat16)
+        text_embeds = prompt_embeddings[prompt_id]
 
         # Start from pure noise for the target deformation latent
         x = torch.randn_like(natural_latent)  # [1, 16, T_lat, h, w]

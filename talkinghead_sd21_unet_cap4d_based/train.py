@@ -105,9 +105,9 @@ class VisualizationCallback(Callback):
         self._vis_call_count = 0  # used to rotate through val samples
 
     def on_train_batch_end(self, trainer, pl_module, outputs, batch, batch_idx):
-        if (trainer.global_step + 1) % self.vis_every_n_steps != 0:
-            return
         if trainer.global_step == 0:
+            return
+        if trainer.global_step % self.vis_every_n_steps != 0:
             return
         # Only rank 0 generates visualizations in DDP
         if trainer.global_rank != 0:
