@@ -45,16 +45,31 @@ PYTHONPATH=. torchrun --nproc_per_node=4 caching/scripts/cache_text_embeddings.p
 # Output: data/derived/prompt_latent_cache/{clip_id}.pt
 ```
 
+### 5. Cache Expression Fields
+
+Computes the full 45-channel expression field from fit.npz for every clip. Saves the tensor, a deformation map video, and per-frame deformation images.
+
+```bash
+# Parallel across 4 GPUs:
+PYTHONPATH=. python caching/scripts/cache_expression_fields.py --gpu 0 --num_gpus 4
+
+# Output per clip:
+#   data/derived/expression_field/{clip_id}/expr_field.pt    (45ch tensor)
+#   data/derived/expression_field/{clip_id}/deformation.mp4  (channels 42:45 video)
+#   data/derived/expression_field/{clip_id}/deform_rgb/      (per-frame PNGs)
+```
+
 ## Structure
 
 ```
 caching/
 ├── scripts/
-│   ├── generate_captions.py       # Whisper ASR + Qwen2-Audio prosody
-│   ├── build_manifest.py          # Validate data + build manifest.json
-│   ├── cache_vae_latents.py       # DDP: expression field → VAE latent → disk
-│   ├── cache_text_embeddings.py   # DDP: caption → UMT5 embedding → disk
-│   └── _expr_field_dataset.py     # Minimal dataset for VAE caching
+│   ├── generate_captions.py          # Whisper ASR + Qwen2-Audio prosody
+│   ├── build_manifest.py             # Validate data + build manifest.json
+│   ├── cache_vae_latents.py          # DDP: expression field → VAE latent → disk
+│   ├── cache_text_embeddings.py      # DDP: caption → UMT5 embedding → disk
+│   ├── cache_expression_fields.py    # Expression field + deformation visualization
+│   └── _expr_field_dataset.py        # Minimal dataset for VAE caching
 └── README.md
 ```
 
@@ -62,9 +77,12 @@ caching/
 
 ```
 data/derived/
-├── captions/{clip_id}.json           # text captions
-├── vae_latent_cache/{clip_id}.pt     # precomputed VAE latents (45ch)
-├── vae_latent_cache_deform/{clip_id}.pt  # precomputed VAE latents (3ch deform)
-├── prompt_latent_cache/{clip_id}.pt  # precomputed UMT5 text embeddings
-└── manifest.json                     # training manifest
+├── captions/{clip_id}.json                        # text captions
+├── vae_latent_cache/{clip_id}.pt                  # precomputed VAE latents (45ch)
+├── vae_latent_cache_deform/{clip_id}.pt           # precomputed VAE latents (3ch deform)
+├── prompt_latent_cache/{clip_id}.pt               # precomputed UMT5 text embeddings
+├── expression_field/{clip_id}/expr_field.pt       # full 45ch expression field
+├── expression_field/{clip_id}/deformation.mp4     # deformation map video
+├── expression_field/{clip_id}/deform_rgb/*.png    # per-frame deformation images
+└── manifest.json                                  # training manifest
 ```
