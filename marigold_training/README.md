@@ -1,109 +1,105 @@
 # Marigold-Style Deformation Map Generation
 
-Generate FLAME deformation map videos from natural talking-head videos, adapting the Marigold depth estimation approach (Ke et al., CVPR 2024) to video-to-video generation.
+Generate FLAME deformation map videos from natural talking-head videos using a two-stage training approach adapted from Marigold (Ke et al., CVPR 2024).
 
 ## Motivation
 
-Direct text-to-deformation generation struggles because the pretrained video DiT retains a strong natural video prior. Instead of fighting that prior, we leverage it: the model receives the natural video as a conditioning signal and learns to produce the corresponding structured deformation map. This is the same insight behind Marigold, which repurposes a pretrained image diffusion model for depth estimation by conditioning on the input RGB image.
+Direct end-to-end fine-tuning of video diffusion models to generate deformation maps fails — the pretrained model retains a strong natural video bias. Marigold solved the analogous problem in the image domain (RGB → depth) by conditioning the denoiser on the input image via channel concatenation.
+
+**The additional challenge in video:** the model must simultaneously learn spatial mapping (face → deformation) and temporal coherence. This dual objective is too difficult in a single stage.
+
+**Our solution (inspired by Wan VAE's staged inflation):** decompose training into two stages:
+
+1. **Stage 1 (Spatial):** Run the DiT at T=1 (single frame) and train on ~900k image pairs. Temporal attention becomes a no-op. The model learns purely spatial mapping.
+2. **Stage 2 (Temporal):** Load Stage 1 weights into the full video DiT and fine-tune on video pairs (T=81). The model only needs to learn temporal dynamics on top of an already-strong spatial prior.
 
 ## Architecture
 
-```
-Natural video (RGB)                    Text prompt
-    │                                      │
-    ▼                                      ▼
-┌──────────┐                        ┌──────────────┐
-│ Wan VAE  │ (frozen)               │ UMT5 Encoder │ (cached)
-│ Encoder  │                        └─────┬────────┘
-└────┬─────┘                              │
-     │ clean_latent [16ch]                │ text embeddings
-     │                                    │
-     ├─── concat ───┐                     │
-     │              │                     │
-     ▼              ▼                     ▼
-┌────────────────────────────────────────────────┐
-│  Wan DiT (1.3B) — patch_embedding doubled      │
-│  Input: [noisy_target_16ch | clean_cond_16ch]  │
-│  = 32 channels                                 │
-│  Flow matching velocity prediction             │
-└─────┬──────────────────────────────────────────┘
-      │ predicted velocity (16ch)
-      ▼
-  Euler integration → denoised target latent
-      │
-      ▼
-┌──────────┐
-│ Wan VAE  │ (frozen)
-│ Decoder  │
-└────┬─────┘
-     │
-     ▼
-  Deformation map video [T, 3, H, W]
-```
+The DiT's `patch_embedding` Conv3d is doubled from 16 to 32 input channels (Marigold's weight duplication trick). At every denoising step, `[noisy_target_deform_latent, clean_natural_video_latent]` are concatenated along the channel dimension. The natural video provides spatiotemporal anchoring. Noise is added only to the target.
 
-### Key Design Decisions
+Both videos are encoded through the same frozen Wan VAE with the same normalization statistics. Flow matching with velocity prediction: `v = noise - clean`, `x_t = (1-t)*clean + t*noise`.
 
-**Input layer modification:** The transformer's `patch_embedding` Conv3d is doubled from 16 to 32 input channels. Following Marigold's `_replace_unet_conv_in()`, the original weights are cloned, repeated along the input channel dimension, and halved to preserve activation magnitude at initialization. This is the only architectural change.
-
-**Channel concatenation:** At each training step, `[noisy_target_deform_latent, clean_natural_video_latent]` are concatenated along the channel dimension. The natural video latent is always clean — noise is only added to the target.
-
-**Both videos use the same VAE:** Natural video and deformation map are both encoded through the same frozen Wan VAE with the same normalization statistics. Both are 3-channel videos at the same resolution.
-
-**Flow matching:** Velocity prediction loss `v = noise - clean`, with interpolant `x_t = (1-t) * clean + t * noise`.
-
-**Full fine-tuning:** All transformer parameters are trainable (not LoRA). The 1.3B model is small enough for this.
-
-## Training
+## Stage 1: Spatial Training
 
 ```bash
-cd /data/pouyan/baseline/repository/cap4d
-
 PYTHONPATH=. accelerate launch --num_processes 4 --mixed_precision bf16 \
-    marigold_training/scripts/train.py \
-    --config marigold_training/configs/train_config.yaml
+    marigold_training/scripts/train_spatial.py \
+    --config marigold_training/configs/spatial_config.yaml
 ```
 
-Data is computed on the fly: for each clip, the dataset computes the 3ch deformation map from `fit.npz` via FLAME + PyTorch3D rasterization, and loads the corresponding natural video frames with the same face crop. Both are VAE-encoded in the training loop.
+| Parameter | Value | Notes |
+|---|---|---|
+| Temporal frames | 1 | Single frame (deflated mode) |
+| Training pairs | ~900k | 7150 clips x ~127 frames, random sampling |
+| Batch size | 8 per GPU | T=1 is cheap |
+| Learning rate | 1e-5 | |
+| Steps | 50,000 | |
+
+**Convergence criteria:** Given a face frame, the model generates a deformation map that is spatially correct (deformations in the right facial regions). Do not over-train — the goal is a strong spatial prior, not perfect per-frame accuracy.
+
+## Stage 2: Temporal Training
+
+```bash
+# Edit temporal_config.yaml to set stage1_checkpoint first
+PYTHONPATH=. accelerate launch --num_processes 4 --mixed_precision bf16 \
+    marigold_training/scripts/train_temporal.py \
+    --config marigold_training/configs/temporal_config.yaml
+```
+
+| Parameter | Value | Notes |
+|---|---|---|
+| Temporal frames | 81 | 4k+1 with k=20, latent T=21 |
+| Training clips | ~7150 | Video pairs |
+| Batch size | 1 per GPU | Video is memory-heavy |
+| Learning rate | 3e-6 | Lower than Stage 1 to preserve spatial prior |
+| Steps | 25,000 | |
+| Prerequisite | Stage 1 checkpoint | Set `stage1_checkpoint` in config |
+
+Stage 1 weights transfer directly — the Conv3d already has the correct 32-channel input shape. Temporal attention weights retain Wan's pretrained temporal priors (they were effectively frozen at T=1 in Stage 1).
 
 ## Inference
+
+Works with checkpoints from either stage. Stage 1 checkpoints generate single frames, Stage 2 generates videos.
 
 ```bash
 # Single prompt:
 PYTHONPATH=. python marigold_training/scripts/inference.py \
     --clip_id CLIP_ID \
-    --checkpoint outputs/marigold_deform/run_YYYYMMDD/step_NNNNNN \
+    --checkpoint outputs/marigold_temporal/run_YYYYMMDD/step_NNNNNN \
     --prompt "A person says: '...' The delivery is calm and measured."
 
-# Batch from JSON:
+# Batch:
 PYTHONPATH=. python marigold_training/scripts/inference.py \
     --prompts marigold_training/configs/eval_prompts.json \
     --clip_id CLIP_ID \
-    --checkpoint outputs/marigold_deform/run_YYYYMMDD/step_NNNNNN
+    --checkpoint outputs/marigold_temporal/run_YYYYMMDD/step_NNNNNN
 ```
 
-Inference uses Euler ODE integration from t=1 (noise) to t=0 (data). At each step, the clean natural video latent is re-concatenated with the current noisy deformation latent. Classifier-free guidance is supported via `--guidance_scale`.
-
-Output per prompt: predicted deformation video, ground truth deformation, and visualization mp4s.
+Uses Euler ODE integration from t=1 (noise) to t=0 (data). The clean natural video latent is re-concatenated at every step. Classifier-free guidance via `--guidance_scale`.
 
 ## Codebase Structure
 
 ```
 marigold_training/
 ├── scripts/
-│   ├── train.py              # Training loop
-│   └── inference.py          # Euler sampling with video conditioning
+│   ├── train_spatial.py          # Stage 1: single-frame training (T=1)
+│   ├── train_temporal.py         # Stage 2: video training (T=81, loads Stage 1)
+│   └── inference.py              # Euler sampling (works for both stages)
 ├── src/
-│   ├── marigold_model.py     # double_patch_embedding (16→32ch)
-│   ├── marigold_dataset.py   # (natural_video, deform_video, text) triplets
-│   ├── collate.py            # Variable-length text embedding padding
-│   ├── checkpoint.py         # Checkpoint saving
-│   ├── reshape.py            # Pseudo-video padding (4k+1)
-│   └── vis.py                # Deformation map visualization
+│   ├── marigold_model.py         # double_patch_embedding (16→32ch)
+│   ├── frame_pair_dataset.py     # Stage 1: (frame, deform_frame, text) triplets
+│   ├── marigold_dataset.py       # Stage 2: (video, deform_video, text) triplets
+│   ├── collate.py                # Variable-length text embedding padding
+│   ├── checkpoint.py             # Checkpoint saving
+│   ├── reshape.py                # Pseudo-video padding (4k+1)
+│   └── vis.py                    # Deformation map visualization
 ├── configs/
-│   └── train_config.yaml     # Wan2.1-T2V-1.3B, full fine-tuning
+│   ├── spatial_config.yaml       # Stage 1 hyperparameters
+│   └── temporal_config.yaml      # Stage 2 hyperparameters
 └── README.md
 ```
 
 ## References
 
 - Ke et al., "Repurposing Diffusion-Based Image Generators for Monocular Depth Estimation" (CVPR 2024) — [Paper](https://arxiv.org/abs/2312.02145), [Code](https://github.com/prs-eth/Marigold)
+- Wan Technical Report (arxiv 2503.20314) — Progressive image-video joint training and VAE inflation strategy

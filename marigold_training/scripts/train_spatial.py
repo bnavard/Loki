@@ -1,22 +1,19 @@
 """
-Marigold-style training: natural video → deformation map video.
+Stage 1: Spatial Marigold training (single-frame, T=1).
 
-Adapts the Marigold depth estimation approach (Ke et al., CVPR 2024) to video:
-the DiT's input layer is doubled from 16 to 32 channels to accept concatenated
-[noisy_target_deform_latent, clean_natural_video_latent]. The natural video
-provides spatiotemporal anchoring at every denoising step.
+Trains the Wan2.1-T2V-1.3B DiT with T=1 on single-frame pairs
+(natural face frame → deformation map frame). At T=1, temporal
+attention is a no-op, so the model learns purely spatial mapping.
 
-Both videos are VAE-encoded on the fly. The VAE is frozen. Text conditioning
-uses cached UMT5 embeddings (prosody captions, not empty text).
-
-Full fine-tuning of the transformer (not LoRA).
+This is the "deflation" stage — ~900k image pairs from ~7150 clips.
+The trained spatial weights transfer to Stage 2 (video) directly.
 
 Usage:
     cd /data/pouyan/baseline/repository/cap4d
 
     PYTHONPATH=. accelerate launch --num_processes 4 --mixed_precision bf16 \
-        marigold_training/scripts/train.py \
-        --config marigold_training/configs/train_config.yaml
+        marigold_training/scripts/train_spatial.py \
+        --config marigold_training/configs/spatial_config.yaml
 """
 
 import argparse
@@ -32,10 +29,11 @@ torch.backends.cudnn.enabled = False
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
 
-from marigold_training.src.marigold_dataset import MarigoldDataset
+from marigold_training.src.frame_pair_dataset import FramePairDataset
 from marigold_training.src.marigold_model import double_patch_embedding
 from marigold_training.src.collate import collate_fn
 from marigold_training.src.checkpoint import save_checkpoint
+from marigold_training.src.vis import generate_eval_sample, save_eval_grid
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(message)s")
 logger = logging.getLogger(__name__)
@@ -73,7 +71,7 @@ def main():
             mixed_precision=cfg.get("mixed_precision", "bf16"),
             gradient_accumulation_steps=cfg.get("gradient_accumulation", 4),
             log_with="tensorboard",
-            project_dir=cfg.get("output_dir", "outputs/marigold_deform"),
+            project_dir=cfg.get("output_dir", "outputs/marigold_spatial"),
         )
         device = accelerator.device
         is_main = accelerator.is_main_process
@@ -83,7 +81,7 @@ def main():
         is_main = True
 
     # ---- Run directory ----
-    output_dir = Path(cfg.get("output_dir", "outputs/marigold_deform"))
+    output_dir = Path(cfg.get("output_dir", "outputs/marigold_spatial"))
     if is_main:
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         run_dir = output_dir / f"run_{timestamp}"
@@ -108,14 +106,12 @@ def main():
     log_rank0(f"Loading pipeline: {model_id}...", is_main)
 
     pipe = WanPipeline.from_pretrained(model_id, torch_dtype=torch.bfloat16)
-
     transformer = pipe.transformer
 
-    # Frozen VAE for on-the-fly encoding
+    # Frozen VAE for on-the-fly encoding of both frames
     vae = pipe.vae.to(device).eval()
     vae.requires_grad_(False)
 
-    # Latent normalization stats
     latents_mean = torch.tensor(vae.config.latents_mean).view(1, -1, 1, 1, 1)
     latents_std = torch.tensor(vae.config.latents_std).view(1, -1, 1, 1, 1)
 
@@ -123,7 +119,7 @@ def main():
     del pipe
     torch.cuda.empty_cache()
 
-    # ---- Marigold: double the input layer ----
+    # ---- Marigold: double input layer (16 → 32 channels) ----
     log_rank0(f"Original patch_embedding: {transformer.patch_embedding}", is_main)
     transformer = double_patch_embedding(transformer)
     log_rank0(f"Doubled patch_embedding: {transformer.patch_embedding}", is_main)
@@ -140,27 +136,26 @@ def main():
     total_params = sum(p.numel() for p in transformer.parameters())
     log_rank0(f"Full fine-tuning: {total_params:,} params", is_main)
 
-    # ---- Dataset ----
-    dataset = MarigoldDataset(
+    # ---- Dataset (single frames, T=1) ----
+    dataset = FramePairDataset(
         manifest_path=cfg.get("manifest_path", "data/derived/manifest.json"),
         flame_root=cfg.get("flame_root", "data/flowface"),
-        video_root=cfg.get("video_root", "data/talkvid/talkvid"),
-        target_frames=cfg.get("target_frames", 81),
         resolution=cfg.get("resolution", 512),
         prompt_latent_cache_dir=cfg.get("prompt_latent_cache_dir"),
+        min_frames=cfg.get("min_frames", 10),
     )
-    log_rank0(f"Dataset: {len(dataset)} clips", is_main)
+    log_rank0(f"Dataset: {len(dataset)} clips (~{len(dataset) * 127} frame pairs)", is_main)
 
     dataloader = DataLoader(
-        dataset, batch_size=cfg.get("batch_size", 1),
+        dataset, batch_size=cfg.get("batch_size", 8),
         shuffle=True, num_workers=0, pin_memory=False,
         drop_last=True, collate_fn=collate_fn,
     )
 
     # ---- Optimizer ----
     trainable_params = [p for p in transformer.parameters() if p.requires_grad]
-    max_steps = cfg.get("max_steps", 20000)
-    lr = cfg.get("lr", 5e-6)
+    max_steps = cfg.get("max_steps", 50000)
+    lr = cfg.get("lr", 1e-5)
 
     optimizer = torch.optim.AdamW(
         trainable_params, lr=lr,
@@ -169,7 +164,7 @@ def main():
 
     # ---- LR scheduler: IterExponential ----
     warmup_steps = cfg.get("warmup_steps", 100)
-    decay_iters = cfg.get("decay_iters", 25000)
+    decay_iters = cfg.get("decay_iters", 50000)
     lr_min_ratio = cfg.get("lr_min_ratio", 0.01)
 
     def lr_lambda(step):
@@ -189,31 +184,33 @@ def main():
     # ---- Training loop ----
     cfg_dropout = cfg.get("cfg_dropout", 0.1)
     grad_clip = cfg.get("grad_clip", 1.0)
-    save_every = cfg.get("save_every", 250)
+    save_every = cfg.get("save_every", 2000)
     log_every = cfg.get("log_every", 1)
+    eval_every = cfg.get("eval_every", save_every)
+
+    # Keep a fixed eval sample for consistent tracking across training
+    eval_batch = None
 
     global_step = 0
     transformer.train()
-    log_rank0(f"Starting Marigold training for {max_steps} steps...", is_main)
+    log_rank0(f"Starting Stage 1 (spatial) training for {max_steps} steps...", is_main)
 
     while global_step < max_steps:
         for batch in dataloader:
             if global_step >= max_steps:
                 break
 
+            # ---- VAE encode both frames (T=1 each) ----
             with torch.no_grad():
-                natural_5d = batch["natural_video"].unsqueeze(0) if batch["natural_video"].ndim == 4 \
-                    else batch["natural_video"]
-                target_5d = batch["target_video"].unsqueeze(0) if batch["target_video"].ndim == 4 \
-                    else batch["target_video"]
-
+                # [B, 3, 1, H, W] → VAE → [B, 16, 1, h, w]
                 natural_latent = vae.encode(
-                    natural_5d.to(device=device, dtype=vae.dtype)
+                    batch["natural_frame"].to(device=device, dtype=vae.dtype)
                 ).latent_dist.mode()
                 target_latent = vae.encode(
-                    target_5d.to(device=device, dtype=vae.dtype)
+                    batch["target_frame"].to(device=device, dtype=vae.dtype)
                 ).latent_dist.mode()
 
+                # Normalize with pretrained stats
                 natural_latent = (natural_latent - latents_mean.to(device, dtype=natural_latent.dtype)) / \
                                  latents_std.to(device, dtype=natural_latent.dtype)
                 target_latent = (target_latent - latents_mean.to(device, dtype=target_latent.dtype)) / \
@@ -225,6 +222,7 @@ def main():
 
             B = target_latent.shape[0]
 
+            # ---- CFG dropout ----
             drop_mask = torch.rand(B, device=device) < cfg_dropout
             if drop_mask.any():
                 text_embeds = torch.where(
@@ -232,6 +230,7 @@ def main():
                     torch.zeros_like(text_embeds), text_embeds,
                 )
 
+            # ---- Flow matching: noise the target only ----
             noise = torch.randn_like(target_latent)
             t = torch.rand(B, device=device, dtype=torch.bfloat16)
             t_expand = t[:, None, None, None, None]
@@ -239,7 +238,9 @@ def main():
             noisy_target = (1 - t_expand) * target_latent + t_expand * noise
             target_velocity = noise - target_latent
 
+            # ---- Marigold concatenation: [noisy_target | clean_conditioning] ----
             model_input = torch.cat([noisy_target, natural_latent], dim=1)
+            # Shape: [B, 32, 1, h, w]
 
             velocity_pred = transformer(
                 model_input, timestep=t,
@@ -277,9 +278,47 @@ def main():
                 ckpt = save_checkpoint(transformer, global_step, run_dir, accelerator)
                 log_rank0(f"Saved checkpoint: {ckpt}", is_main)
 
+            # ---- Periodic eval: generate a deformation map from a held sample ----
+            if is_main and global_step % eval_every == 0:
+                # Capture first batch as fixed eval sample
+                if eval_batch is None:
+                    eval_batch = {
+                        "natural_frame": batch["natural_frame"][:1].clone(),
+                        "target_frame": batch["target_frame"][:1].clone(),
+                        "text_embed": batch["text_embed"][:1].clone(),
+                    }
+
+                with torch.no_grad():
+                    eval_nat = eval_batch["natural_frame"].to(device=device, dtype=vae.dtype)
+                    eval_cond_latent = vae.encode(eval_nat).latent_dist.mode()
+                    eval_cond_latent = (eval_cond_latent - latents_mean.to(device, dtype=eval_cond_latent.dtype)) / \
+                                       latents_std.to(device, dtype=eval_cond_latent.dtype)
+                    eval_cond_latent = eval_cond_latent.to(dtype=torch.bfloat16)
+
+                eval_text = eval_batch["text_embed"][:1].to(device, dtype=torch.bfloat16)
+
+                unwrapped = accelerator.unwrap_model(transformer) if accelerator else transformer
+                pred_deform = generate_eval_sample(
+                    unwrapped, vae, eval_cond_latent, eval_text,
+                    latents_mean, latents_std,
+                )
+
+                # GT deformation (pixel space, before VAE)
+                gt_deform = eval_batch["target_frame"][0]  # [3, 1, H, W]
+                gt_deform = gt_deform.permute(1, 0, 2, 3)  # [1, 3, H, W]
+
+                eval_dir = run_dir / "eval"
+                save_eval_grid(
+                    eval_batch["natural_frame"][0].cpu(),
+                    pred_deform,
+                    gt_deform,
+                    eval_dir / f"step_{global_step:06d}.png",
+                )
+                log_rank0(f"Eval saved: {eval_dir}/step_{global_step:06d}.png", is_main)
+
     if is_main:
         ckpt = save_checkpoint(transformer, global_step, run_dir, accelerator)
-        log_rank0(f"Training complete. Final checkpoint: {ckpt}", is_main)
+        log_rank0(f"Stage 1 complete. Final checkpoint: {ckpt}", is_main)
 
 
 if __name__ == "__main__":

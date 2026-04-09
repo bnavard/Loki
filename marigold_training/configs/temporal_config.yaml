@@ -1,0 +1,50 @@
+# =============================================================================
+# Stage 2: Temporal Marigold Training (video, T=81)
+#
+# Loads the Stage 1 (spatial) checkpoint and fine-tunes on video pairs.
+# The model already understands deformation map structure from Stage 1 —
+# Stage 2 teaches temporal coherence with a lower learning rate.
+# =============================================================================
+
+# ---- Model ----
+model_id: "Wan-AI/Wan2.1-T2V-1.3B-Diffusers"
+
+# ---- Stage 1 checkpoint (REQUIRED) ----
+# Point to the Stage 1 step directory, e.g.:
+#   outputs/marigold_spatial/run_YYYYMMDD/step_050000
+stage1_checkpoint: null                            # SET THIS before running
+
+# ---- Data ----
+manifest_path: "data/derived/manifest.json"
+flame_root: "data/flowface"
+video_root: "data/talkvid/talkvid"
+resolution: 512
+target_frames: 81                                  # 4k+1, latent T=21
+prompt_latent_cache_dir: "data/derived/prompt_latent_cache"
+
+# ---- Training ----
+batch_size: 1                                      # video is memory-heavy
+gradient_accumulation: 8
+gradient_checkpointing: true
+lr: 3.0e-6                                        # lower than Stage 1 to preserve spatial prior
+weight_decay: 0.01
+warmup_steps: 100
+decay_iters: 25000
+lr_min_ratio: 0.01
+max_steps: 25000
+grad_clip: 1.0
+
+# ---- CFG ----
+cfg_dropout: 0.1
+
+# ---- Logging ----
+output_dir: "outputs/marigold_temporal"
+log_every: 1
+save_every: 500
+
+# ---- Precision ----
+mixed_precision: "bf16"
+
+# ---- Reproducibility ----
+seed: 42
+gpu: 0
