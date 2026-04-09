@@ -14,13 +14,13 @@ Usage:
     cd /data/pouyan/baseline/repository/cap4d
 
     # Single GPU:
-    PYTHONPATH=. python text_to_expr_field/scripts/cache_text_embeddings.py
+    PYTHONPATH=. python caching/scripts/cache_text_embeddings.py
 
     # Multi-GPU DDP:
-    PYTHONPATH=. torchrun --nproc_per_node=4 text_to_expr_field/scripts/cache_text_embeddings.py
+    PYTHONPATH=. torchrun --nproc_per_node=4 caching/scripts/cache_text_embeddings.py
 
     # Test on one batch:
-    PYTHONPATH=. python text_to_expr_field/scripts/cache_text_embeddings.py --test
+    PYTHONPATH=. python caching/scripts/cache_text_embeddings.py --test
 """
 
 import argparse

@@ -9,7 +9,7 @@ Output: data/derived/manifest.json
 
 Usage:
     cd /data/pouyan/baseline/repository/cap4d
-    python text_to_expr_field/scripts/build_manifest.py
+    python caching/scripts/build_manifest.py
 """
 
 import json

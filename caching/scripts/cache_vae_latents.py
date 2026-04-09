@@ -15,17 +15,17 @@ Usage:
     cd /data/pouyan/baseline/repository/cap4d
 
     # Single GPU:
-    PYTHONPATH=. python text_to_expr_field/scripts/cache_vae_latents.py
+    PYTHONPATH=. python caching/scripts/cache_vae_latents.py
 
     # Multi-GPU DDP (e.g. 4 GPUs):
-    PYTHONPATH=. torchrun --nproc_per_node=4 text_to_expr_field/scripts/cache_vae_latents.py
+    PYTHONPATH=. torchrun --nproc_per_node=4 caching/scripts/cache_vae_latents.py
 
     # Specific GPUs:
     CUDA_VISIBLE_DEVICES=0,1,2,3 PYTHONPATH=. torchrun --nproc_per_node=4 \
-        text_to_expr_field/scripts/cache_vae_latents.py
+        caching/scripts/cache_vae_latents.py
 
     # Test on one batch:
-    PYTHONPATH=. python text_to_expr_field/scripts/cache_vae_latents.py --test
+    PYTHONPATH=. python caching/scripts/cache_vae_latents.py --test
 """
 
 import argparse
@@ -126,17 +126,15 @@ def main():
 
     is_main = (rank == 0)
 
-    # Build dataset
-    from text_to_expr_field.src.dataset import ExprFieldDataset
+    # Build dataset (computes expression fields on the fly, returns pseudo-video)
+    from caching.scripts._expr_field_dataset import ExprFieldCachingDataset
 
-    base_dataset = ExprFieldDataset(
+    base_dataset = ExprFieldCachingDataset(
         manifest_path=args.manifest_path,
         flame_root=args.flame_root,
         target_frames=args.target_frames,
         resolution=args.resolution,
-        vae=None,
         device=str(device),
-        vae_latent_cache_dir=None,
     )
 
     # skip already-cached clips

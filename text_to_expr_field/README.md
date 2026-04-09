@@ -89,47 +89,20 @@ The pipeline supports multiple training configurations via YAML configs:
 
 ## Data Preparation
 
-### Source Data Layout
-
-```
-data/
-├── talkvid/
-│   ├── {clip_id}.mp4           # source videos
-│   └── audio/{clip_id}.wav     # 16kHz mono audio
-└── flowface/
-    └── {clip_id}/
-        ├── fit.npz             # FLAME tracking parameters
-        └── images/cam0/*.jpg   # extracted frames
-```
-
-### Step 1: Generate Text Captions
-
-Combines Whisper large-v3 ASR transcription with Qwen2-Audio prosody description.
+Data preprocessing (caption generation, manifest building, VAE latent caching, text embedding caching) is handled by the shared `caching/` module at the repo root. See the [caching README](../caching/README.md) for details.
 
 ```bash
-python text_to_expr_field/scripts/generate_captions.py --gpu 0 --num_gpus 8
-# Output: data/derived/captions/{clip_id}.json
-```
+# 1. Generate captions
+PYTHONPATH=. python caching/scripts/generate_captions.py --gpu 0 --num_gpus 8
 
-### Step 2: Build Training Manifest
+# 2. Build manifest
+python caching/scripts/build_manifest.py
 
-```bash
-python text_to_expr_field/scripts/build_manifest.py
-# Output: data/derived/manifest.json
-```
+# 3. Cache VAE latents (for cached training mode)
+PYTHONPATH=. torchrun --nproc_per_node=4 caching/scripts/cache_vae_latents.py
 
-### Step 3: Cache VAE Latents (for cached training mode)
-
-```bash
-PYTHONPATH=. torchrun --nproc_per_node=4 text_to_expr_field/scripts/cache_vae_latents.py
-# Output: data/derived/vae_latent_cache/{clip_id}.pt
-```
-
-### Step 4: Cache Text Embeddings
-
-```bash
-PYTHONPATH=. torchrun --nproc_per_node=4 text_to_expr_field/scripts/cache_text_embeddings.py
-# Output: data/derived/prompt_latent_cache/{clip_id}.pt
+# 4. Cache text embeddings
+PYTHONPATH=. torchrun --nproc_per_node=4 caching/scripts/cache_text_embeddings.py
 ```
 
 ## Training
@@ -207,10 +180,6 @@ No modifications to the rendering UNet are needed.
 ```
 text_to_expr_field/
 ├── scripts/
-│   ├── generate_captions.py          # Whisper ASR + Qwen2-Audio prosody
-│   ├── build_manifest.py             # Validate data + build manifest.json
-│   ├── cache_vae_latents.py          # DDP: expression field → VAE latent → disk
-│   ├── cache_text_embeddings.py      # DDP: caption → UMT5 embedding → disk
 │   ├── train.py                      # Training loop (LoRA or full fine-tuning)
 │   ├── inference.py                  # Multi-GPU inference from text prompts
 │   └── visualize_ground_truth.py     # Visualize real FLAME expression fields

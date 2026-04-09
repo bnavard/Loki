@@ -19,6 +19,7 @@ A separate text-to-expression-field pipeline trains Wan2.2-T2V (via LoRA) to syn
 ├── talkinghead_sd21_unet_cap4d_based/   # Talking-head rendering (SD 2.1 UNet + 3D attention)
 ├── text_to_expr_field/                  # Text → expression field generation (Wan DiT)
 ├── marigold_training/                   # Marigold-style video → deformation map (Wan DiT)
+├── caching/                             # Data preprocessing (captions, VAE latents, text embeddings)
 ├── controlnet/                          # SD LDM utilities (inherited from CAP4D)
 ├── data/assets/flame/                   # FLAME model files (mesh, blendshapes)
 ├── instructions/                        # Design documents
@@ -44,6 +45,10 @@ See [`text_to_expr_field/README.md`](text_to_expr_field/README.md).
 Marigold-style video-conditioned deformation map generation. Given a natural talking-head video, generates the corresponding FLAME deformation map. Adapts the Marigold depth estimation approach (Ke et al., CVPR 2024) to video: the DiT's input layer is doubled from 16 to 32 channels to accept concatenated [noisy_target | clean_conditioning] latents. Full fine-tuning of Wan2.1-T2V-1.3B.
 
 See [`marigold_training/README.md`](marigold_training/README.md).
+
+### caching
+
+Shared data preprocessing scripts used by both `text_to_expr_field` and `marigold_training`: caption generation (Whisper + Qwen2-Audio), manifest building, VAE latent caching, and UMT5 text embedding caching. All scripts support multi-GPU DDP.
 
 ## Installation
 
