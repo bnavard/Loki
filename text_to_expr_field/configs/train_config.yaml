@@ -34,7 +34,6 @@ gradient_checkpointing: true  # recompute activations in backward (~30% slower, 
 group_offload: false          # incompatible with gradient checkpointing (params on CPU during recompute)
 lr: 1.0e-5
 weight_decay: 0.01
-warmup_steps: 500
 max_steps: 20000
 grad_clip: 1.0
 

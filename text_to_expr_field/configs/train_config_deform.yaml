@@ -39,7 +39,6 @@ gradient_checkpointing: true
 group_offload: false
 lr: 1.0e-5
 weight_decay: 0.01
-warmup_steps: 500
 max_steps: 20000
 grad_clip: 1.0
 

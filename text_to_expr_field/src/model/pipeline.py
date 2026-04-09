@@ -78,7 +78,7 @@ def load_inference_pipeline(model_id, checkpoint_dir, device):
         if not safetensor_file.exists():
             safetensor_file = full_path / "model.safetensors"
         state_dict = load_file(str(safetensor_file))
-        pipe.transformer.load_state_dict(state_dict, strict=False)
+        pipe.transformer.load_state_dict(state_dict, strict=True)
     else:
         print(f"WARNING: No checkpoint found at {checkpoint_dir}")
 

@@ -20,7 +20,6 @@ Usage:
 
 import argparse
 import logging
-import math
 import shutil
 from datetime import datetime
 from pathlib import Path
@@ -184,7 +183,6 @@ def main():
     # ---- Optimizer ----
     trainable_params = [p for p in transformer.parameters() if p.requires_grad]
     max_steps = cfg.get("max_steps", 20000)
-    warmup_steps = cfg.get("warmup_steps", 500)
     lr = cfg.get("lr", 1e-5)
 
     optimizer = torch.optim.AdamW(
@@ -192,18 +190,10 @@ def main():
         weight_decay=cfg.get("weight_decay", 0.01),
     )
 
-    def lr_lambda(step):
-        if step < warmup_steps:
-            return step / max(warmup_steps, 1)
-        progress = (step - warmup_steps) / max(max_steps - warmup_steps, 1)
-        return 0.5 * (1 + math.cos(math.pi * progress))
-
-    lr_scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda)
-
     # ---- Accelerate prepare ----
     if accelerator is not None:
-        transformer, optimizer, dataloader, lr_scheduler = accelerator.prepare(
-            transformer, optimizer, dataloader, lr_scheduler,
+        transformer, optimizer, dataloader = accelerator.prepare(
+            transformer, optimizer, dataloader,
         )
 
     # ---- Training loop ----
@@ -262,7 +252,7 @@ def main():
                     torch.nn.utils.clip_grad_norm_(params, grad_clip)
 
             optimizer.step()
-            lr_scheduler.step()
+
             optimizer.zero_grad()
             global_step += 1
 
@@ -270,7 +260,7 @@ def main():
                 log_rank0(
                     f"step {global_step}/{max_steps} | "
                     f"loss={loss.item():.4f} | "
-                    f"lr={lr_scheduler.get_last_lr()[0]:.2e}",
+                    f"lr={lr:.2e}",
                     is_main,
                 )
 
