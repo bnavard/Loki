@@ -23,7 +23,7 @@ import numpy as np
 import torch
 from torch.utils.data import Dataset
 
-from text_to_expr_field.src.utils.reshape import to_pseudo_video
+from marigold_training.src.reshape import to_pseudo_video
 
 
 class MarigoldDataset(Dataset):
@@ -102,10 +102,6 @@ class MarigoldDataset(Dataset):
         """
         Load natural video frames, crop to face bounding box, resize, normalize.
 
-        Args:
-            clip_id:    clip identifier
-            crop_boxes: list of per-frame [x0, y0, x1, y1] crop boxes
-
         Returns:
             [3, T, H, W] float32 tensor in [-1, 1]
         """
@@ -116,22 +112,17 @@ class MarigoldDataset(Dataset):
         frames = []
 
         for t in range(self.target_frames):
-            # Load frame
             img_path = frames_dir / f"{t:05d}.jpg"
             img = cv2.imread(str(img_path))
             if img is None:
-                # Fallback: black frame
                 img = np.zeros((H, H, 3), dtype=np.uint8)
             else:
                 img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
 
-            # Crop to face bounding box (same box used for deformation map)
             img = crop_image(img, crop_boxes[t], bg_value=0)
             img = rescale_image(img, H)
-
-            # Normalize to [-1, 1]
-            img = img.astype(np.float32) / 127.5 - 1.0  # [H, W, 3]
-            frames.append(torch.from_numpy(img).permute(2, 0, 1))  # [3, H, W]
+            img = img.astype(np.float32) / 127.5 - 1.0
+            frames.append(torch.from_numpy(img).permute(2, 0, 1))
 
         video = torch.stack(frames, dim=1)  # [3, T, H, W]
         return video
@@ -188,7 +179,6 @@ class MarigoldDataset(Dataset):
             with torch.no_grad():
                 out = conditioning(batch, unconditional=False)
 
-            # Extract 3ch deformation map (channels 42:45)
             frame = out["pos_enc"][0, 0, :, :, 42:45].permute(2, 0, 1)
             deform_frames.append(frame.cpu())
 
@@ -200,17 +190,15 @@ class MarigoldDataset(Dataset):
 
         # 1. Compute deformation map + crop boxes (FLAME + PyTorch3D)
         deform_video, crop_boxes = self._compute_deform_and_crops(clip_id)
-        # deform_video: [T, 3, H, W]
 
         # 2. Load natural video with the same crop boxes
         natural_video = self._load_natural_video(clip_id, crop_boxes)
-        # natural_video: [3, T, H, W] in [-1, 1]
 
         # 3. Pad deform to 4k+1 for VAE compatibility
-        deform_pseudo = to_pseudo_video(deform_video)  # [T_padded, 3, H, W]
+        deform_pseudo = to_pseudo_video(deform_video)
         deform_video_5d = deform_pseudo.permute(1, 0, 2, 3)  # [3, T_padded, H, W]
 
-        # 4. Pad natural video to match the same frame count
+        # 4. Pad natural video to match
         T_target = deform_pseudo.shape[0]
         T_nat = natural_video.shape[1]
         if T_nat < T_target:

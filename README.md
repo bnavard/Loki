@@ -17,7 +17,8 @@ A separate text-to-expression-field pipeline trains Wan2.2-T2V (via LoRA) to syn
 ```
 .
 ├── talkinghead_sd21_unet_cap4d_based/   # Talking-head rendering (SD 2.1 UNet + 3D attention)
-├── text_to_expr_field/                  # Text → expression field generation (Wan2.2 DiT + LoRA)
+├── text_to_expr_field/                  # Text → expression field generation (Wan DiT)
+├── marigold_training/                   # Marigold-style video → deformation map (Wan DiT)
 ├── controlnet/                          # SD LDM utilities (inherited from CAP4D)
 ├── data/assets/flame/                   # FLAME model files (mesh, blendshapes)
 ├── instructions/                        # Design documents
@@ -34,9 +35,15 @@ See [`talkinghead_sd21_unet_cap4d_based/README.md`](talkinghead_sd21_unet_cap4d_
 
 ### text_to_expr_field
 
-Generates 45-channel FLAME expression dense fields from text captions via LoRA-fine-tuned Wan2.2-T2V-A14B. The 45-channel field is reshaped into 15 three-channel pseudo-video groups for VAE compatibility. VAE latents and UMT5 text embeddings are precomputed and cached to disk for training throughput.
+Generates FLAME expression dense fields (45ch or 3ch deformation-only) from text captions. Supports multiple Wan DiT models (14B, 1.3B), LoRA or full fine-tuning, cached or on-the-fly VAE encoding.
 
 See [`text_to_expr_field/README.md`](text_to_expr_field/README.md).
+
+### marigold_training
+
+Marigold-style video-conditioned deformation map generation. Given a natural talking-head video, generates the corresponding FLAME deformation map. Adapts the Marigold depth estimation approach (Ke et al., CVPR 2024) to video: the DiT's input layer is doubled from 16 to 32 channels to accept concatenated [noisy_target | clean_conditioning] latents. Full fine-tuning of Wan2.1-T2V-1.3B.
+
+See [`marigold_training/README.md`](marigold_training/README.md).
 
 ## Installation
 
@@ -72,4 +79,5 @@ data/
 - [CAP4D](https://github.com/felixtaubner/CAP4D) — Creating Animatable 4D Portrait Avatars (CVPR 2025)
 - [Stable Diffusion 2.1](https://huggingface.co/docs/diffusers/api/pipelines/stable_diffusion/stable_diffusion_2)
 - [Wan2.2](https://github.com/Wan-Video/Wan2.2) — Video diffusion transformer
+- [Marigold](https://github.com/prs-eth/Marigold) — Repurposing diffusion for monocular depth (CVPR 2024)
 - [FLAME](https://flame.is.tue.mpg.de/) — 3D morphable face model

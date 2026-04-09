@@ -15,8 +15,8 @@ Usage:
     cd /data/pouyan/baseline/repository/cap4d
 
     PYTHONPATH=. accelerate launch --num_processes 4 --mixed_precision bf16 \
-        text_to_expr_field/scripts/train_marigold.py \
-        --config text_to_expr_field/configs/train_marigold_config.yaml
+        marigold_training/scripts/train.py \
+        --config marigold_training/configs/train_config.yaml
 """
 
 import argparse
@@ -32,10 +32,10 @@ torch.backends.cudnn.enabled = False
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
 
-from text_to_expr_field.src.data.marigold_dataset import MarigoldDataset
-from text_to_expr_field.src.data.collate import collate_fn
-from text_to_expr_field.src.model.marigold import double_patch_embedding
-from text_to_expr_field.src.model.checkpoint import save_checkpoint
+from marigold_training.src.marigold_dataset import MarigoldDataset
+from marigold_training.src.marigold_model import double_patch_embedding
+from marigold_training.src.collate import collate_fn
+from marigold_training.src.checkpoint import save_checkpoint
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(message)s")
 logger = logging.getLogger(__name__)
@@ -110,9 +110,8 @@ def main():
     pipe = WanPipeline.from_pretrained(model_id, torch_dtype=torch.bfloat16)
 
     transformer = pipe.transformer
-    scheduler = pipe.scheduler
 
-    # Frozen VAE for on-the-fly encoding of both natural video and deform video
+    # Frozen VAE for on-the-fly encoding
     vae = pipe.vae.to(device).eval()
     vae.requires_grad_(False)
 
@@ -120,14 +119,11 @@ def main():
     latents_mean = torch.tensor(vae.config.latents_mean).view(1, -1, 1, 1, 1)
     latents_std = torch.tensor(vae.config.latents_std).view(1, -1, 1, 1, 1)
 
-    # Free text encoder — we use cached embeddings
     del pipe.text_encoder, pipe.tokenizer
     del pipe
     torch.cuda.empty_cache()
 
     # ---- Marigold: double the input layer ----
-    # Following Marigold's _replace_unet_conv_in(): clone patch_embedding weights,
-    # repeat along input channel dim (16 → 32), scale by 0.5.
     log_rank0(f"Original patch_embedding: {transformer.patch_embedding}", is_main)
     transformer = double_patch_embedding(transformer)
     log_rank0(f"Doubled patch_embedding: {transformer.patch_embedding}", is_main)
@@ -155,15 +151,10 @@ def main():
     )
     log_rank0(f"Dataset: {len(dataset)} clips", is_main)
 
-    # num_workers=0: dataset uses CUDA (PyTorch3D rasterization)
     dataloader = DataLoader(
-        dataset,
-        batch_size=cfg.get("batch_size", 1),
-        shuffle=True,
-        num_workers=0,
-        pin_memory=False,
-        drop_last=True,
-        collate_fn=collate_fn,
+        dataset, batch_size=cfg.get("batch_size", 1),
+        shuffle=True, num_workers=0, pin_memory=False,
+        drop_last=True, collate_fn=collate_fn,
     )
 
     # ---- Optimizer ----
@@ -177,8 +168,6 @@ def main():
     )
 
     # ---- LR scheduler: IterExponential ----
-    # Linear warmup for warmup_steps, then exponential decay over decay_iters
-    # to lr_min_ratio of initial LR.
     warmup_steps = cfg.get("warmup_steps", 100)
     decay_iters = cfg.get("decay_iters", 25000)
     lr_min_ratio = cfg.get("lr_min_ratio", 0.01)
@@ -212,16 +201,12 @@ def main():
             if global_step >= max_steps:
                 break
 
-            # ---- VAE encode both videos ----
-            # Following Marigold: encode both through the same frozen VAE,
-            # use deterministic encoding (mode, not sample).
             with torch.no_grad():
                 natural_5d = batch["natural_video"].unsqueeze(0) if batch["natural_video"].ndim == 4 \
                     else batch["natural_video"]
                 target_5d = batch["target_video"].unsqueeze(0) if batch["target_video"].ndim == 4 \
                     else batch["target_video"]
 
-                # [B, 3, T, H, W] → VAE → [B, C_latent, T_latent, h, w]
                 natural_latent = vae.encode(
                     natural_5d.to(device=device, dtype=vae.dtype)
                 ).latent_dist.mode()
@@ -229,20 +214,17 @@ def main():
                     target_5d.to(device=device, dtype=vae.dtype)
                 ).latent_dist.mode()
 
-                # Normalize both with the same pretrained stats
                 natural_latent = (natural_latent - latents_mean.to(device, dtype=natural_latent.dtype)) / \
                                  latents_std.to(device, dtype=natural_latent.dtype)
                 target_latent = (target_latent - latents_mean.to(device, dtype=target_latent.dtype)) / \
                                 latents_std.to(device, dtype=target_latent.dtype)
 
-            # Cast to training dtype
             natural_latent = natural_latent.to(dtype=torch.bfloat16)
             target_latent = target_latent.to(dtype=torch.bfloat16)
             text_embeds = batch["text_embed"].to(device, dtype=torch.bfloat16)
 
             B = target_latent.shape[0]
 
-            # ---- CFG dropout: randomly drop text conditioning ----
             drop_mask = torch.rand(B, device=device) < cfg_dropout
             if drop_mask.any():
                 text_embeds = torch.where(
@@ -250,8 +232,6 @@ def main():
                     torch.zeros_like(text_embeds), text_embeds,
                 )
 
-            # ---- Flow matching: noise the TARGET latent only ----
-            # The natural video latent is ALWAYS clean (Marigold's key principle).
             noise = torch.randn_like(target_latent)
             t = torch.rand(B, device=device, dtype=torch.bfloat16)
             t_expand = t[:, None, None, None, None]
@@ -259,21 +239,13 @@ def main():
             noisy_target = (1 - t_expand) * target_latent + t_expand * noise
             target_velocity = noise - target_latent
 
-            # ---- Marigold concatenation ----
-            # [noisy_target | clean_natural_video] along channel dim
-            # Following Marigold's cat order: conditioning first in their code,
-            # but the instruction doc puts noisy first. We follow the instruction
-            # doc since the weight init treats both halves identically (repeat + /2).
             model_input = torch.cat([noisy_target, natural_latent], dim=1)
-            # Shape: [B, 32, T_latent, h, w]
 
-            # ---- Forward: DiT predicts velocity ----
             velocity_pred = transformer(
                 model_input, timestep=t,
                 encoder_hidden_states=text_embeds,
             ).sample
 
-            # ---- Loss (fp32 for numerical stability) ----
             loss = F.mse_loss(velocity_pred.float(), target_velocity.float())
 
             if accelerator is not None:
@@ -302,18 +274,11 @@ def main():
                 )
 
             if is_main and global_step % save_every == 0:
-                ckpt = save_checkpoint(
-                    transformer, global_step, run_dir,
-                    use_lora=False, accelerator=accelerator,
-                )
+                ckpt = save_checkpoint(transformer, global_step, run_dir, accelerator)
                 log_rank0(f"Saved checkpoint: {ckpt}", is_main)
 
-    # Final save
     if is_main:
-        ckpt = save_checkpoint(
-            transformer, global_step, run_dir,
-            use_lora=False, accelerator=accelerator,
-        )
+        ckpt = save_checkpoint(transformer, global_step, run_dir, accelerator)
         log_rank0(f"Training complete. Final checkpoint: {ckpt}", is_main)
 
 
