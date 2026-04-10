@@ -1,32 +1,21 @@
 """
-Marigold-style inference: natural video + text → deformation map video.
+Marigold inference with SD3.5: natural face video → deformation map video.
 
-Given a natural talking-head video and a text prompt, generates the
-corresponding deformation map video. The natural video provides
-spatiotemporal anchoring at every denoising step via channel concatenation.
-
-Uses Euler ODE integration (flow matching: t=1 noise → t=0 data).
-At each step, concatenates [current_noisy_deform | clean_natural_video]
-along channel dim and passes to the modified DiT (32ch input).
+Processes a video frame-by-frame through the SD3.5-based Marigold model.
+Each frame is independently denoised conditioned on the corresponding
+natural face frame.
 
 Usage:
     cd <repo_root>
 
     PYTHONPATH=. python marigold_training/scripts/inference.py \
         --clip_id CLIP_ID \
-        --checkpoint outputs/marigold_deform/run_YYYYMMDD/step_NNNNNN \
+        --checkpoint outputs/marigold_spatial/run_YYYYMMDD/step_NNNNNN \
         --prompt "A person says: '...' The delivery is calm and measured."
-
-    # Or batch from a JSON prompt file:
-    PYTHONPATH=. python marigold_training/scripts/inference.py \
-        --prompts marigold_training/configs/eval_prompts.json \
-        --clip_id CLIP_ID \
-        --checkpoint outputs/marigold_deform/run_YYYYMMDD/step_NNNNNN
 """
 
 import argparse
 import json
-import os
 from pathlib import Path
 
 import cv2
@@ -34,9 +23,8 @@ import numpy as np
 import torch
 torch.backends.cudnn.enabled = False
 
-from marigold_training.src.marigold_model import double_patch_embedding
-from marigold_training.src.reshape import to_pseudo_video
-from marigold_training.src.vis import visualize_deform
+from marigold_training.src.marigold_model import double_input_channels
+from marigold_training.src.vis import visualize_deform, normalize_to_uint8, save_video
 
 
 def parse_args():
@@ -44,279 +32,210 @@ def parse_args():
     p.add_argument("--clip_id", required=True, help="Clip ID for natural video")
     p.add_argument("--prompt", default=None, help="Text prompt (single)")
     p.add_argument("--prompts", default=None, help="JSON prompt file (batch)")
-    p.add_argument("--checkpoint", required=True, help="Path to checkpoint directory")
-    p.add_argument("--model_id", default="Wan-AI/Wan2.1-T2V-1.3B-Diffusers")
+    p.add_argument("--checkpoint", required=True, help="Path to checkpoint step dir")
+    p.add_argument("--model_id", default="stabilityai/stable-diffusion-3.5-medium")
     p.add_argument("--flame_root", default="data/flowface")
-    p.add_argument("--target_frames", type=int, default=81)
     p.add_argument("--resolution", type=int, default=512)
-    p.add_argument("--num_inference_steps", type=int, default=50)
-    p.add_argument("--guidance_scale", type=float, default=7.5)
+    p.add_argument("--num_frames", type=int, default=None, help="Frames to process (default: all)")
+    p.add_argument("--num_steps", type=int, default=50)
+    p.add_argument("--guidance_scale", type=float, default=1.0)
     p.add_argument("--seed", type=int, default=42)
     p.add_argument("--fps", type=int, default=25)
     return p.parse_args()
 
 
-def encode_video(vae, video_tensor, latents_mean, latents_std):
-    """VAE-encode a video tensor and normalize with pretrained stats."""
-    if video_tensor.ndim == 4:
-        video_tensor = video_tensor.unsqueeze(0)
-    with torch.no_grad():
-        latent = vae.encode(
-            video_tensor.to(device=vae.device, dtype=vae.dtype)
-        ).latent_dist.mode()
-        latent = (latent - latents_mean.to(latent.device, latent.dtype)) / \
-                 latents_std.to(latent.device, latent.dtype)
-    return latent
-
-
-def compute_deformation_gt(clip_id, flame_root, target_frames, resolution):
-    """Compute ground-truth deformation maps from FLAME fits."""
-    from talkinghead_sd21_unet_cap4d_based.conditioning.th_conditioning import THConditioning
-    from talkinghead_sd21_unet_cap4d_based.flame.flame import CAP4DFlameSkinner, compute_flame
-    from talkinghead_sd21_unet_cap4d_based.data.utils import get_bbox_from_verts, verts_to_pytorch3d
-
-    flame_root = Path(flame_root)
-    H = resolution
-
-    conditioning = THConditioning(
-        image_size=H, positional_channels=42, positional_multiplier=1.0,
-        super_resolution=1, use_ray_directions=False,
-        use_expr_deformation=True, use_crop_mask=False,
-    ).eval().cuda()
-
-    flame_skinner = CAP4DFlameSkinner(
-        add_mouth=True, n_shape_params=150, n_expr_params=65,
-    )
-    head_vertex_ids = np.genfromtxt("data/assets/flame/head_vertices.txt").astype(int)
-    fit = dict(np.load(str(flame_root / clip_id / "fit.npz")))
-
-    deform_frames = []
-    crop_boxes = []
-
-    for t in range(target_frames):
-        flame_item = {
-            "shape": fit["shape"],
-            "expr": fit["expr"][[t]], "rot": fit["rot"][[t]],
-            "tra": fit["tra"][[t]], "eye_rot": fit["eye_rot"][[t]],
-            "fx": fit["fx"][[0]], "fy": fit["fy"][[0]],
-            "cx": fit["cx"][[0]], "cy": fit["cy"][[0]],
-            "extr": fit["extr"][[0]],
-        }
-        if "jaw_rot" in fit:
-            flame_item["jaw_rot"] = fit["jaw_rot"][[t]]
-
-        flame_out = compute_flame(flame_skinner, flame_item)
-        verts_2d = flame_out["verts_2d"][0, 0]
-        offsets_3d = flame_out["offsets_3d"][0]
-        crop_box = get_bbox_from_verts(verts_2d.copy(), head_vertex_ids)
-        crop_boxes.append(crop_box)
-
-        verts_2d_p3d = verts_to_pytorch3d(verts_2d.copy(), np.array(crop_box))
-        dummy_ref = torch.zeros(1, 1, 1, H, H, device="cuda")
-        batch = {
-            "verts_2d": torch.tensor(verts_2d_p3d).unsqueeze(0).unsqueeze(0).cuda(),
-            "offsets_3d": torch.tensor(offsets_3d).unsqueeze(0).unsqueeze(0).cuda(),
-            "reference_mask": dummy_ref,
-        }
-        with torch.no_grad():
-            out = conditioning(batch, unconditional=False)
-        deform_frames.append(out["pos_enc"][0, 0, :, :, 42:45].permute(2, 0, 1).cpu())
-
-    return torch.stack(deform_frames, dim=0), crop_boxes
-
-
-def load_natural_video(clip_id, flame_root, crop_boxes, target_frames, resolution):
-    """Load and crop natural video frames using precomputed crop boxes."""
-    from talkinghead_sd21_unet_cap4d_based.data.utils import crop_image, rescale_image
-
-    frames_dir = Path(flame_root) / clip_id / "images" / "cam0"
-    H = resolution
-
-    natural_frames = []
-    for t in range(target_frames):
-        img_path = frames_dir / f"{t:05d}.jpg"
-        img = cv2.imread(str(img_path))
-        if img is not None:
-            img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-            img = crop_image(img, crop_boxes[t], bg_value=0)
-            img = rescale_image(img, H)
-            img = img.astype(np.float32) / 127.5 - 1.0
-        else:
-            img = np.zeros((H, H, 3), dtype=np.float32)
-        natural_frames.append(torch.from_numpy(img).permute(2, 0, 1))
-
-    natural_video = torch.stack(natural_frames, dim=1)  # [3, T, H, W]
-
-    T_padded = to_pseudo_video(torch.zeros(target_frames, 3, H, H)).shape[0]
-    T_nat = natural_video.shape[1]
-    if T_nat < T_padded:
-        pad = natural_video[:, -1:].repeat(1, T_padded - T_nat, 1, 1)
-        natural_video = torch.cat([natural_video, pad], dim=1)
-
-    return natural_video
-
-
 def main():
     args = parse_args()
     checkpoint_dir = Path(args.checkpoint)
-    device = torch.device("cuda")
+    device = "cuda"
+    H = args.resolution
 
     torch.manual_seed(args.seed)
     torch.cuda.manual_seed_all(args.seed)
 
-    # Load prompts
+    # ---- Load prompts ----
     if args.prompts:
         with open(args.prompts) as f:
             prompts = json.load(f)
     elif args.prompt:
         prompts = [{"id": "single", "prompt": args.prompt}]
     else:
-        raise ValueError("Provide --prompt or --prompts")
+        prompts = [{"id": "default", "prompt": ""}]
 
-    # Load pipeline
-    from diffusers import WanPipeline
+    # ---- Load SD3.5 components ----
+    from diffusers import SD3Transformer2DModel, AutoencoderKL
+
     print(f"Loading {args.model_id}...")
-    pipe = WanPipeline.from_pretrained(args.model_id, torch_dtype=torch.bfloat16)
-
-    vae = pipe.vae.to(device).eval()
+    transformer = SD3Transformer2DModel.from_pretrained(
+        args.model_id, subfolder="transformer", torch_dtype=torch.bfloat16,
+    )
+    vae = AutoencoderKL.from_pretrained(
+        args.model_id, subfolder="vae", torch_dtype=torch.float32,
+    ).to(device).eval()
     vae.requires_grad_(False)
-    transformer = pipe.transformer
 
-    # Encode all prompts with text encoder before freeing it
-    tokenizer = pipe.tokenizer
-    text_encoder = pipe.text_encoder.to(device).eval()
+    scaling_factor = vae.config.scaling_factor
+    shift_factor = vae.config.shift_factor
+    pooled_dim = transformer.config["pooled_projection_dim"]
 
-    prompt_embeddings = {}
-    for entry in prompts:
-        pid = entry["id"]
-        text_cache = Path("data/derived/prompt_latent_cache") / f"{args.clip_id}.pt"
-        if text_cache.exists():
-            text_data = torch.load(str(text_cache), map_location="cpu", weights_only=True)
-            prompt_embeddings[pid] = text_data["text_embed"].unsqueeze(0).to(device, dtype=torch.bfloat16)
-            print(f"  [{pid}] Loaded cached text embedding")
-        else:
-            text_inputs = tokenizer(
-                [entry["prompt"]], padding=True, truncation=True,
-                max_length=512, return_tensors="pt",
-            ).to(device)
-            with torch.no_grad():
-                text_embeds = text_encoder(**text_inputs)[0]
-            prompt_embeddings[pid] = text_embeds.to(dtype=torch.bfloat16)
-            print(f"  [{pid}] Encoded text (shape {text_embeds.shape})")
-
-    del text_encoder, tokenizer
-    torch.cuda.empty_cache()
-
-    # Double input layer + load checkpoint
-    transformer = double_patch_embedding(transformer)
+    # Double input + load checkpoint
+    transformer = double_input_channels(transformer)
 
     full_path = checkpoint_dir / "transformer"
     if full_path.exists():
         from safetensors.torch import load_file
-        safetensor_file = full_path / "diffusion_pytorch_model.safetensors"
-        if not safetensor_file.exists():
-            safetensor_file = full_path / "model.safetensors"
-        print(f"Loading checkpoint: {safetensor_file}")
-        state_dict = load_file(str(safetensor_file))
-        transformer.load_state_dict(state_dict, strict=True)
+        sf = full_path / "diffusion_pytorch_model.safetensors"
+        if not sf.exists():
+            sf = full_path / "model.safetensors"
+        print(f"Loading checkpoint: {sf}")
+        transformer.load_state_dict(load_file(str(sf)), strict=True)
     else:
         print(f"WARNING: No checkpoint at {full_path}")
 
     transformer = transformer.to(device, dtype=torch.bfloat16).eval()
 
-    latents_mean = torch.tensor(vae.config.latents_mean).view(1, -1, 1, 1, 1)
-    latents_std = torch.tensor(vae.config.latents_std).view(1, -1, 1, 1, 1)
-
-    del pipe
-    torch.cuda.empty_cache()
-
-    # Prepare natural video + ground-truth deformation
-    print(f"Computing deformation for clip {args.clip_id}...")
-    deform_gt, crop_boxes = compute_deformation_gt(
-        args.clip_id, args.flame_root, args.target_frames, args.resolution,
-    )
-    print(f"Loading natural video for clip {args.clip_id}...")
-    natural_video = load_natural_video(
-        args.clip_id, args.flame_root, crop_boxes, args.target_frames, args.resolution,
+    # ---- Prepare FLAME + conditioning ----
+    from talkinghead_sd21_unet_cap4d_based.conditioning.th_conditioning import THConditioning
+    from talkinghead_sd21_unet_cap4d_based.flame.flame import CAP4DFlameSkinner, compute_flame
+    from talkinghead_sd21_unet_cap4d_based.data.utils import (
+        get_bbox_from_verts, verts_to_pytorch3d, crop_image, rescale_image,
     )
 
-    natural_latent = encode_video(vae, natural_video, latents_mean, latents_std)
-    natural_latent = natural_latent.to(dtype=torch.bfloat16)
-    print(f"Natural video latent: {natural_latent.shape}")
+    cond = THConditioning(
+        image_size=H, positional_channels=42, positional_multiplier=1.0,
+        super_resolution=1, use_ray_directions=False,
+        use_expr_deformation=True, use_crop_mask=False,
+    ).eval().to(device)
+    flame_skinner = CAP4DFlameSkinner(add_mouth=True, n_shape_params=150, n_expr_params=65)
+    head_vids = np.genfromtxt("data/assets/flame/head_vertices.txt").astype(int)
 
-    # Output dir
-    run_output_dir = checkpoint_dir / "inference_marigold"
+    flame_root = Path(args.flame_root)
+    fit = dict(np.load(str(flame_root / args.clip_id / "fit.npz")))
+    total_frames = fit["expr"].shape[0]
+    n_frames = args.num_frames if args.num_frames else total_frames
+    n_frames = min(n_frames, total_frames)
+    print(f"Clip {args.clip_id}: {total_frames} total frames, processing {n_frames}")
+
+    # ---- Text embeddings ----
+    text_cache = Path(f"data/derived/prompt_latent_cache/{args.clip_id}.pt")
+    if text_cache.exists():
+        te = torch.load(str(text_cache), map_location="cpu", weights_only=True)["text_embed"]
+        text_embeds = te.unsqueeze(0).to(device, dtype=torch.bfloat16)
+    else:
+        text_embeds = torch.zeros(1, 1, 4096, device=device, dtype=torch.bfloat16)
+    pooled = torch.zeros(1, pooled_dim, device=device, dtype=torch.bfloat16)
+
+    # ---- Output ----
+    run_output_dir = checkpoint_dir / "inference" / args.clip_id
     run_output_dir.mkdir(parents=True, exist_ok=True)
 
-    # Generate for each prompt
-    for i, entry in enumerate(prompts):
-        prompt_id = entry["id"]
-        prompt_text = entry["prompt"]
-        print(f"\n[{i+1}/{len(prompts)}] Generating: {prompt_id}")
+    # ---- Process frame by frame ----
+    sbs_frames = []
+    pred_frames = []
+    gt_frames = []
 
-        torch.manual_seed(args.seed + i)
-        torch.cuda.manual_seed_all(args.seed + i)
+    for t in range(n_frames):
+        if t % 10 == 0:
+            print(f"  Frame {t}/{n_frames}")
 
-        text_embeds = prompt_embeddings[prompt_id]
+        # Compute GT deform + crop box
+        flame_item = {
+            "shape": fit["shape"], "expr": fit["expr"][[t]], "rot": fit["rot"][[t]],
+            "tra": fit["tra"][[t]], "eye_rot": fit["eye_rot"][[t]],
+            "fx": fit["fx"][[0]], "fy": fit["fy"][[0]],
+            "cx": fit["cx"][[0]], "cy": fit["cy"][[0]], "extr": fit["extr"][[0]],
+        }
+        if "jaw_rot" in fit:
+            flame_item["jaw_rot"] = fit["jaw_rot"][[t]]
 
-        x = torch.randn_like(natural_latent)
-
-        num_steps = args.num_inference_steps
-        timesteps = torch.linspace(1.0, 0.0, num_steps + 1, device=device)
-
-        use_cfg = args.guidance_scale > 1.0
-        null_embeds = torch.zeros_like(text_embeds) if use_cfg else None
+        flame_out = compute_flame(flame_skinner, flame_item)
+        v2d = flame_out["verts_2d"][0, 0]
+        off = flame_out["offsets_3d"][0]
+        crop_box = get_bbox_from_verts(v2d.copy(), head_vids)
+        v2d_p = verts_to_pytorch3d(v2d.copy(), np.array(crop_box))
 
         with torch.no_grad():
-            for step_idx in range(num_steps):
-                t_current = timesteps[step_idx]
-                dt = timesteps[step_idx + 1] - timesteps[step_idx]
+            out = cond({
+                "verts_2d": torch.tensor(v2d_p).unsqueeze(0).unsqueeze(0).to(device),
+                "offsets_3d": torch.tensor(off).unsqueeze(0).unsqueeze(0).to(device),
+                "reference_mask": torch.zeros(1, 1, 1, H, H, device=device),
+            }, unconditional=False)
+        gt_deform = out["pos_enc"][0, 0, :, :, 42:45].permute(2, 0, 1).cpu()
 
-                model_input = torch.cat([x, natural_latent], dim=1)
-                t_batch = t_current.expand(1)
+        # Load natural frame
+        img = cv2.imread(str(flame_root / args.clip_id / "images" / "cam0" / f"{t:05d}.jpg"))
+        if img is not None:
+            img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+            img = crop_image(img, crop_box, bg_value=0)
+            img = rescale_image(img, H)
+        else:
+            img = np.zeros((H, H, 3), dtype=np.uint8)
+        nat_tensor = torch.from_numpy(img.astype(np.float32) / 127.5 - 1.0).permute(2, 0, 1)
+
+        # VAE encode natural frame
+        with torch.no_grad():
+            nat_latent = vae.encode(
+                nat_tensor.unsqueeze(0).to(device, dtype=vae.dtype)
+            ).latent_dist.mode()
+            nat_latent = ((nat_latent - shift_factor) * scaling_factor).to(dtype=torch.bfloat16)
+
+        # Euler denoising
+        torch.manual_seed(args.seed + t)
+        x = torch.randn_like(nat_latent)
+        timesteps = torch.linspace(1.0, 0.0, args.num_steps + 1, device=device)
+
+        use_cfg = args.guidance_scale > 1.0
+
+        with torch.no_grad():
+            for i in range(args.num_steps):
+                dt = timesteps[i + 1] - timesteps[i]
+                model_input = torch.cat([x, nat_latent], dim=1)
+                t_ms = (timesteps[i] * 1000).long().expand(1)
 
                 if use_cfg:
                     vel_cond = transformer(
-                        model_input, timestep=t_batch,
+                        hidden_states=model_input, timestep=t_ms,
                         encoder_hidden_states=text_embeds,
+                        pooled_projections=pooled,
                     ).sample
                     vel_uncond = transformer(
-                        model_input, timestep=t_batch,
-                        encoder_hidden_states=null_embeds,
+                        hidden_states=model_input, timestep=t_ms,
+                        encoder_hidden_states=torch.zeros_like(text_embeds),
+                        pooled_projections=torch.zeros_like(pooled),
                     ).sample
                     velocity = vel_uncond + args.guidance_scale * (vel_cond - vel_uncond)
                 else:
                     velocity = transformer(
-                        model_input, timestep=t_batch,
+                        hidden_states=model_input, timestep=t_ms,
                         encoder_hidden_states=text_embeds,
+                        pooled_projections=pooled,
                     ).sample
-
                 x = x + velocity * dt
 
-                if (step_idx + 1) % 10 == 0:
-                    print(f"  Step {step_idx + 1}/{num_steps}")
-
-        raw_latent = x * latents_std.to(x.device, x.dtype) + latents_mean.to(x.device, x.dtype)
-
+        # Decode
+        raw_latent = x.float() / scaling_factor + shift_factor
         with torch.no_grad():
             decoded = vae.decode(raw_latent.to(vae.dtype), return_dict=False)[0]
+        pred_deform = decoded.squeeze(0).float().cpu()  # [3, H, W]
 
-        deform_pred = decoded.squeeze(0).permute(1, 0, 2, 3).float().cpu()
-        print(f"  Generated deformation: {deform_pred.shape}")
-        print(f"  Value range: [{deform_pred.min():.4f}, {deform_pred.max():.4f}]")
+        # Collect frames for video
+        nat_vis = img[..., ::-1]  # RGB→BGR
+        pred_vis = normalize_to_uint8(pred_deform.numpy().transpose(1, 2, 0))[..., ::-1]
+        gt_vis = normalize_to_uint8(gt_deform.numpy().transpose(1, 2, 0))[..., ::-1]
 
-        sample_dir = run_output_dir / prompt_id
-        sample_dir.mkdir(parents=True, exist_ok=True)
+        sbs_frames.append(np.concatenate([nat_vis, pred_vis, gt_vis], axis=1))
+        pred_frames.append(pred_vis)
+        gt_frames.append(gt_vis)
 
-        torch.save(deform_pred, str(sample_dir / "deform_field.pt"))
-        torch.save(deform_gt, str(sample_dir / "deform_gt.pt"))
-        with open(sample_dir / "prompt.txt", "w") as f:
-            f.write(prompt_text)
+    # Save videos
+    save_video(sbs_frames, run_output_dir / "side_by_side.mp4", args.fps)
+    save_video(pred_frames, run_output_dir / "predicted.mp4", args.fps)
+    save_video(gt_frames, run_output_dir / "ground_truth.mp4", args.fps)
 
-        visualize_deform(deform_pred, sample_dir / "predicted", args.fps)
-        visualize_deform(deform_gt, sample_dir / "ground_truth", args.fps)
-
-    print(f"\nDone. Results saved to {run_output_dir}/")
+    print(f"\nDone. Saved to {run_output_dir}/")
+    print(f"  side_by_side.mp4  (input | predicted | ground truth)")
+    print(f"  predicted.mp4")
+    print(f"  ground_truth.mp4")
 
 
 if __name__ == "__main__":

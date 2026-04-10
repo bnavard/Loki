@@ -1,14 +1,17 @@
 """
-Marigold-style input layer modification for Wan DiT.
+Marigold-style input layer modification for diffusion transformers.
 
-Doubles the patch_embedding Conv3d input channels from 16 to 32
-so the transformer can accept concatenated [noisy_target | clean_conditioning]
-latents. Uses Marigold's weight duplication trick: clone weights, repeat
-along input channel dim, halve to preserve activation magnitude.
+Doubles the input projection's channel count so the transformer can accept
+concatenated [noisy_target | clean_conditioning] latents. Uses Marigold's
+weight duplication trick: clone weights, repeat along input channel dim,
+halve to preserve activation magnitude.
+
+Supports:
+  - SD3Transformer2DModel: pos_embed.proj Conv2d(16 → 32, k=2, s=2)
+  - WanTransformer3DModel: patch_embedding Conv3d(16 → 32, k=(1,2,2), s=(1,2,2))
 
 Reference: Ke et al., "Repurposing Diffusion-Based Image Generators for
-Monocular Depth Estimation" (CVPR 2024). Code adapted from:
-https://github.com/prs-eth/Marigold/blob/main/src/trainer/marigold_depth_trainer.py
+Monocular Depth Estimation" (CVPR 2024).
 """
 
 import torch
@@ -16,35 +19,54 @@ import torch.nn as nn
 from torch.nn.parameter import Parameter
 
 
-def double_patch_embedding(transformer):
+def double_input_channels(transformer):
     """
-    Replace the transformer's patch_embedding Conv3d to accept 2x input channels.
+    Double the transformer's input projection to accept 2x input channels.
+
+    Detects the architecture automatically:
+      - SD3Transformer2DModel: modifies pos_embed.proj (Conv2d)
+      - WanTransformer3DModel: modifies patch_embedding (Conv3d)
 
     Following Marigold's _replace_unet_conv_in():
-      1. Clone the original weight [out_ch, 16, kT, kH, kW]
-      2. Repeat along input channel dim: [out_ch, 32, kT, kH, kW]
-      3. Scale by 0.5 to preserve activation magnitude at initialization
-      4. Create new Conv3d(32, out_ch, ...) with these weights
-
-    This is the ONLY architectural change. All other layers remain identical.
+      1. Clone the original weight
+      2. Repeat along input channel dim (dim=1)
+      3. Scale by 0.5 to preserve activation magnitude
+      4. Replace with new Conv of doubled input channels
 
     Args:
-        transformer: WanTransformer3DModel with a patch_embedding Conv3d
+        transformer: SD3Transformer2DModel or WanTransformer3DModel
 
     Returns:
-        transformer with modified patch_embedding (in-place)
+        transformer with modified input projection (in-place)
     """
-    original_conv = transformer.patch_embedding
+    # Detect architecture
+    if hasattr(transformer, "pos_embed") and hasattr(transformer.pos_embed, "proj"):
+        # SD3Transformer2DModel: Conv2d at pos_embed.proj
+        original_conv = transformer.pos_embed.proj
+        conv_cls = nn.Conv2d
+        repeat_dims = (1, 2, 1, 1)  # [out, in*2, kH, kW]
+        attr_chain = ("pos_embed", "proj")
+    elif hasattr(transformer, "patch_embedding"):
+        # WanTransformer3DModel: Conv3d at patch_embedding
+        original_conv = transformer.patch_embedding
+        conv_cls = nn.Conv3d
+        repeat_dims = (1, 2, 1, 1, 1)  # [out, in*2, kT, kH, kW]
+        attr_chain = ("patch_embedding",)
+    else:
+        raise ValueError(
+            f"Unknown transformer architecture: {type(transformer).__name__}. "
+            f"Expected SD3Transformer2DModel or WanTransformer3DModel."
+        )
 
-    _weight = original_conv.weight.clone()  # [out_ch, 16, kT, kH, kW]
+    _weight = original_conv.weight.clone()
     _bias = original_conv.bias.clone() if original_conv.bias is not None else None
 
     # Repeat along input channel dim (dim=1) to double: 16 → 32
-    _weight = _weight.repeat((1, 2, 1, 1, 1))  # [out_ch, 32, kT, kH, kW]
+    _weight = _weight.repeat(repeat_dims)
     _weight *= 0.5  # half activation magnitude
 
-    _new_conv = nn.Conv3d(
-        in_channels=original_conv.in_channels * 2,  # 32
+    _new_conv = conv_cls(
+        in_channels=original_conv.in_channels * 2,
         out_channels=original_conv.out_channels,
         kernel_size=original_conv.kernel_size,
         stride=original_conv.stride,
@@ -54,9 +76,14 @@ def double_patch_embedding(transformer):
     if _bias is not None:
         _new_conv.bias = Parameter(_bias)
 
-    transformer.patch_embedding = _new_conv
+    # Set the new conv on the transformer
+    if len(attr_chain) == 1:
+        setattr(transformer, attr_chain[0], _new_conv)
+    else:
+        parent = getattr(transformer, attr_chain[0])
+        setattr(parent, attr_chain[1], _new_conv)
 
-    # Update config so save/load knows about the new channel count
-    transformer.config['in_channels'] = original_conv.in_channels * 2
+    # Update config
+    transformer.config["in_channels"] = original_conv.in_channels * 2
 
     return transformer

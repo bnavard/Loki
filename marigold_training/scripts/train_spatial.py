@@ -1,12 +1,14 @@
 """
-Stage 1: Spatial Marigold training (single-frame, T=1).
+Marigold training with SD3.5 Medium: natural face frame → deformation map.
 
-Trains the Wan2.1-T2V-1.3B DiT with T=1 on single-frame pairs
-(natural face frame → deformation map frame). At T=1, temporal
-attention is a no-op, so the model learns purely spatial mapping.
+Uses SD3Transformer2DModel (24-layer MMDiT, ~1.5B params) with rectified flow.
+The input layer is doubled from 16 to 32 channels to accept concatenated
+[noisy_target_deform | clean_natural_frame] latents.
 
-This is the "deflation" stage — ~900k image pairs from ~7150 clips.
-The trained spatial weights transfer to Stage 2 (video) directly.
+Text conditioning uses cached UMT5 embeddings (4096-dim, compatible with
+SD3's T5-XXL joint_attention_dim). CLIP pooled projections are zeroed.
+
+Full fine-tuning of all transformer parameters.
 
 Usage:
     cd <repo_root>
@@ -14,6 +16,12 @@ Usage:
     PYTHONPATH=. accelerate launch --num_processes 4 --mixed_precision bf16 \
         marigold_training/scripts/train_spatial.py \
         --config marigold_training/configs/spatial_config.yaml
+
+    # Resume:
+    PYTHONPATH=. accelerate launch --num_processes 4 --mixed_precision bf16 \
+        marigold_training/scripts/train_spatial.py \
+        --config marigold_training/configs/spatial_config.yaml \
+        --resume outputs/marigold_spatial/run_YYYYMMDD/step_001000
 """
 
 import argparse
@@ -30,10 +38,10 @@ import torch.nn.functional as F
 from torch.utils.data import DataLoader
 
 from marigold_training.src.frame_pair_dataset import FramePairDataset
-from marigold_training.src.marigold_model import double_patch_embedding
+from marigold_training.src.marigold_model import double_input_channels
 from marigold_training.src.collate import collate_fn
-from marigold_training.src.checkpoint import save_checkpoint
-from marigold_training.src.vis import generate_eval_sample, save_eval_grid
+from marigold_training.src.checkpoint import save_checkpoint, load_training_state
+from marigold_training.src.vis import save_eval_grid
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(message)s")
 logger = logging.getLogger(__name__)
@@ -47,11 +55,18 @@ def log_rank0(msg, is_main):
 def parse_args():
     p = argparse.ArgumentParser()
     p.add_argument("--config", required=True)
+    p.add_argument("--resume", default=None,
+                   help="Path to checkpoint step directory to resume from")
     return p.parse_args()
 
 
+def load_config(config_path):
+    import yaml
+    with open(config_path) as f:
+        return yaml.safe_load(f)
+
+
 def _save_lr_plot(lr, max_steps, warmup_steps, decay_iters, lr_min_ratio, run_dir):
-    """Save a learning rate vs step plot for the IterExponential schedule."""
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
@@ -71,10 +86,8 @@ def _save_lr_plot(lr, max_steps, warmup_steps, decay_iters, lr_min_ratio, run_di
     ax.set_xlabel("Step", fontsize=12)
     ax.set_ylabel("Learning Rate", fontsize=12)
     ax.set_title(
-        f"LR Schedule: warmup {warmup_steps} steps → exp decay to "
-        f"{lr_min_ratio*100:.0f}% over {decay_iters} iters",
-        fontsize=12,
-    )
+        f"LR Schedule: warmup {warmup_steps} steps \u2192 exp decay to "
+        f"{lr_min_ratio*100:.0f}% over {decay_iters} iters", fontsize=12)
     ax.set_xlim(0, max_steps)
     ax.ticklabel_format(axis="y", style="scientific", scilimits=(-4, -4))
     ax.grid(True, alpha=0.3)
@@ -86,10 +99,43 @@ def _save_lr_plot(lr, max_steps, warmup_steps, decay_iters, lr_min_ratio, run_di
     logger.info(f"LR plot saved: {run_dir}/learning_rate_vs_step.png")
 
 
-def load_config(config_path):
-    import yaml
-    with open(config_path) as f:
-        return yaml.safe_load(f)
+@torch.no_grad()
+def _run_eval_inference(
+    transformer, vae, cond_latent, text_embeds, pooled_projections,
+    scaling_factor, shift_factor, num_steps=50,
+):
+    """Euler denoising for eval. Returns [3, H, W] decoded deform."""
+    device = cond_latent.device
+    was_training = transformer.training
+    transformer.eval()
+
+    x = torch.randn_like(cond_latent)
+    timesteps = torch.linspace(1.0, 0.0, num_steps + 1, device=device)
+
+    for i in range(num_steps):
+        t_current = timesteps[i]
+        dt = timesteps[i + 1] - timesteps[i]
+
+        model_input = torch.cat([x, cond_latent], dim=1)
+        t_ms = (t_current * 1000).long().expand(cond_latent.shape[0])
+
+        velocity = transformer(
+            hidden_states=model_input,
+            timestep=t_ms,
+            encoder_hidden_states=text_embeds,
+            pooled_projections=pooled_projections,
+        ).sample
+
+        x = x + velocity * dt
+
+    raw_latent = x.float() / scaling_factor + shift_factor
+    decoded = vae.decode(raw_latent.to(vae.dtype), return_dict=False)[0]
+    result = decoded.float().cpu()  # [B, 3, H, W]
+
+    if was_training:
+        transformer.train()
+
+    return result
 
 
 def main():
@@ -118,7 +164,16 @@ def main():
 
     # ---- Run directory ----
     output_dir = Path(cfg.get("output_dir", "outputs/marigold_spatial"))
-    if is_main:
+    if args.resume:
+        resume_dir = Path(args.resume)
+        run_dir = resume_dir.parent
+        run_dir.mkdir(parents=True, exist_ok=True)
+        if is_main:
+            marker = output_dir / ".current_run_dir"
+            marker.parent.mkdir(parents=True, exist_ok=True)
+            marker.write_text(str(run_dir))
+            log_rank0(f"Resuming into: {run_dir}", is_main)
+    elif is_main:
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         run_dir = output_dir / f"run_{timestamp}"
         run_dir.mkdir(parents=True, exist_ok=True)
@@ -135,30 +190,42 @@ def main():
             time.sleep(0.5)
         run_dir = Path(marker.read_text().strip())
 
-    # ---- Load pipeline ----
-    from diffusers import WanPipeline
+    # ---- Load SD3.5 components ----
+    from diffusers import SD3Transformer2DModel, AutoencoderKL
 
-    model_id = cfg.get("model_id", "Wan-AI/Wan2.1-T2V-1.3B-Diffusers")
-    log_rank0(f"Loading pipeline: {model_id}...", is_main)
+    model_id = cfg.get("model_id", "stabilityai/stable-diffusion-3.5-medium")
+    log_rank0(f"Loading transformer from {model_id}...", is_main)
 
-    pipe = WanPipeline.from_pretrained(model_id, torch_dtype=torch.bfloat16)
-    transformer = pipe.transformer
+    transformer = SD3Transformer2DModel.from_pretrained(
+        model_id, subfolder="transformer", torch_dtype=torch.bfloat16,
+    )
 
-    # Frozen VAE for on-the-fly encoding of both frames
-    vae = pipe.vae.to(device).eval()
+    log_rank0("Loading VAE...", is_main)
+    vae = AutoencoderKL.from_pretrained(
+        model_id, subfolder="vae", torch_dtype=torch.float32,
+    ).to(device).eval()
     vae.requires_grad_(False)
 
-    latents_mean = torch.tensor(vae.config.latents_mean).view(1, -1, 1, 1, 1)
-    latents_std = torch.tensor(vae.config.latents_std).view(1, -1, 1, 1, 1)
+    scaling_factor = vae.config.scaling_factor
+    shift_factor = vae.config.shift_factor
+    pooled_dim = transformer.config["pooled_projection_dim"]
+    log_rank0(f"VAE: scaling_factor={scaling_factor}, shift_factor={shift_factor}", is_main)
 
-    del pipe.text_encoder, pipe.tokenizer
-    del pipe
-    torch.cuda.empty_cache()
+    # ---- Marigold: double input layer (16 → 32) ----
+    log_rank0(f"Original pos_embed.proj: {transformer.pos_embed.proj}", is_main)
+    transformer = double_input_channels(transformer)
+    log_rank0(f"Doubled pos_embed.proj: {transformer.pos_embed.proj}", is_main)
 
-    # ---- Marigold: double input layer (16 → 32 channels) ----
-    log_rank0(f"Original patch_embedding: {transformer.patch_embedding}", is_main)
-    transformer = double_patch_embedding(transformer)
-    log_rank0(f"Doubled patch_embedding: {transformer.patch_embedding}", is_main)
+    # ---- Resume: load model weights (after doubling, before optimizer) ----
+    if args.resume:
+        from safetensors.torch import load_file
+        resume_dir = Path(args.resume)
+        sf = resume_dir / "transformer" / "diffusion_pytorch_model.safetensors"
+        if not sf.exists():
+            sf = resume_dir / "transformer" / "model.safetensors"
+        log_rank0(f"Loading model weights: {sf}", is_main)
+        state_dict = load_file(str(sf))
+        transformer.load_state_dict(state_dict, strict=True)
 
     # ---- Memory optimizations ----
     if cfg.get("gradient_checkpointing", True):
@@ -166,13 +233,12 @@ def main():
             transformer.enable_gradient_checkpointing()
         log_rank0("Gradient checkpointing enabled", is_main)
 
-    # ---- Full fine-tuning ----
     transformer = transformer.to(device)
     transformer.requires_grad_(True)
     total_params = sum(p.numel() for p in transformer.parameters())
     log_rank0(f"Full fine-tuning: {total_params:,} params", is_main)
 
-    # ---- Dataset (single frames, T=1) ----
+    # ---- Dataset ----
     dataset = FramePairDataset(
         manifest_path=cfg.get("manifest_path", "data/derived/manifest.json"),
         flame_root=cfg.get("flame_root", "data/flowface"),
@@ -180,7 +246,7 @@ def main():
         prompt_latent_cache_dir=cfg.get("prompt_latent_cache_dir"),
         min_frames=cfg.get("min_frames", 10),
     )
-    log_rank0(f"Dataset: {len(dataset)} clips (~{len(dataset) * 127} frame pairs)", is_main)
+    log_rank0(f"Dataset: {len(dataset)} clips", is_main)
 
     dataloader = DataLoader(
         dataset, batch_size=cfg.get("batch_size", 8),
@@ -198,7 +264,7 @@ def main():
         weight_decay=cfg.get("weight_decay", 0.01),
     )
 
-    # ---- LR scheduler: IterExponential ----
+    # ---- LR scheduler ----
     warmup_steps = cfg.get("warmup_steps", 100)
     decay_iters = cfg.get("decay_iters", 50000)
     lr_min_ratio = cfg.get("lr_min_ratio", 0.01)
@@ -211,7 +277,14 @@ def main():
 
     lr_scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda)
 
-    # ---- Save LR schedule plot ----
+    # ---- Resume: restore optimizer + scheduler + RNG state ----
+    resume_step = 0
+    if args.resume:
+        resume_step = load_training_state(
+            Path(args.resume), optimizer=optimizer, lr_scheduler=lr_scheduler,
+        )
+        log_rank0(f"Restored training state at step {resume_step}, lr={lr_scheduler.get_last_lr()[0]:.2e}", is_main)
+
     if is_main:
         _save_lr_plot(lr, max_steps, warmup_steps, decay_iters, lr_min_ratio, run_dir)
 
@@ -227,22 +300,30 @@ def main():
     save_every = cfg.get("save_every", 2000)
     log_every = cfg.get("log_every", 1)
     eval_every = cfg.get("eval_every", save_every)
+    num_eval_samples = cfg.get("num_eval_samples", 4)
 
-    # Keep a fixed eval sample for consistent tracking across training
-    eval_batch = None
-
-    global_step = 0
+    eval_batches = []
+    global_step = resume_step
     transformer.train()
-    log_rank0(f"Starting Stage 1 (spatial) training for {max_steps} steps...", is_main)
+
+    run_eval_next = resume_step > 0
+    log_rank0(f"Starting training from step {global_step} to {max_steps}...", is_main)
 
     while global_step < max_steps:
         for batch in dataloader:
             if global_step >= max_steps:
                 break
 
-            # ---- VAE encode both frames (T=1 each) ----
+            # ---- Collect eval samples from the first few batches ----
+            if is_main and len(eval_batches) < num_eval_samples:
+                eval_batches.append({
+                    "natural_frame": batch["natural_frame"][:1].clone(),
+                    "target_frame": batch["target_frame"][:1].clone(),
+                    "text_embed": batch["text_embed"][:1].clone(),
+                })
+
+            # ---- VAE encode ----
             with torch.no_grad():
-                # [B, 3, 1, H, W] → VAE → [B, 16, 1, h, w]
                 natural_latent = vae.encode(
                     batch["natural_frame"].to(device=device, dtype=vae.dtype)
                 ).latent_dist.mode()
@@ -250,17 +331,15 @@ def main():
                     batch["target_frame"].to(device=device, dtype=vae.dtype)
                 ).latent_dist.mode()
 
-                # Normalize with pretrained stats
-                natural_latent = (natural_latent - latents_mean.to(device, dtype=natural_latent.dtype)) / \
-                                 latents_std.to(device, dtype=natural_latent.dtype)
-                target_latent = (target_latent - latents_mean.to(device, dtype=target_latent.dtype)) / \
-                                latents_std.to(device, dtype=target_latent.dtype)
+                natural_latent = (natural_latent - shift_factor) * scaling_factor
+                target_latent = (target_latent - shift_factor) * scaling_factor
 
             natural_latent = natural_latent.to(dtype=torch.bfloat16)
             target_latent = target_latent.to(dtype=torch.bfloat16)
             text_embeds = batch["text_embed"].to(device, dtype=torch.bfloat16)
-
             B = target_latent.shape[0]
+
+            pooled_projections = torch.zeros(B, pooled_dim, device=device, dtype=torch.bfloat16)
 
             # ---- CFG dropout ----
             drop_mask = torch.rand(B, device=device) < cfg_dropout
@@ -269,22 +348,27 @@ def main():
                     drop_mask[:, None, None].expand_as(text_embeds),
                     torch.zeros_like(text_embeds), text_embeds,
                 )
+                pooled_projections = torch.where(
+                    drop_mask[:, None].expand_as(pooled_projections),
+                    torch.zeros_like(pooled_projections), pooled_projections,
+                )
 
-            # ---- Flow matching: noise the target only ----
+            # ---- Rectified flow ----
             noise = torch.randn_like(target_latent)
             t = torch.rand(B, device=device, dtype=torch.bfloat16)
-            t_expand = t[:, None, None, None, None]
+            t_expand = t[:, None, None, None]
 
             noisy_target = (1 - t_expand) * target_latent + t_expand * noise
             target_velocity = noise - target_latent
 
-            # ---- Marigold concatenation: [noisy_target | clean_conditioning] ----
             model_input = torch.cat([noisy_target, natural_latent], dim=1)
-            # Shape: [B, 32, 1, h, w]
+            timestep = (t * 1000).long()
 
             velocity_pred = transformer(
-                model_input, timestep=t,
+                hidden_states=model_input,
+                timestep=timestep,
                 encoder_hidden_states=text_embeds,
+                pooled_projections=pooled_projections,
             ).sample
 
             loss = F.mse_loss(velocity_pred.float(), target_velocity.float())
@@ -315,50 +399,56 @@ def main():
                 )
 
             if is_main and global_step % save_every == 0:
-                ckpt = save_checkpoint(transformer, global_step, run_dir, accelerator)
+                ckpt = save_checkpoint(
+                    transformer, global_step, run_dir, accelerator,
+                    optimizer=optimizer, lr_scheduler=lr_scheduler, seed=seed,
+                )
                 log_rank0(f"Saved checkpoint: {ckpt}", is_main)
 
-            # ---- Periodic eval: generate a deformation map from a held sample ----
-            if is_main and global_step % eval_every == 0:
-                # Capture first batch as fixed eval sample
-                if eval_batch is None:
-                    eval_batch = {
-                        "natural_frame": batch["natural_frame"][:1].clone(),
-                        "target_frame": batch["target_frame"][:1].clone(),
-                        "text_embed": batch["text_embed"][:1].clone(),
-                    }
-
-                with torch.no_grad():
-                    eval_nat = eval_batch["natural_frame"].to(device=device, dtype=vae.dtype)
-                    eval_cond_latent = vae.encode(eval_nat).latent_dist.mode()
-                    eval_cond_latent = (eval_cond_latent - latents_mean.to(device, dtype=eval_cond_latent.dtype)) / \
-                                       latents_std.to(device, dtype=eval_cond_latent.dtype)
-                    eval_cond_latent = eval_cond_latent.to(dtype=torch.bfloat16)
-
-                eval_text = eval_batch["text_embed"][:1].to(device, dtype=torch.bfloat16)
+            # ---- Periodic eval: multiple samples ----
+            should_eval = (global_step % eval_every == 0) or run_eval_next
+            if is_main and should_eval and len(eval_batches) > 0:
+                run_eval_next = False
 
                 unwrapped = accelerator.unwrap_model(transformer) if accelerator else transformer
-                pred_deform = generate_eval_sample(
-                    unwrapped, vae, eval_cond_latent, eval_text,
-                    latents_mean, latents_std,
-                )
 
-                # GT deformation (pixel space, before VAE)
-                gt_deform = eval_batch["target_frame"][0]  # [3, 1, H, W]
-                gt_deform = gt_deform.permute(1, 0, 2, 3)  # [1, 3, H, W]
+                import numpy as np
+                from marigold_training.src.vis import normalize_to_uint8
+                import cv2
 
+                rows = []
+                for eb in eval_batches:
+                    with torch.no_grad():
+                        ec = vae.encode(
+                            eb["natural_frame"].to(device=device, dtype=vae.dtype)
+                        ).latent_dist.mode()
+                        ec = ((ec - shift_factor) * scaling_factor).to(dtype=torch.bfloat16)
+
+                    et = eb["text_embed"][:1].to(device, dtype=torch.bfloat16)
+                    ep = torch.zeros(1, pooled_dim, device=device, dtype=torch.bfloat16)
+
+                    pred = _run_eval_inference(
+                        unwrapped, vae, ec, et, ep, scaling_factor, shift_factor,
+                    )  # [1, 3, H, W]
+
+                    nat_np = ((eb["natural_frame"][0].numpy().transpose(1, 2, 0) + 1) / 2 * 255).clip(0, 255).astype(np.uint8)
+                    pred_np = normalize_to_uint8(pred[0].numpy().transpose(1, 2, 0))
+                    gt_np = normalize_to_uint8(eb["target_frame"][0].cpu().numpy().transpose(1, 2, 0))
+                    rows.append(np.concatenate([nat_np, pred_np, gt_np], axis=1))
+
+                grid = np.concatenate(rows, axis=0)
                 eval_dir = run_dir / "eval"
-                save_eval_grid(
-                    eval_batch["natural_frame"][0].cpu(),
-                    pred_deform,
-                    gt_deform,
-                    eval_dir / f"step_{global_step:06d}.png",
-                )
-                log_rank0(f"Eval saved: {eval_dir}/step_{global_step:06d}.png", is_main)
+                eval_dir.mkdir(parents=True, exist_ok=True)
+                out_path = eval_dir / f"step_{global_step:06d}.png"
+                cv2.imwrite(str(out_path), grid[..., ::-1])
+                log_rank0(f"Eval saved: {out_path} ({len(eval_batches)} samples)", is_main)
 
     if is_main:
-        ckpt = save_checkpoint(transformer, global_step, run_dir, accelerator)
-        log_rank0(f"Stage 1 complete. Final checkpoint: {ckpt}", is_main)
+        ckpt = save_checkpoint(
+            transformer, global_step, run_dir, accelerator,
+            optimizer=optimizer, lr_scheduler=lr_scheduler, seed=seed,
+        )
+        log_rank0(f"Training complete. Final checkpoint: {ckpt}", is_main)
 
 
 if __name__ == "__main__":

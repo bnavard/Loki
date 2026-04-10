@@ -1,13 +1,13 @@
 # =============================================================================
-# Stage 1: Spatial Marigold Training (single-frame, T=1)
+# Marigold Training with SD3.5 Medium: face frame → deformation map
 #
-# Trains the DiT with T=1 on (natural face frame → deformation map frame)
-# pairs. Temporal attention is a no-op at T=1, so the model learns purely
-# spatial mapping. ~900k image pairs from ~7150 clips x ~127 frames.
+# SD3Transformer2DModel (24-layer MMDiT, ~1.5B params) with rectified flow.
+# Input layer doubled from 16 to 32 channels (Marigold-style conditioning).
+# Full fine-tuning of all transformer parameters.
 # =============================================================================
 
 # ---- Model ----
-model_id: "Wan-AI/Wan2.1-T2V-1.3B-Diffusers"
+model_id: "stabilityai/stable-diffusion-3.5-medium"
 
 # ---- Data ----
 manifest_path: "data/derived/manifest.json"
@@ -17,7 +17,7 @@ min_frames: 10
 prompt_latent_cache_dir: "data/derived/prompt_latent_cache"
 
 # ---- Training ----
-batch_size: 128                                      # T=1 is cheap — use large batches
+batch_size: 32
 gradient_accumulation: 1
 gradient_checkpointing: true
 lr: 3.5e-5
@@ -31,10 +31,14 @@ grad_clip: 1.0
 # ---- CFG ----
 cfg_dropout: 0.1
 
+# ---- Eval ----
+num_eval_samples: 4
+
 # ---- Logging ----
 output_dir: "outputs/marigold_spatial"
 log_every: 1
 save_every: 1000
+eval_every: 1000
 
 # ---- Precision ----
 mixed_precision: "bf16"

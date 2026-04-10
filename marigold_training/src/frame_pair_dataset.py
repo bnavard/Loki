@@ -8,9 +8,8 @@ the corresponding natural video frame with the same face crop.
 This gives ~900k training pairs from ~7150 clips x ~127 frames/clip.
 Random frame sampling across epochs ensures all frames get covered.
 
-Both outputs are [3, 1, H, W] (T=1) for direct Wan VAE compatibility.
-The temporal attention in the DiT becomes a no-op at T=1, so the model
-learns purely spatial mapping from natural appearance to deformation.
+Both outputs are [3, H, W] image tensors. The SD3.5 VAE expects [B, 3, H, W].
+Used with SD3Transformer2DModel for image-level Marigold training.
 """
 
 import json
@@ -166,11 +165,10 @@ class FramePairDataset(Dataset):
         deform_frame, crop_box = self._compute_deform_frame(clip_id, frame_idx)
         natural_frame = self._load_natural_frame(clip_id, frame_idx, crop_box)
 
-        # T=1 for VAE: [3, H, W] → [3, 1, H, W]
         result = {
             "clip_id": clip_id,
-            "natural_frame": natural_frame.unsqueeze(1),   # [3, 1, H, W]
-            "target_frame": deform_frame.unsqueeze(1),     # [3, 1, H, W]
+            "natural_frame": natural_frame,    # [3, H, W]
+            "target_frame": deform_frame,      # [3, H, W]
         }
 
         if self.prompt_latent_cache_dir:
