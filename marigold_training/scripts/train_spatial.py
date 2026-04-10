@@ -191,26 +191,53 @@ def main():
             time.sleep(0.5)
         run_dir = Path(marker.read_text().strip())
 
-    # ---- Load SD3.5 components ----
-    from diffusers import SD3Transformer2DModel, AutoencoderKL
+    # ---- Load SD3.5 via full pipeline to access text encoders ----
+    from diffusers import StableDiffusion3Pipeline
 
     model_id = cfg.get("model_id", "stabilityai/stable-diffusion-3.5-medium")
-    log_rank0(f"Loading transformer from {model_id}...", is_main)
+    log_rank0(f"Loading full pipeline from {model_id}...", is_main)
 
-    transformer = SD3Transformer2DModel.from_pretrained(
-        model_id, subfolder="transformer", torch_dtype=torch.bfloat16,
-    )
+    # Resolve training dtype from accelerator mixed precision setting
+    mp_str = accelerator.state.mixed_precision if accelerator is not None else cfg.get("mixed_precision", "no")
+    train_dtype = {"bf16": torch.bfloat16, "fp16": torch.float16}.get(mp_str, torch.float32)
+    log_rank0(f"Training dtype: {train_dtype}", is_main)
 
-    log_rank0("Loading VAE...", is_main)
-    vae = AutoencoderKL.from_pretrained(
-        model_id, subfolder="vae", torch_dtype=torch.float32,
-    ).to(device).eval()
+    # Load pipeline in native fp32 for text encoding (avoids CLIP text_projection
+    # fp16/bf16 mismatch). Transformer is cast to train_dtype after extraction.
+    pipe = StableDiffusion3Pipeline.from_pretrained(model_id)
+
+    transformer = pipe.transformer.to(dtype=train_dtype)
+    vae = pipe.vae.to(device).eval()
     vae.requires_grad_(False)
 
     scaling_factor = vae.config.scaling_factor
     shift_factor = vae.config.shift_factor
     pooled_dim = transformer.config["pooled_projection_dim"]
     log_rank0(f"VAE: scaling_factor={scaling_factor}, shift_factor={shift_factor}", is_main)
+
+    # ---- Encode null prompt once, then free text encoders ----
+    log_rank0("Encoding null prompt...", is_main)
+    pipe.text_encoder.to(device)
+    pipe.text_encoder_2.to(device)
+    pipe.text_encoder_3.to(device)
+    with torch.no_grad():
+        null_out = pipe.encode_prompt(
+            prompt="",
+            prompt_2="",
+            prompt_3="",
+            device=device,
+        )
+        null_text_embeds = null_out[0].to(dtype=train_dtype)       # [1, seq_len, 4096]
+        null_pooled_embeds = null_out[2].to(dtype=train_dtype)     # [1, 2048]
+
+    log_rank0(f"Null text embeds: {null_text_embeds.shape}, pooled: {null_pooled_embeds.shape}", is_main)
+
+    # Free text encoders + tokenizers to reclaim VRAM
+    del pipe.text_encoder, pipe.text_encoder_2, pipe.text_encoder_3
+    del pipe.tokenizer, pipe.tokenizer_2, pipe.tokenizer_3
+    del pipe
+    torch.cuda.empty_cache()
+    log_rank0("Freed text encoders", is_main)
 
     # ---- Marigold: double input layer (16 → 32) ----
     log_rank0(f"Original pos_embed.proj: {transformer.pos_embed.proj}", is_main)
@@ -325,7 +352,7 @@ def main():
     transformer.train()
     # Initialize tensorboard tracker
     if accelerator is not None and is_main:
-        accelerator.init_trackers(".")
+        accelerator.init_trackers(run_dir.name)
 
     log_rank0(f"Starting training from step {global_step} to {max_steps}...", is_main)
 
@@ -351,8 +378,8 @@ def main():
             B = target_latent.shape[0]
 
             # Null text conditioning (unconditional, per original Marigold)
-            text_embeds = torch.zeros(B, 1, 4096, device=device, dtype=torch.bfloat16)
-            pooled_projections = torch.zeros(B, pooled_dim, device=device, dtype=torch.bfloat16)
+            text_embeds = null_text_embeds.expand(B, -1, -1)
+            pooled_projections = null_pooled_embeds.expand(B, -1)
 
             # ---- Rectified flow with multi-resolution noise ----
             t = torch.rand(B, device=device, dtype=torch.bfloat16)
@@ -449,8 +476,8 @@ def main():
                         ).latent_dist.mode()
                         ec = ((ec - shift_factor) * scaling_factor).to(dtype=torch.bfloat16)
 
-                    et = torch.zeros(1, 1, 4096, device=device, dtype=torch.bfloat16)
-                    ep = torch.zeros(1, pooled_dim, device=device, dtype=torch.bfloat16)
+                    et = null_text_embeds[:1]
+                    ep = null_pooled_embeds[:1]
 
                     pred = _run_eval_inference(
                         unwrapped, vae, ec, et, ep, scaling_factor, shift_factor,

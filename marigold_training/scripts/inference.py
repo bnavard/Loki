@@ -62,21 +62,36 @@ def main():
     else:
         prompts = [{"id": "default", "prompt": ""}]
 
-    # ---- Load SD3.5 components ----
-    from diffusers import SD3Transformer2DModel, AutoencoderKL
+    # ---- Load SD3.5 via full pipeline to encode null prompt ----
+    from diffusers import StableDiffusion3Pipeline
 
     print(f"Loading {args.model_id}...")
-    transformer = SD3Transformer2DModel.from_pretrained(
-        args.model_id, subfolder="transformer", torch_dtype=torch.bfloat16,
+    pipe = StableDiffusion3Pipeline.from_pretrained(
+        args.model_id, torch_dtype=torch.bfloat16,
     )
-    vae = AutoencoderKL.from_pretrained(
-        args.model_id, subfolder="vae", torch_dtype=torch.float32,
-    ).to(device).eval()
+
+    transformer = pipe.transformer
+    vae = pipe.vae.to(device, dtype=torch.float32).eval()
     vae.requires_grad_(False)
 
     scaling_factor = vae.config.scaling_factor
     shift_factor = vae.config.shift_factor
     pooled_dim = transformer.config["pooled_projection_dim"]
+
+    # Encode null prompt once — move text encoders to device first
+    print("Encoding null prompt...")
+    pipe.text_encoder.to(device)
+    pipe.text_encoder_2.to(device)
+    pipe.text_encoder_3.to(device)
+    with torch.no_grad():
+        null_out = pipe.encode_prompt(prompt="", prompt_2="", prompt_3="", device=device)
+        null_text_embeds = null_out[0].to(dtype=torch.bfloat16)
+        null_pooled_embeds = null_out[2].to(dtype=torch.bfloat16)
+
+    del pipe.text_encoder, pipe.text_encoder_2, pipe.text_encoder_3
+    del pipe.tokenizer, pipe.tokenizer_2, pipe.tokenizer_3
+    del pipe
+    torch.cuda.empty_cache()
 
     # Double input + load checkpoint
     transformer = double_input_channels(transformer)
@@ -116,14 +131,9 @@ def main():
     n_frames = min(n_frames, total_frames)
     print(f"Clip {args.clip_id}: {total_frames} total frames, processing {n_frames}")
 
-    # ---- Text embeddings ----
-    text_cache = Path(f"data/derived/prompt_latent_cache/{args.clip_id}.pt")
-    if text_cache.exists():
-        te = torch.load(str(text_cache), map_location="cpu", weights_only=True)["text_embed"]
-        text_embeds = te.unsqueeze(0).to(device, dtype=torch.bfloat16)
-    else:
-        text_embeds = torch.zeros(1, 1, 4096, device=device, dtype=torch.bfloat16)
-    pooled = torch.zeros(1, pooled_dim, device=device, dtype=torch.bfloat16)
+    # Null text conditioning (unconditional, per original Marigold)
+    text_embeds = null_text_embeds
+    pooled = null_pooled_embeds
 
     # ---- Output ----
     run_output_dir = checkpoint_dir / "inference" / args.clip_id

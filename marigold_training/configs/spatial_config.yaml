@@ -38,7 +38,7 @@ num_eval_samples: 8
 
 # ---- Logging ----
 output_dir: "outputs/marigold_spatial"
-log_every: 1
+log_every: 100
 save_every: 1000
 eval_every: 250
 
