@@ -39,8 +39,8 @@ num_eval_samples: 8
 # ---- Logging ----
 output_dir: "outputs/marigold_spatial"
 log_every: 1
-save_every: 1
-eval_every: 1
+save_every: 1000
+eval_every: 250
 
 # ---- Precision ----
 mixed_precision: "bf16"

@@ -307,6 +307,10 @@ def main():
     transformer.train()
 
     run_eval_next = resume_step > 0
+    # Initialize tensorboard tracker
+    if accelerator is not None and is_main:
+        accelerator.init_trackers("marigold_spatial")
+
     log_rank0(f"Starting training from step {global_step} to {max_steps}...", is_main)
 
     while global_step < max_steps:
@@ -396,12 +400,19 @@ def main():
             global_step += 1
 
             if is_main and global_step % log_every == 0:
+                current_lr = lr_scheduler.get_last_lr()[0]
+                current_loss = loss.item()
                 log_rank0(
                     f"step {global_step}/{max_steps} | "
-                    f"loss={loss.item():.6f} | "
-                    f"lr={lr_scheduler.get_last_lr()[0]:.2e}",
+                    f"loss={current_loss:.6f} | "
+                    f"lr={current_lr:.2e}",
                     is_main,
                 )
+                if accelerator is not None:
+                    accelerator.log(
+                        {"loss": current_loss, "lr": current_lr},
+                        step=global_step,
+                    )
 
             if is_main and global_step % save_every == 0:
                 ckpt = save_checkpoint(
@@ -436,7 +447,7 @@ def main():
                         unwrapped, vae, ec, et, ep, scaling_factor, shift_factor,
                     )  # [1, 3, H, W]
 
-                    nat_np = ((eb["natural_frame"][0].numpy().transpose(1, 2, 0) + 1) / 2 * 255).clip(0, 255).astype(np.uint8)
+                    nat_np = ((eb["natural_frame"][0].cpu().numpy().transpose(1, 2, 0) + 1) / 2 * 255).clip(0, 255).astype(np.uint8)
                     pred_np = normalize_to_uint8(pred[0].numpy().transpose(1, 2, 0))
                     gt_np = normalize_to_uint8(eb["target_frame"][0].cpu().numpy().transpose(1, 2, 0))
                     rows.append(np.concatenate([nat_np, pred_np, gt_np], axis=1))
@@ -454,6 +465,9 @@ def main():
             optimizer=optimizer, lr_scheduler=lr_scheduler, seed=seed,
         )
         log_rank0(f"Training complete. Final checkpoint: {ckpt}", is_main)
+
+    if accelerator is not None:
+        accelerator.end_training()
 
 
 if __name__ == "__main__":
