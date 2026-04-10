@@ -243,7 +243,6 @@ def main():
         manifest_path=cfg.get("manifest_path", "data/derived/manifest.json"),
         flame_root=cfg.get("flame_root", "data/flowface"),
         resolution=cfg.get("resolution", 512),
-        prompt_latent_cache_dir=cfg.get("prompt_latent_cache_dir"),
         min_frames=cfg.get("min_frames", 10),
     )
     log_rank0(f"Dataset: {len(dataset)} clips", is_main)
@@ -319,7 +318,6 @@ def main():
                 eval_batches.append({
                     "natural_frame": batch["natural_frame"][:1].clone(),
                     "target_frame": batch["target_frame"][:1].clone(),
-                    "text_embed": batch["text_embed"][:1].clone(),
                 })
 
             # ---- VAE encode ----
@@ -336,22 +334,11 @@ def main():
 
             natural_latent = natural_latent.to(dtype=torch.bfloat16)
             target_latent = target_latent.to(dtype=torch.bfloat16)
-            text_embeds = batch["text_embed"].to(device, dtype=torch.bfloat16)
             B = target_latent.shape[0]
 
+            # Null text conditioning (unconditional, per original Marigold)
+            text_embeds = torch.zeros(B, 1, 4096, device=device, dtype=torch.bfloat16)
             pooled_projections = torch.zeros(B, pooled_dim, device=device, dtype=torch.bfloat16)
-
-            # ---- CFG dropout ----
-            drop_mask = torch.rand(B, device=device) < cfg_dropout
-            if drop_mask.any():
-                text_embeds = torch.where(
-                    drop_mask[:, None, None].expand_as(text_embeds),
-                    torch.zeros_like(text_embeds), text_embeds,
-                )
-                pooled_projections = torch.where(
-                    drop_mask[:, None].expand_as(pooled_projections),
-                    torch.zeros_like(pooled_projections), pooled_projections,
-                )
 
             # ---- Rectified flow ----
             noise = torch.randn_like(target_latent)
@@ -424,7 +411,7 @@ def main():
                         ).latent_dist.mode()
                         ec = ((ec - shift_factor) * scaling_factor).to(dtype=torch.bfloat16)
 
-                    et = eb["text_embed"][:1].to(device, dtype=torch.bfloat16)
+                    et = torch.zeros(1, 1, 4096, device=device, dtype=torch.bfloat16)
                     ep = torch.zeros(1, pooled_dim, device=device, dtype=torch.bfloat16)
 
                     pred = _run_eval_inference(

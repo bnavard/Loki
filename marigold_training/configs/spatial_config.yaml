@@ -14,7 +14,6 @@ manifest_path: "data/derived/manifest.json"
 flame_root: "data/flowface"
 resolution: 512
 min_frames: 10
-prompt_latent_cache_dir: "data/derived/prompt_latent_cache"
 
 # ---- Training ----
 batch_size: 32
@@ -27,9 +26,6 @@ decay_iters: 50000
 lr_min_ratio: 0.01
 max_steps: 50000
 grad_clip: 1.0
-
-# ---- CFG ----
-cfg_dropout: 0.1
 
 # ---- Eval ----
 num_eval_samples: 4

@@ -27,11 +27,10 @@ class FramePairDataset(Dataset):
     Returns (natural_frame, deform_frame, text_embed) triplets at T=1.
 
     Args:
-        manifest_path:           Path to data/derived/manifest.json
-        flame_root:              Root directory for FLAME data
-        resolution:              Spatial resolution
-        prompt_latent_cache_dir: Directory with precomputed UMT5 text embeddings
-        min_frames:              Skip clips shorter than this
+        manifest_path:  Path to data/derived/manifest.json
+        flame_root:     Root directory for FLAME data
+        resolution:     Spatial resolution
+        min_frames:     Skip clips shorter than this
     """
 
     def __init__(
@@ -39,7 +38,6 @@ class FramePairDataset(Dataset):
         manifest_path: str,
         flame_root: str = "data/flowface",
         resolution: int = 512,
-        prompt_latent_cache_dir: str = "data/derived/prompt_latent_cache",
         min_frames: int = 10,
     ):
         with open(manifest_path) as f:
@@ -47,9 +45,6 @@ class FramePairDataset(Dataset):
 
         self.flame_root = Path(flame_root)
         self.resolution = resolution
-        self.prompt_latent_cache_dir = (
-            Path(prompt_latent_cache_dir) if prompt_latent_cache_dir else None
-        )
 
         self.samples = [
             entry for entry in manifest
@@ -165,17 +160,8 @@ class FramePairDataset(Dataset):
         deform_frame, crop_box = self._compute_deform_frame(clip_id, frame_idx)
         natural_frame = self._load_natural_frame(clip_id, frame_idx, crop_box)
 
-        result = {
+        return {
             "clip_id": clip_id,
             "natural_frame": natural_frame,    # [3, H, W]
             "target_frame": deform_frame,      # [3, H, W]
         }
-
-        if self.prompt_latent_cache_dir:
-            cache_path = self.prompt_latent_cache_dir / f"{clip_id}.pt"
-            if cache_path.exists():
-                text_data = torch.load(str(cache_path), map_location="cpu",
-                                       weights_only=True)
-                result["text_embed"] = text_data["text_embed"]
-
-        return result
