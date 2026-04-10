@@ -196,8 +196,8 @@ cython_debug/
 # ==== ExpressiveTalkingHead ====
 
 # Data (symlinks to external storage + derived features)
-data/talkvid
-data/flowface
+data/talkvid/
+data/flowface/
 data/derived/
 data/weights/
 
@@ -207,10 +207,10 @@ data/weights/
 
 # Outputs and checkpoints
 outputs/
-models/
 
-# Brainstorming / scratch
-brainstorming/
+# Download data artifacts (large JSON + downloaded clips)
+download_data/talkvid_data.json
+download_data/clips_output/
 
 # Large binary files
 *.pt
@@ -225,11 +225,11 @@ brainstorming/
 !data/assets/flame/*.obj
 !data/assets/flame/*.txt
 
-# Wan2.2 source (large, installed via pip or git clone)
-talkinghead_wan22_animate_14b/wan/
-
 # Experimental / scratch work
 **/experimental/
+
+# Tensorboard logs
+**/runs/
 
 # Misc
 .current_run_dir
