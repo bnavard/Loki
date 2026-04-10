@@ -239,17 +239,26 @@ def main():
     total_params = sum(p.numel() for p in transformer.parameters())
     log_rank0(f"Full fine-tuning: {total_params:,} params", is_main)
 
-    # ---- Dataset ----
-    dataset = FramePairDataset(
+    # ---- Train / Val datasets ----
+    common_ds_args = dict(
         manifest_path=cfg.get("manifest_path", "data/derived/manifest.json"),
         flame_root=cfg.get("flame_root", "data/flowface"),
         resolution=cfg.get("resolution", 512),
         min_frames=cfg.get("min_frames", 10),
     )
-    log_rank0(f"Dataset: {len(dataset)} clips", is_main)
+
+    train_dataset = FramePairDataset(
+        **common_ds_args,
+        clip_list_path=cfg.get("train_clips", "data/derived/train_clips.json"),
+    )
+    val_dataset = FramePairDataset(
+        **common_ds_args,
+        clip_list_path=cfg.get("val_clips", "data/derived/val_clips.json"),
+    )
+    log_rank0(f"Train: {len(train_dataset)} clips, Val: {len(val_dataset)} clips", is_main)
 
     dataloader = DataLoader(
-        dataset, batch_size=cfg.get("batch_size", 8),
+        train_dataset, batch_size=cfg.get("batch_size", 8),
         shuffle=True, num_workers=0, pin_memory=False,
         drop_last=True, collate_fn=collate_fn,
     )
@@ -272,6 +281,8 @@ def main():
     def lr_lambda(step):
         if step < warmup_steps:
             return step / max(warmup_steps, 1)
+        if step >= warmup_steps + decay_iters:
+            return lr_min_ratio
         decay_step = step - warmup_steps
         return math.exp(math.log(lr_min_ratio) * decay_step / decay_iters)
 
@@ -302,14 +313,19 @@ def main():
     eval_every = cfg.get("eval_every", save_every)
     num_eval_samples = cfg.get("num_eval_samples", 4)
 
-    eval_batches = []
+    # Pre-load fixed val samples for consistent eval across training
+    eval_samples = []
+    if is_main:
+        n_eval = min(num_eval_samples, len(val_dataset))
+        for i in range(n_eval):
+            eval_samples.append(val_dataset[i])
+        log_rank0(f"Loaded {len(eval_samples)} fixed val samples for eval", is_main)
+
     global_step = resume_step
     transformer.train()
-
-    run_eval_next = resume_step > 0
     # Initialize tensorboard tracker
     if accelerator is not None and is_main:
-        accelerator.init_trackers("marigold_spatial")
+        accelerator.init_trackers(".")
 
     log_rank0(f"Starting training from step {global_step} to {max_steps}...", is_main)
 
@@ -317,13 +333,6 @@ def main():
         for batch in dataloader:
             if global_step >= max_steps:
                 break
-
-            # ---- Collect eval samples from the first few batches ----
-            if is_main and len(eval_batches) < num_eval_samples:
-                eval_batches.append({
-                    "natural_frame": batch["natural_frame"][:1].clone(),
-                    "target_frame": batch["target_frame"][:1].clone(),
-                })
 
             # ---- VAE encode ----
             with torch.no_grad():
@@ -421,11 +430,8 @@ def main():
                 )
                 log_rank0(f"Saved checkpoint: {ckpt}", is_main)
 
-            # ---- Periodic eval: multiple samples ----
-            should_eval = (global_step % eval_every == 0) or run_eval_next
-            if is_main and should_eval and len(eval_batches) > 0:
-                run_eval_next = False
-
+            # ---- Periodic eval on fixed val set ----
+            if is_main and global_step % eval_every == 0 and len(eval_samples) > 0:
                 unwrapped = accelerator.unwrap_model(transformer) if accelerator else transformer
 
                 import numpy as np
@@ -433,10 +439,13 @@ def main():
                 import cv2
 
                 rows = []
-                for eb in eval_batches:
+                for es in eval_samples:
+                    nat_frame = es["natural_frame"].unsqueeze(0)  # [1, 3, H, W]
+                    gt_frame = es["target_frame"]                 # [3, H, W]
+
                     with torch.no_grad():
                         ec = vae.encode(
-                            eb["natural_frame"].to(device=device, dtype=vae.dtype)
+                            nat_frame.to(device=device, dtype=vae.dtype)
                         ).latent_dist.mode()
                         ec = ((ec - shift_factor) * scaling_factor).to(dtype=torch.bfloat16)
 
@@ -447,9 +456,9 @@ def main():
                         unwrapped, vae, ec, et, ep, scaling_factor, shift_factor,
                     )  # [1, 3, H, W]
 
-                    nat_np = ((eb["natural_frame"][0].cpu().numpy().transpose(1, 2, 0) + 1) / 2 * 255).clip(0, 255).astype(np.uint8)
+                    nat_np = ((nat_frame[0].cpu().numpy().transpose(1, 2, 0) + 1) / 2 * 255).clip(0, 255).astype(np.uint8)
                     pred_np = normalize_to_uint8(pred[0].numpy().transpose(1, 2, 0))
-                    gt_np = normalize_to_uint8(eb["target_frame"][0].cpu().numpy().transpose(1, 2, 0))
+                    gt_np = normalize_to_uint8(gt_frame.cpu().numpy().transpose(1, 2, 0))
                     rows.append(np.concatenate([nat_np, pred_np, gt_np], axis=1))
 
                 grid = np.concatenate(rows, axis=0)
@@ -457,7 +466,7 @@ def main():
                 eval_dir.mkdir(parents=True, exist_ok=True)
                 out_path = eval_dir / f"step_{global_step:06d}.png"
                 cv2.imwrite(str(out_path), grid[..., ::-1])
-                log_rank0(f"Eval saved: {out_path} ({len(eval_batches)} samples)", is_main)
+                log_rank0(f"Eval saved: {out_path} ({len(eval_samples)} val samples)", is_main)
 
     if is_main:
         ckpt = save_checkpoint(

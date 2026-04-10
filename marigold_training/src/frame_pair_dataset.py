@@ -31,6 +31,9 @@ class FramePairDataset(Dataset):
         flame_root:     Root directory for FLAME data
         resolution:     Spatial resolution
         min_frames:     Skip clips shorter than this
+        clip_list_path: Optional path to a JSON list of clip_ids to include.
+                        If provided, only clips in this list are used.
+                        Use data/derived/train_clips.json or val_clips.json.
     """
 
     def __init__(
@@ -39,12 +42,19 @@ class FramePairDataset(Dataset):
         flame_root: str = "data/flowface",
         resolution: int = 512,
         min_frames: int = 10,
+        clip_list_path: str = None,
     ):
         with open(manifest_path) as f:
             manifest = json.load(f)
 
         self.flame_root = Path(flame_root)
         self.resolution = resolution
+
+        # Filter by clip list (train/val split)
+        if clip_list_path is not None:
+            with open(clip_list_path) as f:
+                allowed_clips = set(json.load(f))
+            manifest = [e for e in manifest if e["clip_id"] in allowed_clips]
 
         self.samples = [
             entry for entry in manifest
