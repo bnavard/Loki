@@ -18,6 +18,8 @@ We apply the same principle: given a natural face frame, generate the correspond
 
 **Text conditioning:** Null embeddings (unconditional), following the original Marigold paper. The model relies entirely on the visual conditioning from the input frame.
 
+**Multi-resolution noise:** Instead of plain Gaussian noise, training uses a pyramid of noise at progressively lower resolutions, all summed and normalized back to unit variance. This gives the noise correlated low-frequency structure, helping the model learn large-scale spatial coherence (smooth deformation gradients, consistent face regions) rather than just local pixel details. The strength is annealed by timestep — at high timesteps (heavy noise) the full pyramid effect applies, at low timesteps (near-clean) it fades toward standard Gaussian. At 512px (64x64 latents), the pyramid has ~6 levels with random 2-4x downscaling per level.
+
 **Training:** Full fine-tuning of all transformer parameters. Rectified flow with velocity prediction.
 
 ```
@@ -74,6 +76,7 @@ PYTHONPATH=. accelerate launch \
 | Learning rate | 3.5e-5 | IterExponential: warmup 100 → decay to 1% over 50k |
 | Steps | 50,000 | |
 | Text conditioning | Null | Unconditional (per original Marigold) |
+| Multi-res noise | strength=0.9, annealed | Pyramid noise for low-freq coherence |
 | Fine-tuning | Full | All transformer parameters trainable |
 
 **Checkpoints** save the full training state (model weights, optimizer, LR scheduler, RNG state) for exact resume. A learning rate plot and periodic multi-sample evaluation grids are saved to the run directory.
@@ -105,6 +108,7 @@ marigold_training/
 ├── src/
 │   ├── marigold_model.py         # double_input_channels (16→32ch, SD3 + Wan)
 │   ├── frame_pair_dataset.py     # (natural_frame, deform_frame) pairs
+│   ├── multi_res_noise.py        # Multi-resolution noise pyramid (from Marigold)
 │   ├── collate.py                # Batch collation
 │   ├── checkpoint.py             # Full training state save/load
 │   └── vis.py                    # Deformation visualization + eval grids

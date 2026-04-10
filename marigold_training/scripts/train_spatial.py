@@ -40,6 +40,7 @@ from torch.utils.data import DataLoader
 from marigold_training.src.frame_pair_dataset import FramePairDataset
 from marigold_training.src.marigold_model import double_input_channels
 from marigold_training.src.collate import collate_fn
+from marigold_training.src.multi_res_noise import multi_res_noise_like
 from marigold_training.src.checkpoint import save_checkpoint, load_training_state
 from marigold_training.src.vis import save_eval_grid
 
@@ -340,10 +341,27 @@ def main():
             text_embeds = torch.zeros(B, 1, 4096, device=device, dtype=torch.bfloat16)
             pooled_projections = torch.zeros(B, pooled_dim, device=device, dtype=torch.bfloat16)
 
-            # ---- Rectified flow ----
-            noise = torch.randn_like(target_latent)
+            # ---- Rectified flow with multi-resolution noise ----
             t = torch.rand(B, device=device, dtype=torch.bfloat16)
             t_expand = t[:, None, None, None]
+
+            # Multi-res noise with annealing: strength scaled by timestep so
+            # pyramid effect is strongest at high noise, fades near clean images.
+            mr_cfg = cfg.get("multi_res_noise", {})
+            mr_strength = mr_cfg.get("strength", 0.9)
+            mr_annealed = mr_cfg.get("annealed", True)
+            mr_strategy = mr_cfg.get("downscale_strategy", "original")
+
+            if mr_annealed:
+                effective_strength = mr_strength * t  # [B], per-sample annealing
+            else:
+                effective_strength = mr_strength
+
+            noise = multi_res_noise_like(
+                target_latent.float(),
+                strength=effective_strength.float() if torch.is_tensor(effective_strength) else effective_strength,
+                downscale_strategy=mr_strategy,
+            ).to(dtype=target_latent.dtype)
 
             noisy_target = (1 - t_expand) * target_latent + t_expand * noise
             target_velocity = noise - target_latent
