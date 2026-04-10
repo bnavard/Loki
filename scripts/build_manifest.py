@@ -9,7 +9,7 @@ Output: data/derived/manifest.json
 
 Usage:
     cd <repo_root>
-    python caching/scripts/build_manifest.py
+    python scripts/build_manifest.py
 """
 
 import json

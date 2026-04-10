@@ -340,13 +340,8 @@ def main():
     eval_every = cfg.get("eval_every", save_every)
     num_eval_samples = cfg.get("num_eval_samples", 4)
 
-    # Pre-load fixed val samples for consistent eval across training
-    eval_samples = []
     if is_main:
-        n_eval = min(num_eval_samples, len(val_dataset))
-        for i in range(n_eval):
-            eval_samples.append(val_dataset[i])
-        log_rank0(f"Loaded {len(eval_samples)} fixed val samples for eval", is_main)
+        log_rank0(f"Val dataset: {len(val_dataset)} samples, sampling {num_eval_samples} per eval", is_main)
 
     global_step = resume_step
     transformer.train()
@@ -458,15 +453,21 @@ def main():
                 log_rank0(f"Saved checkpoint: {ckpt}", is_main)
 
             # ---- Periodic eval on fixed val set ----
-            if is_main and global_step % eval_every == 0 and len(eval_samples) > 0:
+            if is_main and global_step % eval_every == 0 and len(val_dataset) > 0:
                 unwrapped = accelerator.unwrap_model(transformer) if accelerator else transformer
 
+                import random as _random
                 import numpy as np
                 from marigold_training.src.vis import normalize_to_uint8
                 import cv2
 
+                # Sample random val indices each eval
+                n_eval = min(num_eval_samples, len(val_dataset))
+                eval_indices = _random.sample(range(len(val_dataset)), n_eval)
+
                 rows = []
-                for es in eval_samples:
+                for idx in eval_indices:
+                    es = val_dataset[idx]
                     nat_frame = es["natural_frame"].unsqueeze(0)  # [1, 3, H, W]
                     gt_frame = es["target_frame"]                 # [3, H, W]
 
@@ -493,7 +494,7 @@ def main():
                 eval_dir.mkdir(parents=True, exist_ok=True)
                 out_path = eval_dir / f"step_{global_step:06d}.png"
                 cv2.imwrite(str(out_path), grid[..., ::-1])
-                log_rank0(f"Eval saved: {out_path} ({len(eval_samples)} val samples)", is_main)
+                log_rank0(f"Eval saved: {out_path} ({n_eval} val samples)", is_main)
 
     if is_main:
         ckpt = save_checkpoint(

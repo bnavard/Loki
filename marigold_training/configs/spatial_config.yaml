@@ -25,7 +25,7 @@ warmup_steps: 100
 decay_iters: 50000
 lr_min_ratio: 0.01
 max_steps: 30000
-grad_clip: 1.0
+grad_clip: 0
 
 # ---- Multi-resolution noise (Marigold default) ----
 multi_res_noise:
@@ -38,7 +38,7 @@ num_eval_samples: 8
 
 # ---- Logging ----
 output_dir: "outputs/marigold_spatial"
-log_every: 100
+log_every: 1
 save_every: 1000
 eval_every: 250
 

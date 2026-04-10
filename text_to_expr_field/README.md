@@ -93,10 +93,10 @@ Data preprocessing (caption generation, manifest building, VAE latent caching, t
 
 ```bash
 # 1. Generate captions
-PYTHONPATH=. python caching/scripts/generate_captions.py --gpu 0 --num_gpus 8
+PYTHONPATH=. python scripts/generate_captions.py --gpu 0 --num_gpus 8
 
 # 2. Build manifest
-python caching/scripts/build_manifest.py
+python scripts/build_manifest.py
 
 # 3. Cache VAE latents (for cached training mode)
 PYTHONPATH=. torchrun --nproc_per_node=4 caching/scripts/cache_vae_latents.py
