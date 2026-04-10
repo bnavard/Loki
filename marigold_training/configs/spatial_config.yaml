@@ -17,10 +17,10 @@ min_frames: 10
 prompt_latent_cache_dir: "data/derived/prompt_latent_cache"
 
 # ---- Training ----
-batch_size: 8                                      # T=1 is cheap — use large batches
-gradient_accumulation: 2
+batch_size: 128                                      # T=1 is cheap — use large batches
+gradient_accumulation: 1
 gradient_checkpointing: true
-lr: 1.0e-5
+lr: 3.5e-5
 weight_decay: 0.01
 warmup_steps: 100
 decay_iters: 50000
@@ -34,7 +34,7 @@ cfg_dropout: 0.1
 # ---- Logging ----
 output_dir: "outputs/marigold_spatial"
 log_every: 1
-save_every: 2000
+save_every: 1000
 
 # ---- Precision ----
 mixed_precision: "bf16"

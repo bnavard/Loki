@@ -49,6 +49,42 @@ def parse_args():
     return p.parse_args()
 
 
+def _save_lr_plot(lr, max_steps, warmup_steps, decay_iters, lr_min_ratio, run_dir):
+    """Save a learning rate vs step plot for the IterExponential schedule."""
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    import numpy as np
+
+    steps = np.arange(max_steps)
+    lr_values = np.zeros(max_steps)
+    for s in steps:
+        if s < warmup_steps:
+            lr_values[s] = lr * s / max(warmup_steps, 1)
+        else:
+            decay_step = s - warmup_steps
+            lr_values[s] = lr * math.exp(math.log(lr_min_ratio) * decay_step / decay_iters)
+
+    fig, ax = plt.subplots(figsize=(10, 4))
+    ax.plot(steps, lr_values, linewidth=1.5)
+    ax.set_xlabel("Step", fontsize=12)
+    ax.set_ylabel("Learning Rate", fontsize=12)
+    ax.set_title(
+        f"LR Schedule: warmup {warmup_steps} steps → exp decay to "
+        f"{lr_min_ratio*100:.0f}% over {decay_iters} iters",
+        fontsize=12,
+    )
+    ax.set_xlim(0, max_steps)
+    ax.ticklabel_format(axis="y", style="scientific", scilimits=(-4, -4))
+    ax.grid(True, alpha=0.3)
+    ax.axvline(x=warmup_steps, color="r", linestyle="--", alpha=0.5, label=f"warmup end ({warmup_steps})")
+    ax.legend(fontsize=10)
+    fig.tight_layout()
+    fig.savefig(str(Path(run_dir) / "learning_rate_vs_step.png"), dpi=150)
+    plt.close(fig)
+    logger.info(f"LR plot saved: {run_dir}/learning_rate_vs_step.png")
+
+
 def load_config(config_path):
     import yaml
     with open(config_path) as f:
@@ -212,6 +248,10 @@ def main():
         return math.exp(math.log(lr_min_ratio) * decay_step / decay_iters)
 
     lr_scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda)
+
+    # ---- Save LR schedule plot ----
+    if is_main:
+        _save_lr_plot(lr, max_steps, warmup_steps, decay_iters, lr_min_ratio, run_dir)
 
     # ---- Accelerate prepare ----
     if accelerator is not None:

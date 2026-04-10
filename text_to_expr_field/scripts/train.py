@@ -55,6 +55,30 @@ def load_config(config_path):
         return yaml.safe_load(f)
 
 
+def _save_lr_plot(lr, max_steps, run_dir):
+    """Save a learning rate vs step plot to the run directory."""
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    import numpy as np
+
+    steps = np.arange(max_steps)
+    lr_values = np.full_like(steps, lr, dtype=np.float64)
+
+    fig, ax = plt.subplots(figsize=(10, 4))
+    ax.plot(steps, lr_values, linewidth=1.5)
+    ax.set_xlabel("Step", fontsize=12)
+    ax.set_ylabel("Learning Rate", fontsize=12)
+    ax.set_title("Learning Rate Schedule (constant)", fontsize=14)
+    ax.set_xlim(0, max_steps)
+    ax.ticklabel_format(axis="y", style="scientific", scilimits=(-4, -4))
+    ax.grid(True, alpha=0.3)
+    fig.tight_layout()
+    fig.savefig(str(Path(run_dir) / "learning_rate_vs_step.png"), dpi=150)
+    plt.close(fig)
+    logger.info(f"LR plot saved: {run_dir}/learning_rate_vs_step.png")
+
+
 def build_dataset(cfg, vae, device):
     """Factory: return CachedLatentDataset or OnTheFlyDataset based on config."""
     on_the_fly = cfg.get("on_the_fly", False)
@@ -189,6 +213,10 @@ def main():
         trainable_params, lr=lr,
         weight_decay=cfg.get("weight_decay", 0.01),
     )
+
+    # ---- Save LR schedule plot ----
+    if is_main:
+        _save_lr_plot(lr, max_steps, run_dir)
 
     # ---- Accelerate prepare ----
     if accelerator is not None:
