@@ -200,6 +200,7 @@ data/talkvid/
 data/flowface/
 data/derived/
 data/weights/
+data/additional_data
 
 # Keep FLAME model assets (small, needed for inference)
 !data/assets/
@@ -210,7 +211,7 @@ outputs/
 
 # Download data artifacts (large JSON + downloaded clips)
 download_data/talkvid_data.json
-download_data/clips_output/
+download_data/clips_output/.
 
 # Large binary files
 *.pt
