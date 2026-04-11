@@ -30,8 +30,8 @@ OUTPUT_DIR="${2:-data/flowface}"
 NUM_GPUS="${3:-8}"
 WORKERS_PER_GPU="${4:-2}"
 
-PREPROCESSING_DIR="${PIXEL3DMM_PREPROCESSED_DATA:-outputs/flame_tracking/preprocessing}"
-TRACKING_DIR="${PIXEL3DMM_TRACKING_OUTPUT:-outputs/flame_tracking/tracking}"
+PREPROCESSING_DIR="${PIXEL3DMM_PREPROCESSED_DATA:-data/flame_tracking/preprocessing}"
+TRACKING_DIR="${PIXEL3DMM_TRACKING_OUTPUT:-data/flame_tracking/tracking}"
 
 echo "============================================================"
 echo "Generating fit.npz for all videos"

@@ -98,8 +98,8 @@ Additional weights for Phase 2 (already in `data/weights/` if repo is set up):
 
 ```bash
 export PIXEL3DMM_CODE_BASE=/path/to/pixel3dmm
-export PIXEL3DMM_PREPROCESSED_DATA=outputs/flame_tracking/preprocessing
-export PIXEL3DMM_TRACKING_OUTPUT=outputs/flame_tracking/tracking
+export PIXEL3DMM_PREPROCESSED_DATA=data/flame_tracking/preprocessing
+export PIXEL3DMM_TRACKING_OUTPUT=data/flame_tracking/tracking
 ```
 
 Add these to your `~/.bashrc` or activate script to persist across sessions.
@@ -181,7 +181,7 @@ Located in `data/weights/` (shared repo-wide):
 
 Phase 1 output (intermediate):
 ```
-outputs/flame_tracking/
+data/flame_tracking/
 ├── preprocessing/{video_name}/     # cropped frames, segmentation, MICA, p3dmm predictions
 └── tracking/{video_name}_nV1_.../  # per-frame .frame checkpoints + .ply meshes
 ```

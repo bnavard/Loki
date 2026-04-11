@@ -30,8 +30,8 @@ GPU_ID="${3:-0}"
 VIDEO_NAME=$(basename "${VIDEO_PATH}" .mp4)
 
 # Default intermediate directories
-PREPROCESSING_DIR="${PIXEL3DMM_PREPROCESSED_DATA:-outputs/flame_tracking/preprocessing}"
-TRACKING_DIR="${PIXEL3DMM_TRACKING_OUTPUT:-outputs/flame_tracking/tracking}"
+PREPROCESSING_DIR="${PIXEL3DMM_PREPROCESSED_DATA:-data/flame_tracking/preprocessing}"
+TRACKING_DIR="${PIXEL3DMM_TRACKING_OUTPUT:-data/flame_tracking/tracking}"
 TRACKING_SUFFIX="_nV1_noPho_uv2000.0_n1000.0"
 
 echo "============================================================"

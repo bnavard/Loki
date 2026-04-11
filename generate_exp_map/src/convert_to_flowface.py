@@ -15,8 +15,8 @@ Usage:
 
     python generate_exp_map/scripts/convert_to_flowface.py \
         --video_path data/talkvid/talkvid/CLIP_ID.mp4 \
-        --tracking_path outputs/flame_tracking/tracking/CLIP_ID_nV1_noPho_uv2000.0_n1000.0 \
-        --preprocess_path outputs/flame_tracking/preprocessing/CLIP_ID \
+        --tracking_path data/flame_tracking/tracking/CLIP_ID_nV1_noPho_uv2000.0_n1000.0 \
+        --preprocess_path data/flame_tracking/preprocessing/CLIP_ID \
         --output_path data/flowface/CLIP_ID
 """
 

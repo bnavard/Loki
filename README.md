@@ -61,18 +61,54 @@ Precomputed data artifacts: VAE latent caching, UMT5 text embedding caching, and
 
 ## Installation
 
+### `cap4d_env` — main training and inference environment
+
+Used by `talkinghead_sd21_unet_cap4d_based`, `text_to_expr_field`, `marigold_training`, and `caching`.
+
 ```bash
 conda create -n cap4d_env python=3.10 -y
 conda activate cap4d_env
 
+# PyTorch 2.4.1 + CUDA 12.1
 pip install torch==2.4.1+cu121 torchvision==0.19.1+cu121 torchaudio==2.4.1+cu121 \
     --index-url https://download.pytorch.org/whl/cu121
 
+# PyTorch3D 0.7.8 (prebuilt wheel for Python 3.10, CUDA 12.1, PyTorch 2.4.1)
 pip install --no-index --no-cache-dir pytorch3d \
     -f https://dl.fbaipublicfiles.com/pytorch3d/packaging/wheels/py310_cu121_pyt241/download.html
 
-pip install -r requirements.txt
+# Diffusion and training
+pip install diffusers==0.33.0 transformers peft accelerate safetensors
+
+# General
+pip install einops opencv-python scipy matplotlib pyyaml sentencepiece tqdm
 ```
+
+| Package | Version | Purpose |
+|---|---|---|
+| Python | 3.10 | |
+| PyTorch | 2.4.1+cu121 | GPU compute |
+| PyTorch3D | 0.7.8 | FLAME mesh rasterization (expression field computation) |
+| diffusers | 0.33.0 | Wan2.2 / SD3.5 diffusion pipelines |
+| transformers | 4.49.0 | UMT5 text encoder, CLIP, Whisper |
+| peft | 0.18.1 | LoRA fine-tuning |
+| accelerate | 1.13.0 | Multi-GPU training (DDP) |
+| safetensors | 0.7.0 | Model weight loading |
+| einops | 0.8.2 | Tensor reshaping |
+| sentencepiece | 0.2.1 | T5 tokenizer |
+
+### `expmapgen` — FLAME tracking environment
+
+Used by `generate_exp_map` for computing `fit.npz` from videos via [pixel3dmm](https://github.com/SimonGiebenhain/pixel3dmm). See [`generate_exp_map/README.md`](generate_exp_map/README.md) for full setup instructions.
+
+| Package | Version | Purpose |
+|---|---|---|
+| Python | 3.9 | pixel3dmm compatibility |
+| PyTorch | 2.0.1+cu118 | GPU compute |
+| PyTorch3D | 0.7.4 | Differentiable mesh rendering |
+| nvdiffrast | latest | Differentiable rasterization |
+| insightface | 0.7.3 | Face detection (MICA) |
+| facer | latest | Face semantic segmentation |
 
 ## Data Layout
 

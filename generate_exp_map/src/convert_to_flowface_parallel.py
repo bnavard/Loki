@@ -11,21 +11,21 @@ Usage:
 
     # All pending videos, 4 GPUs:
     PYTHONPATH=. python generate_exp_map/scripts/run_parallel_flowface.py \
-        --preprocessing_dir outputs/flame_tracking/preprocessing \
-        --tracking_dir outputs/flame_tracking/tracking \
+        --preprocessing_dir data/flame_tracking/preprocessing \
+        --tracking_dir data/flame_tracking/tracking \
         --output_dir data/flowface
 
     # Specific GPUs:
     PYTHONPATH=. python generate_exp_map/scripts/run_parallel_flowface.py \
-        --preprocessing_dir outputs/flame_tracking/preprocessing \
-        --tracking_dir outputs/flame_tracking/tracking \
+        --preprocessing_dir data/flame_tracking/preprocessing \
+        --tracking_dir data/flame_tracking/tracking \
         --output_dir data/flowface \
         --gpus 0 1 2 3
 
     # Test on one video:
     PYTHONPATH=. python generate_exp_map/scripts/run_parallel_flowface.py \
-        --preprocessing_dir outputs/flame_tracking/preprocessing \
-        --tracking_dir outputs/flame_tracking/tracking \
+        --preprocessing_dir data/flame_tracking/preprocessing \
+        --tracking_dir data/flame_tracking/tracking \
         --output_dir data/flowface \
         --test
 """

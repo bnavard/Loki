@@ -12,8 +12,8 @@ downstream pipelines (expression field computation, Marigold training, etc.).
 
 Requires the pixel3dmm package (patched) to be installed. Set environment:
   PIXEL3DMM_CODE_BASE         — path to pixel3dmm source
-  PIXEL3DMM_PREPROCESSED_DATA — intermediate preprocessing output
-  PIXEL3DMM_TRACKING_OUTPUT   — final tracking output (fit.npz location)
+  PIXEL3DMM_PREPROCESSED_DATA — intermediate preprocessing output (default: data/flame_tracking/preprocessing)
+  PIXEL3DMM_TRACKING_OUTPUT   — final tracking output (default: data/flame_tracking/tracking)
 
 Usage:
     cd <repo_root>
@@ -46,9 +46,9 @@ from pixel3dmm_preprocessing import main as run_preprocessing_main
 from pixel3dmm_inference import main as network_inference_main
 from track import main as track_main
 
-LOG_DIR = Path(os.environ.get("FLAME_LOG_DIR", "outputs/flame_tracking/logs/artifacts"))
-COMPLETED_LOG = Path(os.environ.get("FLAME_COMPLETED_LOG", "outputs/flame_tracking/logs/completed.txt"))
-FAILED_LOG = Path(os.environ.get("FLAME_FAILED_LOG", "outputs/flame_tracking/logs/failed.txt"))
+LOG_DIR = Path(os.environ.get("FLAME_LOG_DIR", "data/flame_tracking/logs/artifacts"))
+COMPLETED_LOG = Path(os.environ.get("FLAME_COMPLETED_LOG", "data/flame_tracking/logs/completed.txt"))
+FAILED_LOG = Path(os.environ.get("FLAME_FAILED_LOG", "data/flame_tracking/logs/failed.txt"))
 
 
 def process_video(video_path: str, log_to_file: bool = True, gpu_id: str = "0"):

@@ -34,15 +34,15 @@ if PIXEL3DMM_CODE_BASE is None:
         "PIXEL3DMM_CODE_BASE not set. See generate_exp_map/README.md for setup."
     )
 
-os.environ.setdefault("PIXEL3DMM_PREPROCESSED_DATA", "outputs/flame_tracking/preprocessing")
-os.environ.setdefault("PIXEL3DMM_TRACKING_OUTPUT", "outputs/flame_tracking/tracking")
+os.environ.setdefault("PIXEL3DMM_PREPROCESSED_DATA", "data/flame_tracking/preprocessing")
+os.environ.setdefault("PIXEL3DMM_TRACKING_OUTPUT", "data/flame_tracking/tracking")
 
 sys.path.insert(0, PIXEL3DMM_CODE_BASE)
 sys.path.insert(0, os.path.join(PIXEL3DMM_CODE_BASE, "scripts"))
 
-LOG_DIR = Path(os.environ.get("FLAME_LOG_DIR", "outputs/flame_tracking/logs/artifacts"))
-COMPLETED_LOG = Path(os.environ.get("FLAME_COMPLETED_LOG", "outputs/flame_tracking/logs/completed.txt"))
-FAILED_LOG = Path(os.environ.get("FLAME_FAILED_LOG", "outputs/flame_tracking/logs/failed.txt"))
+LOG_DIR = Path(os.environ.get("FLAME_LOG_DIR", "data/flame_tracking/logs/artifacts"))
+COMPLETED_LOG = Path(os.environ.get("FLAME_COMPLETED_LOG", "data/flame_tracking/logs/completed.txt"))
+FAILED_LOG = Path(os.environ.get("FLAME_FAILED_LOG", "data/flame_tracking/logs/failed.txt"))
 
 
 def worker_process(gpu_id, task_queue, result_queue, stop_event):
