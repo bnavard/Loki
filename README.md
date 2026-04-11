@@ -19,6 +19,8 @@ A separate text-to-expression-field pipeline trains Wan2.2-T2V (via LoRA) to syn
 ├── talkinghead_sd21_unet_cap4d_based/   # Talking-head rendering (SD 2.1 UNet + 3D attention)
 ├── text_to_expr_field/                  # Text → expression field generation (Wan DiT)
 ├── marigold_training/                   # Marigold-style face → deformation map (SD3.5 DiT)
+├── generate_exp_map/                    # FLAME tracking pipeline (pixel3dmm → fit.npz)
+├── download_data/                       # TalkVid dataset download (yt-dlp)
 ├── scripts/                             # Data preparation (captions, manifest, train/val split)
 ├── caching/                             # Precomputed artifacts (VAE latents, text embeddings)
 ├── controlnet/                          # SD LDM utilities (inherited from CAP4D)
