@@ -198,6 +198,7 @@ cython_debug/
 # Data (symlinks to external storage + derived features)
 data/talkvid/
 data/flowface/
+data/flame_tracking/
 data/derived/
 data/weights/
 data/additional_data
