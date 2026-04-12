@@ -74,18 +74,30 @@ echo "===== Step 4: Installing nvdiffrast ====="
 
 # nvdiffrast requires:
 #   - CUDA 11.8 toolkit (nvcc must match PyTorch's CUDA version)
-#   - GCC ≤ 11 (CUDA 11.8 rejects GCC > 11)
+#   - GCC ≤ 11 (CUDA 11.8 rejects GCC > 11) — installed via conda-forge
 #   - ninja build system
-#   - TORCH_CUDA_ARCH_LIST excluding sm_90 (CUDA 11.8 doesn't support Hopper)
+#   - TORCH_CUDA_ARCH_LIST with PTX for forward compat (Hopper/H200)
 #
-# Set these env vars if your paths differ:
-#   CUDA_HOME_118  — path to CUDA 11.8 toolkit
-#   GCC_11_PATH    — path to GCC ≤ 11 installation
+# Set CUDA_HOME_118 if CUDA 11.8 is not at the default path.
 
 pip install setuptools wheel ninja
 
+# Install GCC 11 via conda-forge (no system permissions needed)
+echo "Installing GCC 11 via conda-forge..."
+conda install -c conda-forge gcc_linux-64=11 gxx_linux-64=11 -y
+
+CONDA_GCC="${CONDA_PREFIX}/bin/x86_64-conda-linux-gnu-gcc"
+CONDA_GXX="${CONDA_PREFIX}/bin/x86_64-conda-linux-gnu-g++"
+
+if [ ! -f "${CONDA_GCC}" ]; then
+    # Fallback: some conda-forge builds use a different prefix
+    CONDA_GCC="${CONDA_PREFIX}/bin/x86_64-conda_cos6-linux-gnu-gcc"
+    CONDA_GXX="${CONDA_PREFIX}/bin/x86_64-conda_cos6-linux-gnu-g++"
+fi
+
+echo "GCC: $(${CONDA_GCC} --version | head -1)"
+
 CUDA_118="${CUDA_HOME_118:-/home/pouyan/cuda/cuda118}"
-GCC_11="${GCC_11_PATH:-/home/pouyan/local/gcc-11}"
 
 if [ ! -f "${CUDA_118}/bin/nvcc" ]; then
     echo "ERROR: CUDA 11.8 not found at ${CUDA_118}/bin/nvcc"
@@ -93,22 +105,13 @@ if [ ! -f "${CUDA_118}/bin/nvcc" ]; then
     exit 1
 fi
 
-if [ ! -f "${GCC_11}/bin/gcc" ]; then
-    echo "ERROR: GCC ≤ 11 not found at ${GCC_11}/bin/gcc"
-    echo "Set GCC_11_PATH to a GCC ≤ 11 installation."
-    echo "CUDA 11.8's nvcc requires GCC ≤ 11."
-    exit 1
-fi
-
 echo "CUDA 11.8: ${CUDA_118}"
-echo "GCC:       $(${GCC_11}/bin/gcc --version | head -1)"
 
-CUDA_HOME="${CUDA_118}" \
-PATH="${CUDA_118}/bin:${GCC_11}/bin:${PATH}" \
-CC="${GCC_11}/bin/gcc" \
-CXX="${GCC_11}/bin/g++" \
-LD_LIBRARY_PATH="${GCC_11}/lib64:${CUDA_118}/lib64:${LD_LIBRARY_PATH}" \
 # 8.9+PTX includes PTX for forward compat with SM 9.0+ (Hopper/H100/H200)
+CUDA_HOME="${CUDA_118}" \
+PATH="${CUDA_118}/bin:${PATH}" \
+CC="${CONDA_GCC}" \
+CXX="${CONDA_GXX}" \
 TORCH_CUDA_ARCH_LIST="7.0;7.5;8.0;8.6;8.9+PTX" \
 MAX_JOBS=1 \
 pip install git+https://github.com/NVlabs/nvdiffrast.git --no-build-isolation
@@ -254,8 +257,9 @@ pip install tyro
 pip install scipy opencv-python tqdm pyyaml environs mediapy loguru distinctipy einops chumpy
 pip install pytorch-lightning==2.0.0 wandb tensorboard pyvista dreifus
 
-# Pin numpy LAST — other packages may upgrade it during their install
-pip install numpy==1.23.0
+# Pin numpy LAST — must be >=1.26 (FLAME pkl files use numpy._core from 2.x)
+# but <2.0 (PyTorch3D 0.7.4 and other compiled extensions need numpy 1.x)
+pip install "numpy>=1.26,<2"
 
 echo ""
 
