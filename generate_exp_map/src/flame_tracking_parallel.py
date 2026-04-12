@@ -41,8 +41,8 @@ sys.path.insert(0, PIXEL3DMM_CODE_BASE)
 sys.path.insert(0, os.path.join(PIXEL3DMM_CODE_BASE, "scripts"))
 
 LOG_DIR = Path(os.environ.get("FLAME_LOG_DIR", "data/flame_tracking/logs/artifacts"))
-COMPLETED_LOG = Path(os.environ.get("FLAME_COMPLETED_LOG", "data/flame_tracking/logs/completed.txt"))
-FAILED_LOG = Path(os.environ.get("FLAME_FAILED_LOG", "data/flame_tracking/logs/failed.txt"))
+COMPLETED_LOG = Path(os.environ.get("FLAME_COMPLETED_LOG", "data/flame_tracking/logs/completed_videos.txt"))
+FAILED_LOG = Path(os.environ.get("FLAME_FAILED_LOG", "data/flame_tracking/logs/failed_videos.txt"))
 
 
 def worker_process(gpu_id, task_queue, result_queue, stop_event):

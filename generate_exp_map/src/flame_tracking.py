@@ -51,8 +51,8 @@ from pixel3dmm_inference import main as network_inference_main
 from track import main as track_main
 
 LOG_DIR = Path(os.environ.get("FLAME_LOG_DIR", "data/flame_tracking/logs/artifacts"))
-COMPLETED_LOG = Path(os.environ.get("FLAME_COMPLETED_LOG", "data/flame_tracking/logs/completed.txt"))
-FAILED_LOG = Path(os.environ.get("FLAME_FAILED_LOG", "data/flame_tracking/logs/failed.txt"))
+COMPLETED_LOG = Path(os.environ.get("FLAME_COMPLETED_LOG", "data/flame_tracking/logs/completed_videos.txt"))
+FAILED_LOG = Path(os.environ.get("FLAME_FAILED_LOG", "data/flame_tracking/logs/failed_videos.txt"))
 
 
 def process_video(video_path: str, log_to_file: bool = True, gpu_id: str = "0"):
