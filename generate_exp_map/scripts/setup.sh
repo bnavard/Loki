@@ -80,7 +80,7 @@ echo "===== Step 4: Installing nvdiffrast ====="
 #
 # Set CUDA_HOME_118 if CUDA 11.8 is not at the default path.
 
-pip install setuptools wheel ninja
+pip install setuptools wheel ninja cython
 
 # Install GCC 11 via conda-forge (no system permissions needed)
 echo "Installing GCC 11 via conda-forge..."
