@@ -39,6 +39,10 @@ sys.path.insert(0, PIXEL3DMM_CODE_BASE)
 sys.path.insert(0, os.path.join(PIXEL3DMM_CODE_BASE, "scripts"))
 sys.path.insert(0, str(Path(__file__).resolve().parent))  # for pixel3dmm_*.py in src/
 
+# Note: PIPNet's FaceBoxesV2 is NOT added to sys.path to avoid
+# conflicting with MICA's utils. Instead, faceboxes_detector.py
+# uses relative imports (patched during setup).
+
 from omegaconf import OmegaConf
 from pixel3dmm import env_paths
 

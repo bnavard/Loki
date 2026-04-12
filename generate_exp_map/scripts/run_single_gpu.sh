@@ -26,12 +26,18 @@ VIDEO_PATH="${1:?Usage: $0 <video_path> [output_dir] [gpu_id]}"
 OUTPUT_DIR="${2:-data/flowface}"
 GPU_ID="${3:-0}"
 
+# Auto-detect pixel3dmm if not set
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+export PIXEL3DMM_CODE_BASE="${PIXEL3DMM_CODE_BASE:-${SCRIPT_DIR}/../pixel3dmm}"
+export PIXEL3DMM_PREPROCESSED_DATA="${PIXEL3DMM_PREPROCESSED_DATA:-data/flame_tracking/preprocessing}"
+export PIXEL3DMM_TRACKING_OUTPUT="${PIXEL3DMM_TRACKING_OUTPUT:-data/flame_tracking/tracking}"
+
 # Resolve video name (strip extension)
 VIDEO_NAME=$(basename "${VIDEO_PATH}" .mp4)
 
-# Default intermediate directories
-PREPROCESSING_DIR="${PIXEL3DMM_PREPROCESSED_DATA:-data/flame_tracking/preprocessing}"
-TRACKING_DIR="${PIXEL3DMM_TRACKING_OUTPUT:-data/flame_tracking/tracking}"
+# Intermediate directories
+PREPROCESSING_DIR="${PIXEL3DMM_PREPROCESSED_DATA}"
+TRACKING_DIR="${PIXEL3DMM_TRACKING_OUTPUT}"
 TRACKING_SUFFIX="_nV1_noPho_uv2000.0_n1000.0"
 
 echo "============================================================"

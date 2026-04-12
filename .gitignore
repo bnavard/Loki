@@ -194,6 +194,7 @@ cython_debug/
 .cursorindexingignore
 
 # ==== ExpressiveTalkingHead ====
+**/pixel3dmm
 
 # Data (symlinks to external storage + derived features)
 data/talkvid/
@@ -209,6 +210,7 @@ data/additional_data
 
 # Outputs and checkpoints
 outputs/
+scripts/parallel_push155.sh
 
 # Download data artifacts (large JSON + downloaded clips)
 download_data/talkvid_data.json
