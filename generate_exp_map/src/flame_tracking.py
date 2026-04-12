@@ -76,7 +76,7 @@ def process_video(video_path: str, log_to_file: bool = True, gpu_id: str = "0"):
     if log_to_file:
         LOG_DIR.mkdir(exist_ok=True, parents=True)
         COMPLETED_LOG.parent.mkdir(exist_ok=True, parents=True)
-        log_fh = open(LOG_DIR / f"{vid_name}_gpu{gpu_id}.log", "w", buffering=1)
+        log_fh = open(LOG_DIR / f"{vid_name}_gpu{gpu_id}.log", "w", buffering=1, encoding="utf-8")
         sys.stdout = log_fh
         sys.stderr = log_fh
 
