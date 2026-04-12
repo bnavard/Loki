@@ -185,7 +185,9 @@ if [ ! -d "PIPNet" ]; then
     git clone https://github.com/jhb86253817/PIPNet.git
 fi
 cd PIPNet/FaceBoxesV2/utils
-if ! ls ../../FaceBoxesV2/utils/nms/*.so 2>/dev/null | grep -q .; then
+if ! ls nms/*.so 2>/dev/null | grep -q .; then
+    # Fix deprecated np.int_t for newer Cython/NumPy
+    sed -i 's/np\.int_t/np.intp_t/g' nms/cpu_nms.pyx
     bash make.sh
 fi
 cd ../..
