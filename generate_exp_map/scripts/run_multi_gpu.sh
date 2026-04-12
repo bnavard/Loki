@@ -10,9 +10,8 @@
 # are skipped automatically.
 #
 # Prerequisites:
-#   - pixel3dmm installed and patched (see README.md)
-#   - p3dmm conda environment activated
-#   - PIXEL3DMM_CODE_BASE set
+#   - Run setup.sh first (installs everything)
+#   - Activate: conda activate expmapgen
 #
 # Usage:
 #   cd <repo_root>
@@ -30,11 +29,14 @@ OUTPUT_DIR="${2:-data/flowface}"
 NUM_GPUS="${3:-8}"
 WORKERS_PER_GPU="${4:-2}"
 
-# Auto-detect pixel3dmm if not set
+# Auto-detect paths (all default to generate_exp_map/pixel3dmm and data/flame_tracking/)
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 export PIXEL3DMM_CODE_BASE="${PIXEL3DMM_CODE_BASE:-${SCRIPT_DIR}/../pixel3dmm}"
 export PIXEL3DMM_PREPROCESSED_DATA="${PIXEL3DMM_PREPROCESSED_DATA:-data/flame_tracking/preprocessing}"
 export PIXEL3DMM_TRACKING_OUTPUT="${PIXEL3DMM_TRACKING_OUTPUT:-data/flame_tracking/tracking}"
+
+# CUDA 11.8 for nvdiffrast runtime
+export CUDA_HOME="${CUDA_HOME_118:-/home/pouyan/cuda/cuda118}"
 
 PREPROCESSING_DIR="${PIXEL3DMM_PREPROCESSED_DATA}"
 TRACKING_DIR="${PIXEL3DMM_TRACKING_OUTPUT}"

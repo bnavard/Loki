@@ -7,9 +7,8 @@
 #   Phase 2: FlowFace conversion (FLAME re-fitting + gaze + background matting)
 #
 # Prerequisites:
-#   - pixel3dmm installed and patched (see README.md)
-#   - p3dmm conda environment activated
-#   - PIXEL3DMM_CODE_BASE set
+#   - Run setup.sh first (installs everything)
+#   - Activate: conda activate expmapgen
 #
 # Usage:
 #   cd <repo_root>
@@ -26,11 +25,14 @@ VIDEO_PATH="${1:?Usage: $0 <video_path> [output_dir] [gpu_id]}"
 OUTPUT_DIR="${2:-data/flowface}"
 GPU_ID="${3:-0}"
 
-# Auto-detect pixel3dmm if not set
+# Auto-detect paths (all default to generate_exp_map/pixel3dmm and data/flame_tracking/)
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 export PIXEL3DMM_CODE_BASE="${PIXEL3DMM_CODE_BASE:-${SCRIPT_DIR}/../pixel3dmm}"
 export PIXEL3DMM_PREPROCESSED_DATA="${PIXEL3DMM_PREPROCESSED_DATA:-data/flame_tracking/preprocessing}"
 export PIXEL3DMM_TRACKING_OUTPUT="${PIXEL3DMM_TRACKING_OUTPUT:-data/flame_tracking/tracking}"
+
+# CUDA 11.8 for nvdiffrast runtime
+export CUDA_HOME="${CUDA_HOME_118:-/home/pouyan/cuda/cuda118}"
 
 # Resolve video name (strip extension)
 VIDEO_NAME=$(basename "${VIDEO_PATH}" .mp4)
