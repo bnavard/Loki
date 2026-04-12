@@ -255,15 +255,14 @@ echo ""
 # =============================================================================
 echo "===== Step 8: Remaining dependencies ====="
 
-pip install insightface==0.7.3 onnxruntime-gpu
+# onnxruntime-gpu 1.16.3 is the last version supporting CUDA 11.8 + cuDNN 8
+pip install insightface==0.7.3 onnxruntime-gpu==1.16.3
 pip install face-alignment
 pip install trimesh decord omegaconf tyro
 pip install scipy opencv-python tqdm pyyaml environs mediapy loguru distinctipy einops chumpy
 pip install pytorch-lightning==2.0.0 wandb tensorboard pyvista dreifus
 
-# Pin numpy LAST — must be >=1.26 (FLAME pkl files use numpy._core)
-# but <2.0 (compiled extensions need numpy 1.x ABI)
-pip install "numpy>=1.26,<2"
+pip install "numpy==1.23"
 
 echo ""
 
@@ -293,8 +292,12 @@ else
         wget --post-data "username=${FLAME_USER_ENC}&password=${FLAME_PASS_ENC}" \
             'https://download.is.tue.mpg.de/download.php?domain=flame&sfile=FLAME2023.zip&resume=1' \
             -O '/tmp/FLAME2023.zip' --no-check-certificate --continue
-        unzip -o /tmp/FLAME2023.zip -d "${MICA_DATA}/"
-        rm -f /tmp/FLAME2023.zip
+        # Zip contains FLAME2023/ folder — extract to parent so we get MICA/data/FLAME2023/
+        unzip -o /tmp/FLAME2023.zip -d /tmp/flame_extract
+        mkdir -p "${MICA_DATA}/FLAME2023"
+        cp -r /tmp/flame_extract/FLAME2023/* "${MICA_DATA}/FLAME2023/" 2>/dev/null || \
+        cp -r /tmp/flame_extract/* "${MICA_DATA}/FLAME2023/"
+        rm -rf /tmp/FLAME2023.zip /tmp/flame_extract
     fi
 
     if [ ! -f "${MICA_DATA}/FLAME2020/generic_model.pkl" ]; then
@@ -302,8 +305,13 @@ else
         wget --post-data "username=${FLAME_USER_ENC}&password=${FLAME_PASS_ENC}" \
             'https://download.is.tue.mpg.de/download.php?domain=flame&sfile=FLAME2020.zip&resume=1' \
             -O '/tmp/FLAME2020.zip' --no-check-certificate --continue
-        unzip -o /tmp/FLAME2020.zip -d "${MICA_DATA}/FLAME2020/"
-        rm -f /tmp/FLAME2020.zip
+        # Zip may contain nested folder — extract and flatten
+        unzip -o /tmp/FLAME2020.zip -d /tmp/flame_extract
+        mkdir -p "${MICA_DATA}/FLAME2020"
+        # Find generic_model.pkl wherever it ended up and copy to target
+        find /tmp/flame_extract -name "generic_model.pkl" -exec cp {} "${MICA_DATA}/FLAME2020/" \;
+        find /tmp/flame_extract -name "FLAME_masks*" -exec cp -r {} "${MICA_DATA}/FLAME2020/" \; 2>/dev/null
+        rm -rf /tmp/FLAME2020.zip /tmp/flame_extract
     fi
 
     echo "FLAME models downloaded."

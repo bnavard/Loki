@@ -31,8 +31,9 @@ export PIXEL3DMM_CODE_BASE="${PIXEL3DMM_CODE_BASE:-${SCRIPT_DIR}/../pixel3dmm}"
 export PIXEL3DMM_PREPROCESSED_DATA="${PIXEL3DMM_PREPROCESSED_DATA:-data/flame_tracking/preprocessing}"
 export PIXEL3DMM_TRACKING_OUTPUT="${PIXEL3DMM_TRACKING_OUTPUT:-data/flame_tracking/tracking}"
 
-# CUDA 11.8 for nvdiffrast runtime
+# CUDA 11.8 for nvdiffrast + onnxruntime runtime
 export CUDA_HOME="${CUDA_HOME_118:-/home/pouyan/cuda/cuda118}"
+export LD_LIBRARY_PATH="${CUDA_HOME}/lib64:${LD_LIBRARY_PATH}"
 
 # Resolve video name (strip extension)
 VIDEO_NAME=$(basename "${VIDEO_PATH}" .mp4)
