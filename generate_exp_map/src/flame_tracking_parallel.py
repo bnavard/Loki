@@ -111,20 +111,33 @@ def main():
             print(f"Warning: {data_path} not found")
     mp4_files = sorted(mp4_files)
 
-    def resolve(p):
-        return str(Path(p).resolve())
+    # Check completion by looking at actual output directories on disk.
+    # Tracking is complete when {stem}_nV1_noPho_uv2000.0_n1000.0/checkpoint/ exists.
+    # Preprocessing is complete when {stem}/ exists in the preprocessing dir.
+    tracking_dir = Path(os.environ["PIXEL3DMM_TRACKING_OUTPUT"])
+    preprocessing_dir = Path(os.environ["PIXEL3DMM_PREPROCESSED_DATA"])
+    tracking_suffix = "_nV1_noPho_uv2000.0_n1000.0"
 
-    # Load completed + failed for resume
-    skip = set()
-    for log_path in [COMPLETED_LOG, FAILED_LOG]:
-        if log_path.exists():
-            with open(log_path) as f:
-                skip |= {resolve(l.strip()) for l in f if l.strip()}
+    def is_tracking_complete(stem):
+        return (tracking_dir / f"{stem}{tracking_suffix}" / "checkpoint").is_dir()
 
-    mp4_files = [f for f in mp4_files if resolve(f) not in skip]
+    def is_preprocessing_complete(stem):
+        d = preprocessing_dir / stem
+        return d.is_dir() and (d / "seg_og").is_dir()
+
+    already_done = []
+    to_process = []
+    for f in mp4_files:
+        stem = f.stem
+        if is_tracking_complete(stem) and is_preprocessing_complete(stem):
+            already_done.append(f)
+        else:
+            to_process.append(f)
+
+    mp4_files = to_process
     total = len(mp4_files)
 
-    print(f"Found {total} videos to process ({len(skip)} already done/failed)")
+    print(f"Found {total} videos to process ({len(already_done)} already done)")
     print(f"Using {args.num_gpus} GPUs x {args.workers_per_gpu} workers = "
           f"{args.num_gpus * args.workers_per_gpu} concurrent jobs\n")
 

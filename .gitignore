@@ -237,3 +237,4 @@ download_data/clips_output/.
 
 # Misc
 .current_run_dir
+data/

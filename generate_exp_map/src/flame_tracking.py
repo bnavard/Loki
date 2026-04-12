@@ -60,11 +60,15 @@ def process_video(video_path: str, log_to_file: bool = True, gpu_id: str = "0"):
     video_path = str(Path(video_path).resolve())
     vid_name = Path(video_path).stem
 
-    if COMPLETED_LOG.exists():
-        with open(COMPLETED_LOG, "r") as f:
-            if video_path in {l.strip() for l in f if l.strip()}:
-                print(f"Already completed: {vid_name}, skipping...")
-                return True
+    # Check if tracking output already exists on disk (directory-based resume).
+    # More robust than log-file checks since it survives interrupted runs.
+    tracking_dir = Path(os.environ.get("PIXEL3DMM_TRACKING_OUTPUT", "data/flame_tracking/tracking"))
+    preprocessing_dir = Path(os.environ.get("PIXEL3DMM_PREPROCESSED_DATA", "data/flame_tracking/preprocessing"))
+    tracking_suffix = "_nV1_noPho_uv2000.0_n1000.0"
+    if (tracking_dir / f"{vid_name}{tracking_suffix}" / "checkpoint").is_dir() \
+       and (preprocessing_dir / vid_name / "seg_og").is_dir():
+        print(f"Already completed: {vid_name}, skipping...")
+        return True
 
     original_stdout, original_stderr = sys.stdout, sys.stderr
     log_fh = None
