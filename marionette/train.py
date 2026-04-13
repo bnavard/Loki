@@ -7,7 +7,7 @@ Usage:
         [--resume /path/to/checkpoint.ckpt] \
         [--gpus 0 1]
 
-Data paths (video_root, audio_root, flame_root, id_list_path) are read from the
+Data paths (video_root, audio_root, flame_root, clip_list_path) are read from the
 YAML config. The script uses PyTorch Lightning for training loop, checkpointing,
 and logging.
 """

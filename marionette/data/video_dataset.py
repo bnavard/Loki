@@ -10,6 +10,7 @@ The flat sample index maps across all windows from all clips, so a 125-frame
 clip at n_frames=16 yields 7 training samples (windows starting at 0, 16, 32, ...).
 """
 
+import json
 from pathlib import Path
 from typing import Optional
 
@@ -40,7 +41,12 @@ SAMPLE_RATE    = 16_000   # expected audio sample rate
 class TalkingHeadDataset(Dataset):
     """
     Args:
-        id_list_path         : path to a text file with one clip ID per line.
+        clip_list_path       : path to a JSON file containing the clip IDs used
+                               by this split. Expected format: a flat list of
+                               strings, as produced by
+                               `scripts/manifest/partition_dataset.py`
+                               (`data/derived/train_clips.json` /
+                               `data/derived/val_clips.json`).
         video_root           : root directory for videos ({video_root}/{id}.mp4).
         audio_root           : root directory for audio  ({audio_root}/{id}.wav).
         flame_root           : root directory for FLAME  ({flame_root}/{id}/fit.npz).
@@ -66,7 +72,7 @@ class TalkingHeadDataset(Dataset):
 
     def __init__(
         self,
-        id_list_path: str,
+        clip_list_path: str,
         video_root: str,
         audio_root: str,
         flame_root: str,
@@ -114,7 +120,8 @@ class TalkingHeadDataset(Dataset):
         # The reference frame is the first frame of each window.
         # This gives deterministic, non-overlapping segments with audio aligned
         # to the same temporal window.
-        all_ids = Path(id_list_path).read_text().strip().splitlines()
+        with open(clip_list_path) as f:
+            all_ids = json.load(f)
         self.clips = {}  # clip_id -> (fit, n_total)
         self.samples = []  # flat list of (clip_id, window_start)
         for clip_id in all_ids:

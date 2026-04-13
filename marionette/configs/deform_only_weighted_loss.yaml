@@ -34,7 +34,7 @@ init_path: "data/models/v2-1_512-ema-pruned.ckpt"
 train_dataset:
   target: marionette.data.video_dataset.TalkingHeadDataset
   params:
-    id_list_path: "marionette/data/train_ids.txt"
+    clip_list_path: "data/derived/train_clips.json"
     video_root:   "data/talkvid/talkvid"
     audio_root:   "data/talkvid/audio"
     flame_root:   "data/flowface"
@@ -48,7 +48,7 @@ train_dataset:
 val_dataset:
   target: marionette.data.video_dataset.TalkingHeadDataset
   params:
-    id_list_path: "marionette/data/val_ids.txt"
+    clip_list_path: "data/derived/val_clips.json"
     video_root:   "/data/pouyan/talkvid/preprocessed/talkvid"
     audio_root:   "/data/pouyan/talkvid/preprocessed/audio"
     flame_root:   "/data/pouyan/flame_expression/flowface"

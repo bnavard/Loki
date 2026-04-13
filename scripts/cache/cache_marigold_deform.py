@@ -44,8 +44,9 @@ def parse_args():
     p = argparse.ArgumentParser()
     p.add_argument("--checkpoint", default=DEFAULT_CHECKPOINT)
     p.add_argument("--model_id", default=DEFAULT_MODEL_ID)
-    p.add_argument("--id_list_path", default="data/derived/clip_ids.txt",
-                   help="Text file with one clip_id per line")
+    p.add_argument("--manifest", default="data/derived/manifest.json",
+                   help="Training manifest produced by scripts/manifest/build_manifest.py; "
+                        "the 'clip_id' field of each entry drives caching.")
     p.add_argument("--video_root", default="data/talkvid/talkvid")
     p.add_argument("--output_dir", default="data/derived/marigold_deform")
     p.add_argument("--num_steps", type=int, default=50)
@@ -165,8 +166,10 @@ def main():
     if args.clip:
         all_clips = [args.clip]
     else:
-        all_clips = Path(args.id_list_path).read_text().strip().splitlines()
-        all_clips = [c.strip() for c in all_clips if c.strip()]
+        import json
+        with open(args.manifest) as f:
+            manifest = json.load(f)
+        all_clips = [entry["clip_id"] for entry in manifest]
 
     print(f"Total clips: {len(all_clips)}")
 
