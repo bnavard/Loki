@@ -21,7 +21,7 @@ n_steps:           5000
 save_every_n_steps: 250
 
 # Path to SD 2.1 checkpoint for initialising the UNet and VAE weights
-init_path: "models/v2-1_512-ema-pruned.ckpt"
+init_path: "data/models/v2-1_512-ema-pruned.ckpt"
 
 # ---------------------------------------------------------------------------
 # Dataset

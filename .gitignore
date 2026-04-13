@@ -193,20 +193,16 @@ cython_debug/
 .cursorignore
 .cursorindexingignore
 
-# ==== ExpressiveTalkingHead ====
+# ==== Marionette ====
 **/pixel3dmm
 
-# Data (symlinks to external storage + derived features)
-data/talkvid/
-data/flowface/
-data/flame_tracking/
-data/derived/
-data/weights/
-data/additional_data
-
-# Keep FLAME model assets (small, needed for inference)
-!data/assets/
-!data/assets/flame/
+# Data folder: ignore every subdirectory except `assets/` and `weights/`.
+# Everything else under data/ (talkvid, flowface, derived, models, additional_data, ...)
+# is local / derived / large and should not be tracked.
+data/*
+!data/assets
+!data/weights
+!data/.gitkeep
 
 # Outputs and checkpoints
 outputs/
@@ -216,14 +212,15 @@ scripts/parallel_push155.sh
 download_data/talkvid_data.json
 download_data/clips_output/.
 
-# Large binary files
+# Large binary files (anywhere in the repo)
 *.pt
+*.pth
 *.ckpt
 *.safetensors
 *.pkl
 *.npy
 
-# Keep FLAME assets specifically
+# Re-include small FLAME asset files that live under data/assets/
 !data/assets/flame/*.pkl
 !data/assets/flame/*.npy
 !data/assets/flame/*.obj
@@ -237,4 +234,3 @@ download_data/clips_output/.
 
 # Misc
 .current_run_dir
-data/
