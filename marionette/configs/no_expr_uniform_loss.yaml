@@ -39,10 +39,7 @@ train_dataset:
     downsample_ratio: 8
     fps: 25.0
     audio_context_frames: 2
-    use_ray_directions: false
     add_mouth: true
-    stabilize_background: false # trick did not work as per expected
-    feather_radius: 5
 
 val_dataset:
   target: marionette.data.video_dataset.TalkingHeadDataset
@@ -56,10 +53,7 @@ val_dataset:
     downsample_ratio: 8
     fps: 25.0
     audio_context_frames: 2
-    use_ray_directions: false
     add_mouth: true
-    stabilize_background: false
-    feather_radius: 5
 
 # Validation & visualization
 val_every_n_steps:    250
@@ -138,7 +132,7 @@ model:
 
     # ---- VAE (frozen, identical) ----
     first_stage_config:
-      target: controlnet.ldm.models.autoencoder.AutoencoderKL
+      target: ldm_base.ldm.models.autoencoder.AutoencoderKL
       params:
         embed_dim: 4
         monitor: val/rec_loss
@@ -164,7 +158,6 @@ model:
         positional_channels:  42
         positional_multiplier: 1.0
         super_resolution:     2
-        use_ray_directions:   false
         use_expr_deformation: true
         use_crop_mask:        false
         drop_expression_map:  true    # removes all FLAME spatial conditioning

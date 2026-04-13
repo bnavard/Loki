@@ -4,7 +4,7 @@
 
 ### Motivation
 
-The existing talking-head generation system (implemented in `talkinghead_sd21_unet_cap4d_based/`) produces high-quality talking-head videos, but it requires two external conditioning signals at inference time: (1) a FLAME expression dense field extracted from a **driving video** via 3DMM tracking, and (2) audio from that same driving video. This means the user must supply an actual video of someone speaking with the desired facial expressions — a significant barrier to usability.
+The existing talking-head generation system (implemented in `marionette/`) produces high-quality talking-head videos, but it requires two external conditioning signals at inference time: (1) a FLAME expression dense field extracted from a **driving video** via 3DMM tracking, and (2) audio from that same driving video. This means the user must supply an actual video of someone speaking with the desired facial expressions — a significant barrier to usability.
 
 **The goal of this pipeline is to remove the dependency on a driving video entirely.** Instead of requiring a real person's video to extract expression dynamics from, we train a generative model that can synthesize the expression dense field directly from a text description. Combined with off-the-shelf text-to-speech (TTS) for audio generation, this enables a **text-only interface**: the user provides a single reference portrait image and a text prompt (e.g., "Say 'Hello, welcome to the presentation' in a warm, professional tone"), and the system generates the complete talking-head video with no driving video needed.
 
@@ -22,7 +22,7 @@ The 45-channel expression dense field consists of:
 
 These are rasterized onto a 2D UV grid via PyTorch3D barycentric interpolation.
 
-**Goal:** Given a text prompt describing what a person says and how they say it, generate a T=16 frame expression dense field video at 480×480 resolution. This generated field will later be consumed by the talking-head rendering UNet implemented in `talkinghead_sd21_unet_cap4d_based/` as a spatial conditioning signal (the `pos_enc` tensor in `THConditioning.forward()`).
+**Goal:** Given a text prompt describing what a person says and how they say it, generate a T=16 frame expression dense field video at 480×480 resolution. This generated field will later be consumed by the talking-head rendering UNet implemented in `marionette/` as a spatial conditioning signal (the `pos_enc` tensor in `THConditioning.forward()`).
 
 **This document covers Phase 1: text-only conditioning.** Audio cross-attention conditioning will be added in a future phase.
 
@@ -164,9 +164,9 @@ Three stages: (1) Preprocessing, (2) Training, (3) Inference.
 
 The existing codebase has the full pipeline. The relevant modules are:
 
-1. `talkinghead_sd21_unet_cap4d_based/flame/flame.py` → `compute_flame()` — takes `fit.npz` parameters, returns `offsets_3d: (V, 3)` (per-vertex displacement from neutral FLAME mesh).
-2. `talkinghead_sd21_unet_cap4d_based/conditioning/mesh2img.py` → `PropRenderer.render()` — rasterizes per-vertex offsets onto a 2D grid via PyTorch3D barycentric interpolation.
-3. `talkinghead_sd21_unet_cap4d_based/conditioning/th_conditioning.py` → `THConditioning.forward()` — orchestrates the above, producing the full 45-channel `pos_enc` tensor. Channels `[0:42]` are the sinusoidal positional encoding, channels `[42:45]` are the deformation field.
+1. `marionette/flame/flame.py` → `compute_flame()` — takes `fit.npz` parameters, returns `offsets_3d: (V, 3)` (per-vertex displacement from neutral FLAME mesh).
+2. `marionette/conditioning/mesh2img.py` → `PropRenderer.render()` — rasterizes per-vertex offsets onto a 2D grid via PyTorch3D barycentric interpolation.
+3. `marionette/conditioning/th_conditioning.py` → `THConditioning.forward()` — orchestrates the above, producing the full 45-channel `pos_enc` tensor. Channels `[0:42]` are the sinusoidal positional encoding, channels `[42:45]` are the deformation field.
 
 **Implementation:**
 
@@ -520,7 +520,7 @@ expr_field = generated_video.reshape(16, 45, 480, 480)           # [T, 45, H, W]
 
 ### Step 3.3: Feeding into the Rendering UNet
 
-The reassembled `[16, 45, 480, 480]` expression dense field is in the exact format expected by the rendering UNet in `talkinghead_sd21_unet_cap4d_based/` — specifically, it is the `pos_enc` tensor consumed by `THConditioning.forward()` in `talkinghead_sd21_unet_cap4d_based/conditioning/th_conditioning.py`. It can be directly used as the spatial conditioning signal, concatenated with the reference mask channel (channel 45, added separately) to form the full 46-channel input.
+The reassembled `[16, 45, 480, 480]` expression dense field is in the exact format expected by the rendering UNet in `marionette/` — specifically, it is the `pos_enc` tensor consumed by `THConditioning.forward()` in `marionette/conditioning/th_conditioning.py`. It can be directly used as the spatial conditioning signal, concatenated with the reference mask channel (channel 45, added separately) to form the full 46-channel input.
 
 ---
 
@@ -582,7 +582,7 @@ project_root/
 │   └── text_to_expr_field/
 │       ├── step_{N}_high_noise/          # LoRA checkpoint (high-noise expert)
 │       └── step_{N}_low_noise/           # LoRA checkpoint (low-noise expert)
-└── talkinghead_sd21_unet_cap4d_based/    # Existing codebase: talking-head rendering UNet
+└── marionette/    # Existing codebase: talking-head rendering UNet
     ├── flame/flame.py                    #   compute_flame() — FLAME param → vertex offsets
     ├── conditioning/mesh2img.py          #   PropRenderer.render() — rasterize offsets to 2D
     └── conditioning/th_conditioning.py   #   THConditioning.forward() — produces pos_enc [45ch]

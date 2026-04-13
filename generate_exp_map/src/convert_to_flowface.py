@@ -36,7 +36,7 @@ from tqdm import tqdm
 import trimesh
 
 # Use our repo's FLAME code (no external flowface/cap4d dependency)
-from talkinghead_sd21_unet_cap4d_based.flame.flame import (
+from marionette.flame.flame import (
     CAP4DFlameSkinner, OPENCV2PYTORCH3D, transform_vertices,
 )
 

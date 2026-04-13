@@ -21,10 +21,10 @@ from functools import partial
 from einops import rearrange, repeat
 from torchvision.utils import make_grid
 
-from controlnet.ldm.models.diffusion.ddpm import LatentDiffusion
-from controlnet.ldm.util import exists, default, instantiate_from_config
-from controlnet.ldm.modules.diffusionmodules.util import make_beta_schedule
-from controlnet.ldm.models.diffusion.ddim import DDIMSampler
+from ldm_base.ldm.models.diffusion.ddpm import LatentDiffusion
+from ldm_base.ldm.util import exists, default, instantiate_from_config
+from ldm_base.ldm.modules.diffusionmodules.util import make_beta_schedule
+from ldm_base.ldm.models.diffusion.ddim import DDIMSampler
 
 from marionette.model.utils import shift_schedule, enforce_zero_terminal_snr
 
@@ -84,6 +84,21 @@ class THDiffusion(LatentDiffusion):
         self.audio_encoder = None
         if audio_encoder_config is not None:
             self.audio_encoder = instantiate_from_config(audio_encoder_config)
+
+        # Sanity: audio encoder presence must match UNet cross-attention flag
+        unet_wants_audio = getattr(self.model.diffusion_model, "use_context", True)
+        if unet_wants_audio and self.audio_encoder is None:
+            raise ValueError(
+                "THDiffusion: UNet has use_audio_context=True but no audio_encoder "
+                "was configured. Either provide audio_encoder_config or set "
+                "unet_config.params.use_audio_context: false."
+            )
+        if not unet_wants_audio and self.audio_encoder is not None:
+            raise ValueError(
+                "THDiffusion: UNet has use_audio_context=False but an audio_encoder "
+                "was configured. Either set unet_config.params.use_audio_context: true "
+                "or remove audio_encoder_config."
+            )
 
     # ------------------------------------------------------------------
     # Input preparation

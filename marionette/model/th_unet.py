@@ -1,19 +1,20 @@
 """
 SD 2.1 UNet extended for talking-head video generation.
 
-Cross-attention is enabled (use_context=True) so audio tokens from wav2vec2
-flow through every transformer block. FLAME conditioning enters via spatial
-addition to the first feature map (cond_linear projects condition_channels →
-model_channels). Reference frames bypass denoising via the ref_mask + z_input
-passthrough mechanism.
+Cross-attention is controlled by use_audio_context (default True): when
+enabled, audio tokens from wav2vec2 flow through every transformer block; when
+disabled (audio-ablation), cross-attention is skipped entirely across the UNet.
+FLAME conditioning enters via spatial addition to the first feature map
+(cond_linear projects condition_channels -> model_channels). Reference frames
+bypass denoising via the ref_mask + z_input passthrough mechanism.
 """
 
 import torch
 import torch.nn as nn
 import einops
 
-from controlnet.ldm.modules.diffusionmodules.openaimodel import UNetModel
-from controlnet.ldm.modules.diffusionmodules.util import zero_module, timestep_embedding
+from ldm_base.ldm.modules.diffusionmodules.openaimodel import UNetModel
+from ldm_base.ldm.modules.diffusionmodules.util import zero_module, timestep_embedding
 
 from marionette.model.attention import SpatioTemporalTransformer
 
@@ -22,14 +23,15 @@ class THUnetModel(UNetModel):
     """
     Talking-head diffusion UNet.
 
-    Differences from the base CAP4D UNet (MMDMUnetModel):
-      - Cross-attention is ENABLED (use_context=True). Audio features are passed
-        as the `context` argument at every transformer block, allowing each
-        spatial position to attend to its frame's audio representation.
-      - Spatial conditioning (FLAME pose/expression maps) is still injected as a
-        learned linear projection added to the first feature map — unchanged.
-      - The reference-masking logic (replace latent with GT where ref_mask=1) is
-        preserved identically.
+    Components:
+      - Cross-attention, toggled by `use_audio_context`: when True, audio features
+        are passed as the `context` argument at every transformer block so each
+        spatial position can attend to its frame's audio representation. When
+        False, cross-attention is skipped throughout the UNet (audio ablation).
+      - Spatial conditioning (FLAME expression map) is injected as a learned
+        linear projection added to the first feature map.
+      - Reference-masking logic: replace latent with GT where ref_mask=1, and
+        pass those frames through unchanged at the output.
 
     Args:
         time_steps        : video window length T.
@@ -37,6 +39,7 @@ class THUnetModel(UNetModel):
         context_dim       : audio context feature dimension (default 768, matches
                             wav2vec2-base / HuBERT-base output).
         temporal_mode     : "3d" or "temporal" — controls spatio-temporal attention.
+        use_audio_context : enable / disable audio cross-attention (default True).
     """
 
     def __init__(
@@ -46,14 +49,15 @@ class THUnetModel(UNetModel):
         condition_channels: int = 46,
         model_channels: int = 320,
         image_size: int = 32,
-        context_dim: int = 768,          # audio cross-attention dim
-        temporal_mode: str = "3d",       # ["3d", "temporal"]
+        context_dim: int = 768,              # audio cross-attention dim
+        temporal_mode: str = "3d",           # ["3d", "temporal"]
+        use_audio_context: bool = True,      # False -> skip cross-attn entirely (no-audio ablation)
         **kwargs,
     ):
         assert temporal_mode in ["3d", "temporal"]
         self.temporal_mode = temporal_mode
         self.time_steps = time_steps
-        self.use_context = True          # ← enabled for audio cross-attention
+        self.use_context = use_audio_context  # drives cross-attention in every block
 
         super().__init__(
             *args,
@@ -64,7 +68,7 @@ class THUnetModel(UNetModel):
         )
 
         # Linear projection: spatial conditioning channels → model channels
-        # (added to the first UNet feature map; same mechanism as CAP4D)
+        # (added to the first UNet feature map)
         self.cond_linear = zero_module(nn.Linear(condition_channels, model_channels))
 
     def create_attention_block(
@@ -132,9 +136,9 @@ class THUnetModel(UNetModel):
         pos_embedding = self.cond_linear(pos_enc).permute(0, 3, 1, 2)  # (B*T, model_ch, H, W)
 
         # ------- audio context for cross-attention -------
-        # Shape: (B, T, S, D) → (B*T, S, D)
+        # Shape: (B, T, S, D) → (B*T, S, D).  Skipped entirely when audio is ablated.
         audio_ctx = None
-        if "audio_context" in control and control["audio_context"] is not None:
+        if self.use_context and "audio_context" in control and control["audio_context"] is not None:
             audio_ctx = einops.rearrange(
                 control["audio_context"], 'b t s d -> (b t) s d'
             ).type(self.dtype)

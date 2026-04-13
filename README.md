@@ -1,8 +1,10 @@
 # Expressive Talking Head
 
-A modular framework for talking-head video generation from audio and facial expression controls. Built on [CAP4D](https://github.com/felixtaubner/CAP4D) (CVPR 2025), the system combines a Stable Diffusion 2.1 UNet (extended with 3D spatiotemporal attention) for video rendering, wav2vec2 audio cross-attention for lip sync, and FLAME 3DMM expression maps for spatial facial control.
+A modular framework for talking-head video generation from audio and facial expression controls. Combines a Stable Diffusion 2.1 UNet (extended with 3D spatiotemporal attention) for video rendering, wav2vec2 audio cross-attention for lip sync, and FLAME 3DMM expression maps for spatial facial control.
 
-A separate text-to-expression-field pipeline trains Wan2.2-T2V (via LoRA) to synthesize FLAME expression dense fields directly from text descriptions, enabling text-only generation without a driving video.
+The two training pipelines are complementary:
+- `marigold_training/` trains a per-frame generator that produces FLAME deformation maps from natural face frames (Marigold-style, SD3.5 Medium).
+- `marionette/` trains the video diffusion model that consumes those expression maps (generated or ground-truth) along with audio and a reference frame to render the final talking-head video.
 
 ## Table of Contents
 
@@ -16,14 +18,13 @@ A separate text-to-expression-field pipeline trains Wan2.2-T2V (via LoRA) to syn
 
 ```
 .
-├── talkinghead_sd21_unet_cap4d_based/   # Talking-head rendering (SD 2.1 UNet + 3D attention)
-├── text_to_expr_field/                  # Text → expression field generation (Wan DiT)
+├── marionette/                          # Talking-head video rendering (SD 2.1 UNet + 3D attention)
 ├── marigold_training/                   # Marigold-style face → deformation map (SD3.5 DiT)
 ├── generate_exp_map/                    # FLAME tracking pipeline (pixel3dmm → fit.npz)
 ├── download_data/                       # TalkVid dataset download (yt-dlp)
 ├── scripts/                             # Data preparation (captions, manifest, train/val split)
 ├── caching/                             # Precomputed artifacts (VAE latents, text embeddings)
-├── controlnet/                          # SD LDM utilities (inherited from CAP4D)
+├── ldm_base/                            # Vendored Stable Diffusion LDM utilities
 ├── data/assets/flame/                   # FLAME model files (mesh, blendshapes)
 ├── instructions/                        # Design documents
 └── README.md
@@ -31,17 +32,11 @@ A separate text-to-expression-field pipeline trains Wan2.2-T2V (via LoRA) to syn
 
 ## Modules
 
-### talkinghead_sd21_unet_cap4d_based
+### marionette
 
 Talking-head video rendering. Three conditioning signals: FLAME expression maps (46ch spatial addition), wav2vec2 audio (cross-attention), reference frame (identity passthrough). Expression-weighted diffusion loss amplifies gradients on high-deformation face regions. Five experiment configs for ablation studies.
 
-See [`talkinghead_sd21_unet_cap4d_based/README.md`](talkinghead_sd21_unet_cap4d_based/README.md).
-
-### text_to_expr_field
-
-Generates FLAME expression dense fields (45ch or 3ch deformation-only) from text captions. Supports multiple Wan DiT models (14B, 1.3B), LoRA or full fine-tuning, cached or on-the-fly VAE encoding.
-
-See [`text_to_expr_field/README.md`](text_to_expr_field/README.md).
+See [`marionette/README.md`](marionette/README.md).
 
 ### marigold_training
 
@@ -61,13 +56,13 @@ Precomputed data artifacts: VAE latent caching, UMT5 text embedding caching, and
 
 ## Installation
 
-### `cap4d_env` — main training and inference environment
+### `marionette` — main training and inference environment
 
-Used by `talkinghead_sd21_unet_cap4d_based`, `text_to_expr_field`, `marigold_training`, and `caching`.
+Used by `marionette`, `marigold_training`, and `caching`.
 
 ```bash
-conda create -n cap4d_env python=3.10 -y
-conda activate cap4d_env
+conda create -n marionette python=3.10 -y
+conda activate marionette
 
 # PyTorch 2.4.1 + CUDA 12.1
 pip install torch==2.4.1+cu121 torchvision==0.19.1+cu121 torchaudio==2.4.1+cu121 \
@@ -89,7 +84,7 @@ pip install einops opencv-python scipy matplotlib pyyaml sentencepiece tqdm
 | Python | 3.10 | |
 | PyTorch | 2.4.1+cu121 | GPU compute |
 | PyTorch3D | 0.7.8 | FLAME mesh rasterization (expression field computation) |
-| diffusers | 0.33.0 | Wan2.2 / SD3.5 diffusion pipelines |
+| diffusers | 0.33.0 | SD3.5 diffusion pipeline |
 | transformers | 4.49.0 | UMT5 text encoder, CLIP, Whisper |
 | peft | 0.18.1 | LoRA fine-tuning |
 | accelerate | 1.13.0 | Multi-GPU training (DDP) |
@@ -128,6 +123,5 @@ data/
 
 - [CAP4D](https://github.com/felixtaubner/CAP4D) — Creating Animatable 4D Portrait Avatars (CVPR 2025)
 - [Stable Diffusion 2.1](https://huggingface.co/docs/diffusers/api/pipelines/stable_diffusion/stable_diffusion_2)
-- [Wan2.2](https://github.com/Wan-Video/Wan2.2) — Video diffusion transformer
 - [Marigold](https://github.com/prs-eth/Marigold) — Repurposing diffusion for monocular depth (CVPR 2024)
 - [FLAME](https://flame.is.tue.mpg.de/) — 3D morphable face model

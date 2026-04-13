@@ -368,7 +368,7 @@ The target is the 3-channel deformation field only. At inference time, to recons
 2. Extract FLAME shape/pose parameters from the natural video via FLAME tracking
 3. Recompute the 42-channel positional encoding per frame from shape/pose
 4. Concatenate: `[pos_enc_42ch, generated_deform_3ch]` → full 45-channel field
-5. Feed into the rendering UNet (`talkinghead_sd21_unet_cap4d_based/`)
+5. Feed into the rendering UNet (`marionette/`)
 
 ---
 

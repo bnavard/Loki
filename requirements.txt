@@ -1,7 +1,7 @@
-# cap4d_env requirements
+# marionette requirements
 # Create conda env first:
-#   conda create -n cap4d_env python=3.10 -y
-#   conda activate cap4d_env
+#   conda create -n marionette python=3.10 -y
+#   conda activate marionette
 #   pip install -r requirements.txt
 
 # PyTorch 2.4.1 + CUDA 12.1

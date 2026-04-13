@@ -67,19 +67,18 @@ class FramePairDataset(Dataset):
 
     def _get_conditioning(self):
         if self._conditioning is None:
-            from talkinghead_sd21_unet_cap4d_based.conditioning.th_conditioning import THConditioning
+            from marionette.conditioning.th_conditioning import THConditioning
             self._conditioning = THConditioning(
                 image_size=self.resolution,
                 positional_channels=42,
                 positional_multiplier=1.0,
                 super_resolution=1,
-                use_ray_directions=False,
                 use_expr_deformation=True,
                 use_crop_mask=False,
             ).eval().cuda()
 
         if self._flame_skinner is None:
-            from talkinghead_sd21_unet_cap4d_based.flame.flame import CAP4DFlameSkinner
+            from marionette.flame.flame import CAP4DFlameSkinner
             self._flame_skinner = CAP4DFlameSkinner(
                 add_mouth=True, n_shape_params=150, n_expr_params=65,
             )
@@ -100,8 +99,8 @@ class FramePairDataset(Dataset):
             deform: [3, H, W] float32 tensor
             crop_box: numpy [x0, y0, x1, y1]
         """
-        from talkinghead_sd21_unet_cap4d_based.flame.flame import compute_flame
-        from talkinghead_sd21_unet_cap4d_based.data.utils import get_bbox_from_verts, verts_to_pytorch3d
+        from marionette.flame.flame import compute_flame
+        from marionette.data.utils import get_bbox_from_verts, verts_to_pytorch3d
 
         conditioning, flame_skinner, head_vertex_ids = self._get_conditioning()
 
@@ -143,7 +142,7 @@ class FramePairDataset(Dataset):
 
     def _load_natural_frame(self, clip_id, frame_idx, crop_box):
         """Load one natural video frame, crop to face, normalize to [-1, 1]."""
-        from talkinghead_sd21_unet_cap4d_based.data.utils import crop_image, rescale_image
+        from marionette.data.utils import crop_image, rescale_image
 
         frames_dir = self.flame_root / clip_id / "images" / "cam0"
         H = self.resolution

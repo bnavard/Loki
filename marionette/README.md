@@ -86,11 +86,11 @@ Identity (shape, camera, appearance) from the reference subject, expressions (`e
 ```
 marionette/
 ├── conditioning/
-│   ├── th_conditioning.py    # FLAME → 46ch spatial conditioning (pos enc + deform + ref mask)
+│   ├── th_conditioning.py    # Spatial conditioning producer (GT or Marigold source)
 │   └── mesh2img.py           # PyTorch3D mesh rasterizer
 ├── model/
 │   ├── th_diffusion.py       # Diffusion training loop (expression-weighted loss, CFG)
-│   ├── th_unet.py            # SD 2.1 UNet + 3D attention + audio cross-attention
+│   ├── th_unet.py            # SD 2.1 UNet + 3D attention + (optional) audio cross-attention
 │   ├── th_sampler.py         # Sliding-window DDIM sampler
 │   ├── audio_encoder.py      # wav2vec2 → per-frame audio tokens
 │   ├── attention.py          # SpatioTemporalTransformer blocks
@@ -101,8 +101,7 @@ marionette/
 ├── data/
 │   ├── video_dataset.py      # Dataset (non-overlapping 16-frame windows)
 │   └── utils.py              # Image loading, cropping, vertex projection
-├── configs/                   # 5 experiment configs
-├── tests/                     # Unit + integration tests
+├── configs/                   # Ablation configs (loss weighting, conditioning variants)
 ├── train.py                   # Training entry point
 └── generate.py                # Inference entry point
 ```

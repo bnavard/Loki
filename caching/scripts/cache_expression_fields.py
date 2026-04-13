@@ -100,16 +100,16 @@ def compute_expr_field(clip_id, flame_root, resolution, device):
     Returns:
         expr_field: [T, 45, H, W] float32 tensor (CPU)
     """
-    from talkinghead_sd21_unet_cap4d_based.conditioning.th_conditioning import THConditioning
-    from talkinghead_sd21_unet_cap4d_based.flame.flame import CAP4DFlameSkinner, compute_flame
-    from talkinghead_sd21_unet_cap4d_based.data.utils import get_bbox_from_verts, verts_to_pytorch3d
+    from marionette.conditioning.th_conditioning import THConditioning
+    from marionette.flame.flame import CAP4DFlameSkinner, compute_flame
+    from marionette.data.utils import get_bbox_from_verts, verts_to_pytorch3d
 
     flame_root = Path(flame_root)
     H = resolution
 
     conditioning = THConditioning(
         image_size=H, positional_channels=42, positional_multiplier=1.0,
-        super_resolution=1, use_ray_directions=False,
+        super_resolution=1,
         use_expr_deformation=True, use_crop_mask=False,
     ).eval().to(device)
 

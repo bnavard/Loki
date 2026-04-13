@@ -110,15 +110,15 @@ def main():
     transformer = transformer.to(device, dtype=torch.bfloat16).eval()
 
     # ---- Prepare FLAME + conditioning ----
-    from talkinghead_sd21_unet_cap4d_based.conditioning.th_conditioning import THConditioning
-    from talkinghead_sd21_unet_cap4d_based.flame.flame import CAP4DFlameSkinner, compute_flame
-    from talkinghead_sd21_unet_cap4d_based.data.utils import (
+    from marionette.conditioning.th_conditioning import THConditioning
+    from marionette.flame.flame import CAP4DFlameSkinner, compute_flame
+    from marionette.data.utils import (
         get_bbox_from_verts, verts_to_pytorch3d, crop_image, rescale_image,
     )
 
     cond = THConditioning(
         image_size=H, positional_channels=42, positional_multiplier=1.0,
-        super_resolution=1, use_ray_directions=False,
+        super_resolution=1,
         use_expr_deformation=True, use_crop_mask=False,
     ).eval().to(device)
     flame_skinner = CAP4DFlameSkinner(add_mouth=True, n_shape_params=150, n_expr_params=65)

@@ -40,14 +40,13 @@ import torch
 import cv2
 from omegaconf import OmegaConf
 
-from controlnet.ldm.util import instantiate_from_config
+from ldm_base.ldm.util import instantiate_from_config
 from marionette.model.th_sampler import THSampler
 from marionette.flame.flame import CAP4DFlameSkinner, compute_flame
 from marionette.data.utils import (
     load_frame, crop_image, rescale_image, get_bbox_from_verts, verts_to_pytorch3d,
 )
 from marionette.conditioning.th_conditioning import THConditioning
-from marionette.utils.background import build_background_plate, composite_with_background
 
 try:
     import soundfile as sf
@@ -82,12 +81,6 @@ def parse_args():
     p.add_argument("--cfg_scale",    type=float, default=2.0)
     p.add_argument("--n_ddim_steps", type=int, default=50)
     p.add_argument("--device",       default="cuda")
-    # Background stabilization
-    p.add_argument("--bg_mask_dir",  default=None,
-                   help="Directory with per-frame fg masks (e.g. data/flowface/{clip}/bg/cam0). "
-                        "If provided, builds a clean background plate and composites.")
-    p.add_argument("--feather_radius", type=int, default=5,
-                   help="Gaussian blur radius for soft mask edges (0 = hard)")
     return p.parse_args()
 
 
@@ -278,33 +271,6 @@ def main():
     print("Decoding latents…")
     imgs = model.decode_first_stage(all_latents[None]).squeeze(0)  # (n_frames, 3, H, W)
     imgs = ((imgs.clamp(-1, 1) + 1) / 2 * 255).byte().cpu().numpy()
-
-    # ---- Background stabilization ----
-    if args.bg_mask_dir is not None:
-        print("Building background plate…")
-        # Determine how many mask frames are available
-        mask_dir = Path(args.bg_mask_dir)
-        n_mask_frames = len(list(mask_dir.glob("*.png")))
-
-        bg_plate = build_background_plate(
-            video_path=str(ref_data_dir / "images" / cam_dir) if (ref_data_dir / "images" / cam_dir).is_dir()
-                       else str(ref_data_dir / "video.mp4"),
-            mask_dir=str(mask_dir),
-            n_frames=n_mask_frames,
-            crop_box=np.array(crop_box),
-            resolution=resolution,
-        )
-
-        print("Compositing with stable background…")
-        imgs = composite_with_background(
-            generated_frames=imgs,
-            background_plate=bg_plate,
-            mask_dir=str(mask_dir),
-            frame_indices=list(range(n_frames)),
-            crop_box=np.array(crop_box),
-            resolution=resolution,
-            feather_radius=args.feather_radius,
-        )
 
     # ---- Save frames ----
     frame_dir = Path(args.output_dir) / "frames"

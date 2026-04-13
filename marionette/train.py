@@ -26,7 +26,7 @@ from pytorch_lightning.loggers import TensorBoardLogger
 from omegaconf import OmegaConf
 from torch.utils.data import DataLoader
 
-from controlnet.ldm.util import instantiate_from_config
+from ldm_base.ldm.util import instantiate_from_config
 from marionette.data.video_dataset import TalkingHeadDataset
 
 

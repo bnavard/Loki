@@ -1,5 +1,12 @@
 # INSTRUCTIONS: Staged Marigold Training for Video → Expression Map Video
 
+> **⚠️ SUPERSEDED (2026-04-13).** This document prescribes a two-stage plan on
+> **Wan2.1-T2V-1.3B**. The actual implementation at `marigold_training/` uses
+> **SD3.5 Medium** and only implements per-frame (Stage 1) training. Stage 2
+> video inflation was skipped — per-frame inference on a temporally coherent
+> natural video produces a coherent deformation-map video. Treat this file as
+> historical context. For the current architecture, see `marigold_training/README.md`.
+
 ## Motivation
 
 Our previous attempts to fine-tune pretrained video diffusion models end-to-end to generate FLAME expression dense field maps have failed. The models retain strong bias toward natural video generation — even with full parameter fine-tuning, the output is either natural-looking video or noise, never the structured expression maps we need.
@@ -584,6 +591,6 @@ data/
 **Effective training set:** 7150 clips (intersection of talkvid and flowface).
 
 **Deformation map generation pipeline:**
-1. `compute_flame()` in `talkinghead_sd21_unet_cap4d_based/flame/flame.py` — takes `fit.npz` params, returns `offsets_3d: (V, 3)`
-2. `PropRenderer.render()` in `talkinghead_sd21_unet_cap4d_based/conditioning/mesh2img.py` — rasterizes per-vertex offsets onto 2D grid
-3. `THConditioning.forward()` in `talkinghead_sd21_unet_cap4d_based/conditioning/th_conditioning.py` — orchestrates the above, channels `[42:45]` of `pos_enc` are the 3ch deformation
+1. `compute_flame()` in `marionette/flame/flame.py` — takes `fit.npz` params, returns `offsets_3d: (V, 3)`
+2. `PropRenderer.render()` in `marionette/conditioning/mesh2img.py` — rasterizes per-vertex offsets onto 2D grid
+3. `THConditioning.forward()` in `marionette/conditioning/th_conditioning.py` — orchestrates the above, channels `[42:45]` of `pos_enc` are the 3ch deformation

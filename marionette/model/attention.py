@@ -11,7 +11,7 @@ from torch import nn, einsum
 from einops import rearrange, repeat
 from typing import Optional, Any
 
-from controlnet.ldm.modules.diffusionmodules.util import checkpoint, GroupNorm32, LayerNorm32
+from ldm_base.ldm.modules.diffusionmodules.util import checkpoint, GroupNorm32, LayerNorm32
 
 try:
     import xformers
