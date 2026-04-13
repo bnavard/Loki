@@ -1,27 +1,32 @@
 # Ablate Spatial Conditioning
 
 Isolates the effect of varying the spatial conditioning channel budget while
-keeping the loss weighting axis fixed.
+holding loss weighting fixed. Expression-weighted loss is a separate modelling
+choice (see `ablate_loss_weighting/`); when comparing conditioning variants,
+hold loss type constant.
 
-The loss axis matters because **expression-weighted loss amplifies the diffusion
-objective on deforming face regions** — it is a separate modeling choice from
-the conditioning channels. When comparing conditioning variants, hold the loss
-type constant.
+## How to compose each variant
+
+| Conditioning              | Overlays                                                            |
+|---------------------------|---------------------------------------------------------------------|
+| Full (46ch)               | *(base default, no overlays)*                                        |
+| Deform-only (4ch)         | `overlays/conditioning/deform_only.yaml`                             |
+| Ref-mask-only (1ch)       | `overlays/conditioning/no_expr.yaml`                                 |
+
+The base defaults to uniform loss (`alpha=0`). Add
+`overlays/loss/weighted.yaml` to any of the above to get the weighted-loss
+row of the matrix.
 
 ## Conditioning × Loss matrix
 
-| Conditioning                  | Weighted loss                              | Uniform loss                              |
-|-------------------------------|--------------------------------------------|-------------------------------------------|
-| Full (46ch pos + deform + ref) | `full_cond_weighted_loss.yaml`             | `full_cond_uniform_loss.yaml`             |
-| Deform-only (4ch)              | `deform_only_weighted_loss.yaml`           | *missing — add if needed*                 |
-| Ref-mask-only (1ch)            | `no_expr_weighted_loss.yaml`               | `no_expr_uniform_loss.yaml`               |
+Hold one axis fixed at a time:
 
-## Recommended sweeps
+|                             | Uniform loss (base)                               | Weighted loss                                                          |
+|-----------------------------|---------------------------------------------------|------------------------------------------------------------------------|
+| Full (46ch)                 | `[]`                                              | `[loss/weighted]`                                                      |
+| Deform-only (4ch)           | `[conditioning/deform_only]`                      | `[conditioning/deform_only, loss/weighted]`                            |
+| Ref-mask-only (1ch)         | `[conditioning/no_expr]`                          | `[conditioning/no_expr, loss/weighted]`                                |
 
-- **Row-wise (fix conditioning, vary loss):** measures the contribution of
-  expression-weighted loss for a given conditioning regime.
-- **Column-wise (fix loss, vary conditioning):** measures how much spatial
-  information each channel budget carries for the denoiser.
-
-All configs live in `marionette/configs/`. Architecture, dataset, and audio
-conditioning are otherwise identical across the matrix.
+Each cell is the overlay list to drop into an experiment config. Author the
+matrix by creating one YAML per cell you want to run under
+`experiments/ablate_conditioning/configs/`.
