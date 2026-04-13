@@ -23,7 +23,8 @@ The two training pipelines are complementary:
 ├── generate_exp_map/                    # FLAME tracking pipeline (pixel3dmm → fit.npz)
 ├── download_data/                       # TalkVid dataset download (yt-dlp)
 ├── scripts/                             # Data preparation (captions, manifest, train/val split)
-├── caching/                             # Precomputed artifacts (VAE latents, text embeddings)
+├── caching/                             # Precomputed artifacts (expression fields, Marigold deformations)
+├── experiments/                         # Ablation study organisation (launchers, docs, eval)
 ├── ldm_base/                            # Vendored Stable Diffusion LDM utilities
 ├── data/assets/flame/                   # FLAME model files (mesh, blendshapes)
 ├── instructions/                        # Design documents
