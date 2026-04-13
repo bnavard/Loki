@@ -6,41 +6,61 @@ FLAME rasterization?
 
 ## Setup
 
-Both runs use the same Marionette architecture — only the deformation-map
-source changes. Two knobs must be set together, in both the dataset block
-and the conditioning block of the YAML:
+Both variants use the same architecture (deform-only 4ch conditioning, uniform
+diffusion loss). The only thing that changes is where the 3ch deformation map
+comes from.
 
-```yaml
-train_dataset:
-  params:
-    expression_source: "marigold"                         # "gt" | "marigold"
-    marigold_deform_root: "data/derived/marigold_deform"  # required for "marigold"
+### Configs
 
-model:
-  params:
-    cond_stage_config:
-      params:
-        expression_source: "marigold"
 ```
+experiments/ablate_expr_source/configs/
+├── gt_baseline.yaml     # base + overlays/conditioning/deform_only
+└── marigold.yaml        # base + overlays/conditioning/deform_only
+                         #      + overlays/expr_source/marigold
+```
+
+Uniform loss is the base default, so no loss overlay is needed. The
+`deform_only` overlay sets `expr_deform_only=true` and `condition_channels=4`.
+The `expr_source/marigold` overlay flips `expression_source` to `"marigold"` in
+both the dataset and the conditioning module, and points the dataset at
+`data/derived/marigold_deform/`.
+
+### Channel layout in Marigold mode
+
+The Marigold module produces only the 3ch deformation — not the 42ch
+positional encoding. Conditioning is therefore always 4ch
+`(3 deform + 1 ref_mask)` in Marigold mode, regardless of other flags. The GT
+baseline uses matching 4ch conditioning (`deform_only` overlay) so the
+comparison is apples-to-apples.
 
 ## Prerequisites
 
-Populate the Marigold deformation cache before training:
+Populate the Marigold deformation cache before running the `marigold` variant:
 
 ```bash
 PYTHONPATH=. python scripts/cache/cache_marigold_deform.py \
-    --checkpoint <marigold_checkpoint.pt> \
+    --checkpoint <path/to/marigold_checkpoint.pt> \
     --output_dir data/derived/marigold_deform
 ```
 
 This writes `data/derived/marigold_deform/{clip_id}/deformation.mp4` for every
 clip in the manifest. The dataset decodes the requested frames on the fly.
 
-## Channel layout in Marigold mode
+## Running
 
-The Marigold module produces only the 3ch deformation — not the 42ch
-positional encoding. Conditioning is therefore always 4ch
-`(3 deform + 1 ref_mask)` in Marigold mode, regardless of other flags.
+```bash
+# From the repo root:
+PYTHONPATH=. python experiments/ablate_expr_source/run.py gt_baseline
+PYTHONPATH=. python experiments/ablate_expr_source/run.py marigold
+PYTHONPATH=. python experiments/ablate_expr_source/run.py both   # runs in sequence
+```
+
+Outputs land under `outputs/ablate_expr_source/<variant>/run_<timestamp>/`.
+A symlink `experiments/ablate_expr_source/outputs` is created lazily on first
+run so the artifacts are browsable from within the experiment folder.
+
+Each run directory contains `config_resolved.yaml` — the fully-merged config
+that actually trained the checkpoint, captured for reproducibility.
 
 ## What to measure
 
