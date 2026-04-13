@@ -1,0 +1,11 @@
+# Conditioning variant: reference mask only (1 channel total). Removes ALL FLAME-
+# derived spatial conditioning. The UNet must rely entirely on audio
+# cross-attention and the reference frame for generating face dynamics.
+model:
+  params:
+    cond_stage_config:
+      params:
+        drop_expression_map: true
+    unet_config:
+      params:
+        condition_channels: 1      # ref_mask only

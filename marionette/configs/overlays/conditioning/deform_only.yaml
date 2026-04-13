@@ -1,0 +1,11 @@
+# Conditioning variant: 3ch expression deformation + 1ch reference mask (4 channels total).
+# Drops the 42ch sinusoidal positional encoding of FLAME vertex positions — the
+# UNet sees *motion* (deformation heatmap) but not explicit face geometry.
+model:
+  params:
+    cond_stage_config:
+      params:
+        expr_deform_only: true
+    unet_config:
+      params:
+        condition_channels: 4      # 3 deform + 1 ref_mask

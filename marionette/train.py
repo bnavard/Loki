@@ -1,11 +1,15 @@
 """
-Training script for the Talking-Head Diffusion Model.
+Training driver for the Marionette talking-head diffusion model.
 
-Usage:
-    python marionette/train.py \
-        --config marionette/configs/talking_head.yaml \
-        [--resume /path/to/checkpoint.ckpt] \
-        [--gpus 0 1]
+Two public entry points:
+
+  * run_training(cfg, output_dir=None, resume=None, gpus=(0,)) — the pure function.
+    Experiment scripts should import this and pass a pre-loaded DictConfig
+    (typically produced by `marionette.config_utils.load_experiment_config`).
+
+  * main() — thin CLI wrapper that argparse-parses `--config`, `--resume`, and
+    `--gpus`, then calls run_training. Retained so a bare `python marionette/train.py
+    --config path/to/exp.yaml` still works for ad-hoc runs.
 
 Data paths (video_root, audio_root, flame_root, clip_list_path) are read from the
 YAML config. The script uses PyTorch Lightning for training loop, checkpointing,
@@ -15,6 +19,7 @@ and logging.
 import argparse
 import os
 from pathlib import Path
+from typing import Optional, Sequence
 
 import torch
 torch.backends.cudnn.enabled = False
@@ -23,7 +28,7 @@ import einops
 import pytorch_lightning as pl
 from pytorch_lightning.callbacks import ModelCheckpoint, Callback
 from pytorch_lightning.loggers import TensorBoardLogger
-from omegaconf import OmegaConf
+from omegaconf import OmegaConf, DictConfig
 from torch.utils.data import DataLoader
 
 from ldm_base.ldm.util import instantiate_from_config
@@ -32,9 +37,10 @@ from marionette.data.video_dataset import TalkingHeadDataset
 
 def parse_args():
     p = argparse.ArgumentParser()
-    p.add_argument("--config",    required=True, help="Path to talking_head.yaml")
-    p.add_argument("--resume",    default=None,  help="Checkpoint to resume from")
-    p.add_argument("--gpus",      nargs="+", type=int, default=[0])
+    p.add_argument("--config",     required=True, help="Path to an experiment YAML (base + overlays).")
+    p.add_argument("--output_dir", default=None,  help="Override output_dir from the config.")
+    p.add_argument("--resume",     default=None,  help="Checkpoint to resume from.")
+    p.add_argument("--gpus",       nargs="+", type=int, default=[0])
     return p.parse_args()
 
 
@@ -453,29 +459,47 @@ class LightningWrapper(pl.LightningModule):
 
 
 # ---------------------------------------------------------------------------
-# Main
+# Public entry point
 # ---------------------------------------------------------------------------
-def main():
-    args = parse_args()
-    cfg  = OmegaConf.load(args.config)
+def run_training(
+    cfg: DictConfig,
+    output_dir: Optional[str] = None,
+    resume: Optional[str] = None,
+    gpus: Sequence[int] = (0,),
+) -> None:
+    """Run a full training job against a pre-loaded config.
+
+    Args:
+        cfg:        fully-resolved DictConfig (e.g. produced by
+                    `marionette.config_utils.load_experiment_config`).
+        output_dir: root directory for this run's outputs. If None, falls back
+                    to `cfg.output_dir`. A timestamped `run_<YYYYmmdd_HHMMSS>/`
+                    subdirectory is always created inside this root.
+        resume:     optional path to a Lightning checkpoint to resume from.
+        gpus:       GPU indices to train on.
+    """
+    if output_dir is None:
+        if "output_dir" not in cfg:
+            raise ValueError(
+                "run_training: `output_dir` not provided and `cfg.output_dir` is unset."
+            )
+        output_dir = cfg.output_dir
 
     # Set seeds for reproducibility
     pl.seed_everything(cfg.seed, workers=True)
 
     # Create a timestamped run directory (rank 0 only to avoid duplicates in DDP)
-    output_dir = cfg.output_dir
     from datetime import datetime
     if is_rank_zero():
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         run_dir = Path(output_dir) / f"run_{timestamp}"
         run_dir.mkdir(parents=True, exist_ok=True)
-        # Write run_dir to a tmp file so other ranks can read it
+        # Write run_dir to a marker file so other ranks can read it
         marker = Path(output_dir) / ".current_run_dir"
         marker.parent.mkdir(parents=True, exist_ok=True)
         marker.write_text(str(run_dir))
-        # Copy config file to run directory for reproducibility
-        import shutil
-        shutil.copy2(args.config, run_dir / "config.yaml")
+        # Snapshot the fully-resolved config for reproducibility
+        OmegaConf.save(cfg, run_dir / "config_resolved.yaml")
         print(f"Run directory: {run_dir}")
     else:
         # Wait for rank 0 to create the directory
@@ -486,20 +510,20 @@ def main():
                 break
             time.sleep(0.5)
         run_dir = Path(marker.read_text().strip())
-    output_dir = str(run_dir)
+    run_output_dir = str(run_dir)
 
     model = load_model(cfg, init_path=cfg.get("init_path"))
     model.learning_rate = cfg.learning_rate
 
     if is_rank_zero():
-        print(f"Building train dataloader...")
+        print("Building train dataloader...")
     train_loader = build_dataloader(cfg.train_dataset.params, cfg.gpu_batch_size,
-                                     shuffle=True, drop_last=True)
+                                    shuffle=True, drop_last=True)
     if is_rank_zero():
         print(f"  Train clips: {len(train_loader.dataset)}")
-        print(f"Building val dataloader...")
-    val_loader   = build_dataloader(cfg.val_dataset.params, cfg.gpu_batch_size,
-                                     shuffle=False, drop_last=False)
+        print("Building val dataloader...")
+    val_loader = build_dataloader(cfg.val_dataset.params, cfg.gpu_batch_size,
+                                  shuffle=False, drop_last=False)
     if is_rank_zero():
         print(f"  Val clips: {len(val_loader.dataset)}")
 
@@ -507,7 +531,7 @@ def main():
 
     # Checkpoint: save every N steps (keep all)
     periodic_ckpt = ModelCheckpoint(
-        dirpath=output_dir,
+        dirpath=run_output_dir,
         filename="th-{step:06d}",
         every_n_train_steps=cfg.save_every_n_steps,
         save_top_k=-1,
@@ -515,7 +539,7 @@ def main():
 
     # Checkpoint: save best by val loss
     best_ckpt = ModelCheckpoint(
-        dirpath=output_dir,
+        dirpath=run_output_dir,
         filename="th-best-{step:06d}-{val/loss:.4f}",
         monitor="val/loss",
         mode="min",
@@ -526,19 +550,19 @@ def main():
     vis_cb = VisualizationCallback(
         cfg=cfg,
         val_loader=val_loader,
-        output_dir=output_dir,
+        output_dir=run_output_dir,
         vis_every_n_steps=cfg.get("val_every_n_steps", 2000),
         n_vis_samples=cfg.get("n_vis_samples", 4),
         vis_ddim_steps=cfg.get("vis_ddim_steps", 20),
     )
 
-    logger = TensorBoardLogger(save_dir=output_dir, name="logs")
+    logger = TensorBoardLogger(save_dir=run_output_dir, name="logs")
 
     trainer = pl.Trainer(
         max_steps=cfg.n_steps,
         accelerator="gpu",
-        devices=args.gpus,
-        strategy="ddp_find_unused_parameters_true" if len(args.gpus) > 1 else "auto",
+        devices=list(gpus),
+        strategy="ddp_find_unused_parameters_true" if len(gpus) > 1 else "auto",
         precision=16,
         callbacks=[vis_cb, best_ckpt],
         logger=logger,
@@ -549,7 +573,23 @@ def main():
         deterministic=True,
     )
 
-    trainer.fit(wrapper, train_loader, val_loader, ckpt_path=args.resume)
+    trainer.fit(wrapper, train_loader, val_loader, ckpt_path=resume)
+
+
+# ---------------------------------------------------------------------------
+# CLI wrapper
+# ---------------------------------------------------------------------------
+def main():
+    """Ad-hoc CLI entry: `python marionette/train.py --config path/to/exp.yaml`."""
+    args = parse_args()
+    from marionette.config_utils import load_experiment_config
+    cfg = load_experiment_config(args.config)
+    run_training(
+        cfg=cfg,
+        output_dir=args.output_dir,
+        resume=args.resume,
+        gpus=tuple(args.gpus),
+    )
 
 
 if __name__ == "__main__":
