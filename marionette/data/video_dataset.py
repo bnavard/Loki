@@ -231,7 +231,7 @@ class TalkingHeadDataset(Dataset):
         if not video_path.exists():
             raise FileNotFoundError(
                 f"Marigold deformation video not found: {video_path}. "
-                f"Run caching/scripts/cache_marigold_deform.py first."
+                f"Run scripts/cache/cache_marigold_deform.py first."
             )
 
         frames = [load_frame(video_path, f) for f in frame_ids]  # list of (H, W, 3) uint8

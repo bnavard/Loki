@@ -15,9 +15,9 @@ Output:
 
 Usage:
     cd <repo_root>
-    python scripts/partition_dataset.py
-    python scripts/partition_dataset.py --val_ratio 0.05  # 5% validation
-    python scripts/partition_dataset.py --seed 42
+    python scripts/manifest/partition_dataset.py
+    python scripts/manifest/partition_dataset.py --val_ratio 0.05  # 5% validation
+    python scripts/manifest/partition_dataset.py --seed 42
 """
 
 import argparse

@@ -5,8 +5,7 @@ Downloads talking-head video clips from YouTube using the [TalkVid](https://gith
 ## Setup
 
 ```bash
-cd <repo_root>/download_data
-pip install -r requirements.txt
+pip install -r scripts/download/requirements.txt
 ```
 
 Requires `ffmpeg` on PATH (used by yt-dlp for segment cutting).
@@ -26,9 +25,9 @@ wget https://huggingface.co/datasets/FreedomIntelligence/TalkVid/resolve/main/da
 The full dataset has many segments per video. To maximize the number of unique videos downloaded (and reduce redundancy), filter to at most N segments per URL:
 
 ```bash
-python src/filter_max_per_url.py \
+python scripts/download/filter_max_per_url.py \
     --input filtered_video_clips.json \
-    --output talkvid_data.json \
+    --output scripts/download/talkvid_data.json \
     --max-per-url 2
 ```
 
@@ -37,20 +36,20 @@ The included `talkvid_data.json` was generated this way with `--max-per-url 2`.
 ### Step 3: Download clips
 
 ```bash
-python src/download_clips.py \
-    --input talkvid_data.json \
-    --output ../data/talkvid/talkvid
+python scripts/download/download_clips.py \
+    --input scripts/download/talkvid_data.json \
+    --output data/talkvid/talkvid
 
 # With browser cookies (recommended to avoid YouTube rate limits):
-python src/download_clips.py \
-    --input talkvid_data.json \
-    --output ../data/talkvid/talkvid \
+python scripts/download/download_clips.py \
+    --input scripts/download/talkvid_data.json \
+    --output data/talkvid/talkvid \
     --browser chrome
 
 # Test with a small batch:
-python src/download_clips.py \
-    --input talkvid_data.json \
-    --output ../data/talkvid/talkvid \
+python scripts/download/download_clips.py \
+    --input scripts/download/talkvid_data.json \
+    --output data/talkvid/talkvid \
     --limit 10
 ```
 
@@ -91,16 +90,10 @@ data/talkvid/talkvid/
 ## File Structure
 
 ```
-download_data/
-├── src/
-│   ├── download_clips.py        # Main download script (yt-dlp + rate-limit handling)
-│   └── filter_max_per_url.py    # Filter to N segments per URL for coverage
-├── talkvid_data.json            # Pre-filtered dataset (max 2 segments per URL)
-├── requirements.txt             # Python dependencies
+scripts/download/
+├── download_clips.py        # Main download script (yt-dlp + rate-limit handling)
+├── filter_max_per_url.py    # Filter to N segments per URL for coverage
+├── talkvid_data.json        # Pre-filtered dataset (max 2 segments per URL, gitignored)
+├── requirements.txt         # Python dependencies
 └── README.md
 ```
-
-## References
-
-- [TalkVid](https://github.com/FreedomIntelligence/TalkVid) — Large-scale talking video dataset
-- [TalkVid HuggingFace](https://huggingface.co/datasets/FreedomIntelligence/TalkVid) — Dataset hosting

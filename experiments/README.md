@@ -40,7 +40,7 @@ comes from the Marigold generator vs the ground-truth FLAME rasterization?
 
 Runs the same architecture with `expression_source: "gt"` vs `"marigold"` in
 both the dataset and the conditioning module. Requires pre-running
-`caching/scripts/cache_marigold_deform.py` to populate
+`scripts/cache/cache_marigold_deform.py` to populate
 `data/derived/marigold_deform/`.
 
 ### [`ablate_loss_weighting/`](ablate_loss_weighting/)

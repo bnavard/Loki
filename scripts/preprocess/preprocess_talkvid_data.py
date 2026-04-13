@@ -22,10 +22,10 @@ Already-processed clips are skipped (resume-safe).
 Usage:
     cd <repo_root>
 
-    PYTHONPATH=. python caching/scripts/preprocess_talkvid_data.py
+    PYTHONPATH=. python scripts/preprocess/preprocess_talkvid_data.py
 
     # Test on a few clips:
-    PYTHONPATH=. python caching/scripts/preprocess_talkvid_data.py --limit 10
+    PYTHONPATH=. python scripts/preprocess/preprocess_talkvid_data.py --limit 10
 """
 
 import argparse

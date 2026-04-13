@@ -28,7 +28,7 @@ model:
 Populate the Marigold deformation cache before training:
 
 ```bash
-PYTHONPATH=. python caching/scripts/cache_marigold_deform.py \
+PYTHONPATH=. python scripts/cache/cache_marigold_deform.py \
     --checkpoint <marigold_checkpoint.pt> \
     --output_dir data/derived/marigold_deform
 ```

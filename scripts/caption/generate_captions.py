@@ -13,13 +13,13 @@ Usage:
     
 
     # ASR only (faster, no Qwen2-Audio):
-    PYTHONPATH=. python scripts/generate_captions.py --asr_only
+    PYTHONPATH=. python scripts/caption/generate_captions.py --asr_only
 
     # Single clip test:
-    PYTHONPATH=. python scripts/generate_captions.py --test --clip abc123
+    PYTHONPATH=. python scripts/caption/generate_captions.py --test --clip abc123
 
     # Parallel across GPUs:
-    PYTHONPATH=. python scripts/generate_captions.py --gpu 0 --num_gpus 8
+    PYTHONPATH=. python scripts/caption/generate_captions.py --gpu 0 --num_gpus 8
 """
 
 import argparse

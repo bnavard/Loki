@@ -14,13 +14,13 @@ Usage:
     cd <repo_root>
 
     # Single GPU:
-    PYTHONPATH=. python caching/scripts/cache_text_embeddings.py
+    PYTHONPATH=. python scripts/cache/archive/cache_text_embeddings.py
 
     # Multi-GPU DDP:
-    PYTHONPATH=. torchrun --nproc_per_node=4 caching/scripts/cache_text_embeddings.py
+    PYTHONPATH=. torchrun --nproc_per_node=4 scripts/cache/archive/cache_text_embeddings.py
 
     # Test on one batch:
-    PYTHONPATH=. python caching/scripts/cache_text_embeddings.py --test
+    PYTHONPATH=. python scripts/cache/archive/cache_text_embeddings.py --test
 """
 
 import argparse

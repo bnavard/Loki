@@ -9,19 +9,19 @@ Usage:
     cd <repo_root>
 
     # Download from the filtered dataset:
-    python download_data/src/download_clips.py \
-        --input download_data/talkvid_data.json \
+    python scripts/download/download_clips.py \
+        --input scripts/download/talkvid_data.json \
         --output data/talkvid/talkvid
 
     # With browser cookies for auth (recommended to avoid rate limits):
-    python download_data/src/download_clips.py \
-        --input download_data/talkvid_data.json \
+    python scripts/download/download_clips.py \
+        --input scripts/download/talkvid_data.json \
         --output data/talkvid/talkvid \
         --browser chrome
 
     # Test with a small batch:
-    python download_data/src/download_clips.py \
-        --input download_data/talkvid_data.json \
+    python scripts/download/download_clips.py \
+        --input scripts/download/talkvid_data.json \
         --output data/talkvid/talkvid \
         --limit 10
 """

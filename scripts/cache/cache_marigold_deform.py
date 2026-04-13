@@ -13,16 +13,16 @@ Usage:
     cd <repo_root>
 
     # Single GPU:
-    PYTHONPATH=. python caching/scripts/cache_marigold_deform.py --gpu 0
+    PYTHONPATH=. python scripts/cache/cache_marigold_deform.py --gpu 0
 
     # Parallel across 4 GPUs:
-    PYTHONPATH=. python caching/scripts/cache_marigold_deform.py --gpu 0 --num_gpus 4 &
-    PYTHONPATH=. python caching/scripts/cache_marigold_deform.py --gpu 1 --num_gpus 4 &
-    PYTHONPATH=. python caching/scripts/cache_marigold_deform.py --gpu 2 --num_gpus 4 &
-    PYTHONPATH=. python caching/scripts/cache_marigold_deform.py --gpu 3 --num_gpus 4 &
+    PYTHONPATH=. python scripts/cache/cache_marigold_deform.py --gpu 0 --num_gpus 4 &
+    PYTHONPATH=. python scripts/cache/cache_marigold_deform.py --gpu 1 --num_gpus 4 &
+    PYTHONPATH=. python scripts/cache/cache_marigold_deform.py --gpu 2 --num_gpus 4 &
+    PYTHONPATH=. python scripts/cache/cache_marigold_deform.py --gpu 3 --num_gpus 4 &
 
     # Test on one clip:
-    PYTHONPATH=. python caching/scripts/cache_marigold_deform.py --test
+    PYTHONPATH=. python scripts/cache/cache_marigold_deform.py --test
 """
 
 import argparse

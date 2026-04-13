@@ -163,7 +163,7 @@ model:
         super_resolution:     2
         use_expr_deformation: true
         # expression_source: "gt" uses FLAME rasterization (requires verts_2d / offsets_3d from the dataset).
-        # Set to "marigold" to consume pre-generated deformation maps from caching/scripts/cache_marigold_deform.py.
+        # Set to "marigold" to consume pre-generated deformation maps from scripts/cache/cache_marigold_deform.py.
         expression_source:    "gt"
 
 # ---------------------------------------------------------------------------

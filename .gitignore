@@ -206,11 +206,11 @@ data/*
 
 # Outputs and checkpoints
 outputs/
-scripts/parallel_push155.sh
+scripts/tools/parallel_push155.sh
 
 # Download data artifacts (large JSON + downloaded clips)
-download_data/talkvid_data.json
-download_data/clips_output/.
+scripts/download/talkvid_data.json
+scripts/download/clips_output/.
 
 # Large binary files (anywhere in the repo)
 *.pt

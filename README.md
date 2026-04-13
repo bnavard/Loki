@@ -21,9 +21,7 @@ The two training pipelines are complementary:
 ├── marionette/                          # Talking-head video rendering (SD 2.1 UNet + 3D attention)
 ├── marigold_training/                   # Marigold-style face → deformation map (SD3.5 DiT)
 ├── generate_exp_map/                    # FLAME tracking pipeline (pixel3dmm → fit.npz)
-├── download_data/                       # TalkVid dataset download (yt-dlp)
-├── scripts/                             # Data preparation (captions, manifest, train/val split)
-├── caching/                             # Precomputed artifacts (expression fields, Marigold deformations)
+├── scripts/                             # Full data-prep pipeline: download → preprocess → caption → cache → manifest
 ├── experiments/                         # Ablation study organisation (launchers, docs, eval)
 ├── ldm_base/                            # Vendored Stable Diffusion LDM utilities
 ├── data/assets/flame/                   # FLAME model files (mesh, blendshapes)
@@ -47,19 +45,15 @@ See [`marigold_training/README.md`](marigold_training/README.md).
 
 ### scripts
 
-Data preparation: caption generation (Whisper + Qwen2-Audio), manifest building, and train/val identity-based splitting.
+Full data-preparation pipeline, organised by stage: `download/` (YouTube clip scraping), `preprocess/` (face crop + resample), `caption/` (Whisper + Qwen2-Audio prosody), `cache/` (expression field + Marigold deformation tensors), `manifest/` (train/val split).
 
 See [`scripts/README.md`](scripts/README.md).
-
-### caching
-
-Precomputed data artifacts: VAE latent caching, UMT5 text embedding caching, and expression field computation. All scripts support multi-GPU DDP.
 
 ## Installation
 
 ### `marionette` — main training and inference environment
 
-Used by `marionette`, `marigold_training`, and `caching`.
+Used by `marionette`, `marigold_training`, and `scripts`.
 
 ```bash
 conda create -n marionette python=3.10 -y

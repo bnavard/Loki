@@ -247,7 +247,7 @@ Save as `data/derived/captions/{clip_id}.json`.
 
 ### Step 1.3: Build Training Manifest
 
-Write `text_to_expr_field/scripts/build_manifest.py`:
+Write `text_to_expr_field/scripts/manifest/build_manifest.py`:
 
 1. Scan `data/flowface/` for all clip_ids with `fit.npz`.
 2. Verify each clip_id exists in both `data/talkvid/talkvid/{clip_id}.mp4` and `data/talkvid/audio/{clip_id}.wav`.
