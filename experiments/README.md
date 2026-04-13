@@ -1,50 +1,65 @@
 # Marionette Ablation Experiments
 
-This folder organizes ablation studies over the Marionette video diffusion
+This folder organises ablation studies over the Marionette video diffusion
 model. Each sub-folder targets a single axis of variation and holds the
-configs, launcher scripts, and evaluation entry points for that study.
+experiment configs, entry script, and a lazy output symlink.
+
+## How experiment configs compose
+
+Every Marionette config is a **base + overlays** composition. The base config
+at [`marionette/configs/base.yaml`](../marionette/configs/base.yaml) defines
+defaults for all fields. Overlays under
+[`marionette/configs/overlays/`](../marionette/configs/overlays/) carry only
+the fields that change:
+
+- `overlays/conditioning/` — `deform_only.yaml` (4ch), `no_expr.yaml` (1ch).
+  The base ships the full 46ch conditioning.
+- `overlays/loss/weighted.yaml` — turn on expression-weighted loss
+  (`alpha=5.0`). The base ships uniform loss (`alpha=0`).
+- `overlays/audio/off.yaml` — disable wav2vec2 cross-attention end-to-end.
+- `overlays/expr_source/marigold.yaml` — swap FLAME rasterization for
+  pre-generated Marigold deformations.
+
+An experiment config declares a `base:` and a list of `overlays:` to apply, in
+order. Later overlays win on conflicts. `marionette.config_utils.load_experiment_config`
+resolves the chain.
+
+Each experiment's `run.py` calls `marionette.train.run_training(cfg, output_dir=...)`
+directly — no subprocess, no `python marionette/train.py --config ...`. The
+training helper snapshots the fully-resolved config as `config_resolved.yaml`
+in the run directory for reproducibility.
 
 ## Conventions
 
-- Model architecture configs live in [`marionette/configs/`](../marionette/configs/).
-  Experiment folders here only *reference* those configs via launch scripts —
-  they do not duplicate model definitions.
-- Each experiment folder contains:
-  - `launch.sh` — runs the relevant training invocations in sequence or parallel.
-  - `eval.py` (where applicable) — evaluates a trained checkpoint and reports
-    the metrics relevant to the study axis.
-  - `README.md` — states the question being asked and the expected signal.
+- **Outputs live at repo root**, under `outputs/<experiment_name>/<variant>/run_<timestamp>/`.
+- Each experiment folder creates a **lazy symlink** at `experiments/<name>/outputs`
+  pointing at its output root on first run.
+- Architecture configs (`base.yaml`, overlays) live in `marionette/configs/`;
+  experiment folders only hold the tiny composition YAMLs + `run.py`.
 
 ## Studies
 
 ### [`ablate_conditioning/`](ablate_conditioning/)
 
 **Question:** Which spatial conditioning signals actually contribute?
-Compares full 46ch positional + deformation vs deformation-only (4ch) vs
-ref-mask-only (1ch).
-
-Uses the existing `full_cond_*`, `deform_only_*`, `no_expr_*` configs.
+Compares full 46ch vs deform-only (4ch) vs ref-mask-only (1ch) by swapping
+`overlays/conditioning/*` entries.
 
 ### [`ablate_audio/`](ablate_audio/)
 
 **Question:** Does wav2vec2 cross-attention improve lip sync and
 expressiveness, or is the spatial FLAME signal sufficient on its own?
+Flips `overlays/audio/off.yaml` on/off.
 
-Requires a config with `use_audio_context: false` and `audio_encoder_config: null`.
-A template is provided in this folder.
-
-### [`ablate_expr_source/`](ablate_expr_source/)
+### [`ablate_expr_source/`](ablate_expr_source/) — **implemented**
 
 **Question:** How much reconstruction quality is lost when the deformation map
 comes from the Marigold generator vs the ground-truth FLAME rasterization?
-
-Runs the same architecture with `expression_source: "gt"` vs `"marigold"` in
-both the dataset and the conditioning module. Requires pre-running
-`scripts/cache/cache_marigold_deform.py` to populate
-`data/derived/marigold_deform/`.
+Both variants use `overlays/conditioning/deform_only.yaml`; only the Marigold
+variant adds `overlays/expr_source/marigold.yaml`. See its README for how to
+run and what to measure.
 
 ### [`ablate_loss_weighting/`](ablate_loss_weighting/)
 
 **Question:** Does the expression-weighted loss actually help vs uniform loss?
-Already covered by the existing `*_weighted_loss.yaml` vs `*_uniform_loss.yaml`
-config pairs.
+Flips `overlays/loss/weighted.yaml` on/off.
