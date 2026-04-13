@@ -1,0 +1,12 @@
+# Ablate expression-map source — Marigold variant.
+#
+# Same 4ch deform-only architecture as the GT baseline, but the 3ch
+# deformation is loaded from the Marigold-generated deformation-map videos
+# (`scripts/cache/cache_marigold_deform.py` output) instead of being
+# rasterized from FLAME. Uniform diffusion loss (base default).
+
+base: marionette/configs/base.yaml
+
+overlays:
+  - marionette/configs/overlays/conditioning/deform_only.yaml
+  - marionette/configs/overlays/expr_source/marigold.yaml
