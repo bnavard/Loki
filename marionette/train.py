@@ -488,9 +488,14 @@ def run_training(
     # Set seeds for reproducibility
     pl.seed_everything(cfg.seed, workers=True)
 
-    # Create a timestamped run directory (rank 0 only to avoid duplicates in DDP)
+    # When resuming, reuse the checkpoint's directory; otherwise create a new
+    # timestamped run directory (rank 0 only to avoid duplicates in DDP).
     from datetime import datetime
-    if is_rank_zero():
+    if resume is not None:
+        run_dir = Path(resume).parent.parent
+        if is_rank_zero():
+            print(f"Resuming into existing run directory: {run_dir}")
+    elif is_rank_zero():
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         run_dir = Path(output_dir) / f"run_{timestamp}"
         run_dir.mkdir(parents=True, exist_ok=True)
@@ -529,9 +534,11 @@ def run_training(
 
     wrapper = LightningWrapper(model, cfg)
 
+    ckpt_dir = str(Path(run_output_dir) / "checkpoints")
+
     # Checkpoint: save every N steps (keep all)
     periodic_ckpt = ModelCheckpoint(
-        dirpath=run_output_dir,
+        dirpath=ckpt_dir,
         filename="th-{step:06d}",
         every_n_train_steps=cfg.save_every_n_steps,
         save_top_k=-1,
@@ -539,8 +546,9 @@ def run_training(
 
     # Checkpoint: save best by val loss
     best_ckpt = ModelCheckpoint(
-        dirpath=run_output_dir,
-        filename="th-best-{step:06d}-{val/loss:.4f}",
+        dirpath=ckpt_dir,
+        filename="th-best-{step:06d}-{val_loss:.4f}",
+        auto_insert_metric_name=False,
         monitor="val/loss",
         mode="min",
         save_top_k=1,
