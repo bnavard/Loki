@@ -170,13 +170,20 @@ def main() -> None:
     # This is done once and reused for all variants so both see exactly the
     # same data — a prerequisite for a fair source-ablation comparison.
     #
+    # When resuming, we reuse the existing filtered lists to guarantee the
+    # same dataset that produced the checkpoint. Regenerating could pick up
+    # newly cached clips and silently change the training distribution.
+    #
     # In DDP only rank 0 writes the filtered lists; other ranks wait for
     # the files to appear before proceeding.
     filtered_dir = OUT_ROOT / "filtered_clips"
     train_clips = str(filtered_dir / "train_clips_filtered.json")
     val_clips = str(filtered_dir / "val_clips_filtered.json")
 
-    if is_rank_zero():
+    if args.resume and Path(train_clips).exists() and Path(val_clips).exists():
+        if is_rank_zero():
+            print(f"[filter] Resuming — reusing existing clip lists from {filtered_dir}")
+    elif is_rank_zero():
         cached_ids = get_marigold_cached_clip_ids()
         if not cached_ids:
             raise RuntimeError(
