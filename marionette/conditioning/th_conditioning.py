@@ -1,7 +1,7 @@
 """
 Spatial conditioning producer for the talking-head UNet.
 
-Two sources are supported for the deformation channels:
+Three sources are supported:
 
   - `expression_source="gt"` (default): the 3ch expression deformation is
     rasterized from FLAME verts/offsets on the fly, alongside the 42ch
@@ -14,6 +14,13 @@ Two sources are supported for the deformation channels:
     the deformation map, not the positional encoding channels — so the output
     is always 4 channels (3 deform + 1 ref_mask).
 
+  - `expression_source="driving_video"`: the raw natural driving video frames,
+    downsampled to latent resolution (64x64), are used as 3ch RGB spatial
+    conditioning. No FLAME decomposition at all — the UNet sees the face
+    appearance at low resolution instead of a structured deformation signal.
+    Output is 4 channels (3 RGB + 1 ref_mask). This mode tests whether the
+    FLAME decomposition adds value over plain video conditioning.
+
 Channel layout by mode:
 
   source="gt"
@@ -24,9 +31,8 @@ Channel layout by mode:
   source="marigold"
   └── always 4ch:            [0:3] marigold_deform · [3] ref_mask                →  4
 
-Shape suffix convention used throughout:
-  *_btchw       → (B, T, C, H, W)
-  *_bthwc       → (B, T, H, W, C)   channels-last for concatenation with pos_enc
+  source="driving_video"
+  └── always 4ch:            [0:3] RGB · [3] ref_mask                            →  4
 """
 
 import torch
@@ -83,13 +89,12 @@ class THConditioning(nn.Module):
         std_expr_deformation: float = 0.0104,
         drop_expression_map: bool = False,   # ablation: UNet sees only ref_mask (1ch)
         expr_deform_only: bool = False,      # ablation: UNet sees 3ch deform + 1ch ref_mask (4ch)
-        expression_source: str = "gt",       # "gt" rasterizes from FLAME; "marigold"
-                                              # uses pre-generated deformation map
+        expression_source: str = "gt",       # "gt" | "marigold" | "driving_video"
     ) -> None:
         super().__init__()
 
-        assert expression_source in ("gt", "marigold"), \
-            f"expression_source must be 'gt' or 'marigold', got {expression_source!r}"
+        assert expression_source in ("gt", "marigold", "driving_video"), \
+            f"expression_source must be 'gt', 'marigold', or 'driving_video', got {expression_source!r}"
         self.expression_source = expression_source
 
         self.image_size = image_size
@@ -123,8 +128,8 @@ class THConditioning(nn.Module):
     def n_conditioning_channels(self) -> int:
         if self.drop_expression_map:
             return 1  # only ref_mask
-        if self.expression_source == "marigold":
-            return 4  # 3ch marigold deform + 1ch ref_mask
+        if self.expression_source in ("marigold", "driving_video"):
+            return 4  # 3ch (deform or RGB) + 1ch ref_mask
         if self.expr_deform_only:
             return 4  # 3ch GT deform + 1ch ref_mask
         n = self.positional_channels + 1  # pos enc + ref mask
@@ -185,6 +190,8 @@ class THConditioning(nn.Module):
                 offsets_3d      (B, T, V, 3)
               when expression_source="marigold":
                 marigold_deform (B, T, 3, H, W) — pre-generated deformation map
+              when expression_source="driving_video":
+                driving_video   (B, T, 3, H, W) — raw video frames at latent res, [-1, 1]
               optional:
                 z               (B, T, 4, h, w) — pre-encoded VAE latents
             unconditional: if True return all-zero conditioning (for CFG).
@@ -233,6 +240,24 @@ class THConditioning(nn.Module):
 
             pose_pos_enc = torch.cat(
                 [deform_channels_last, ref_mask_last], dim=-1
+            )                                                                 # (B, T, H, W, 4)
+
+        elif self.expression_source == "driving_video":
+            # Raw driving video frames (already at latent resolution) as spatial
+            # conditioning. Tests whether structured FLAME decomposition adds
+            # value over simply showing the model the face at low resolution.
+            # UNet conditioning is 4ch: [RGB (3) | ref_mask (1)].
+            driving = batch["driving_video"].to(device)                       # (B, T, 3, H, W)
+            driving_channels_last = self._resize_deform_to_image_size(
+                driving, B
+            )                                                                 # (B, T, H, W, 3)
+            # No meaningful deformation-based weight map for driving video —
+            # use the RGB frames themselves as the weight signal (uniform in
+            # practice since there's no explicit deformation decomposition).
+            expr_weight_map = driving_channels_last                           # (B, T, H, W, 3)
+
+            pose_pos_enc = torch.cat(
+                [driving_channels_last, ref_mask_last], dim=-1
             )                                                                 # (B, T, H, W, 4)
 
         else:

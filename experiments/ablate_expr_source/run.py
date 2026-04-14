@@ -1,23 +1,27 @@
 """
 Entry script for the `ablate_expr_source` experiment.
 
-Two variants: `gt_baseline` and `marigold`. Both use the same deform-only
-architecture and uniform loss — the only difference is where the 3ch
-deformation map comes from (FLAME rasterization vs Marigold-generated mp4).
+Four variants, all with uniform loss:
+
+  gt_baseline    — 4ch FLAME deformation (deform-only, no positional encoding)
+  gt_full        — 46ch full FLAME expression map (positional encoding + deformation)
+  marigold       — 4ch Marigold-generated deformation
+  driving_video  — 4ch raw driving video frames at 64x64 (no FLAME decomposition)
 
 IMPORTANT — fair comparison via clip filtering:
     Not all training clips have Marigold-cached deformations yet
     (data/derived/marigold_deform/ may be a subset of the full manifest).
-    To ensure both variants train on exactly the same data, this script
-    intersects the train/val clip lists with the clips that have a
-    cached `deformation.mp4` and writes the filtered lists to the
-    experiment output directory. Both variants use these filtered lists.
+    To ensure all variants train on exactly the same data, this script builds
+    train/val splits from only the clips that have a cached deformation.mp4
+    (90/10 split). All variants use these filtered lists.
 
 Usage (from repo root):
 
     PYTHONPATH=. python experiments/ablate_expr_source/run.py gt_baseline
+    PYTHONPATH=. python experiments/ablate_expr_source/run.py gt_full
     PYTHONPATH=. python experiments/ablate_expr_source/run.py marigold
-    PYTHONPATH=. python experiments/ablate_expr_source/run.py both    # runs in sequence
+    PYTHONPATH=. python experiments/ablate_expr_source/run.py driving_video
+    PYTHONPATH=. python experiments/ablate_expr_source/run.py all   # runs in sequence
 
 Outputs land in `outputs/ablate_expr_source/<variant>/run_<timestamp>/`, and a
 lazy symlink at `experiments/ablate_expr_source/outputs` points there on first
@@ -40,7 +44,7 @@ OUT_ROOT = REPO_ROOT / "outputs" / "ablate_expr_source"
 
 MARIGOLD_DEFORM_ROOT = REPO_ROOT / "data" / "derived" / "marigold_deform"
 
-VARIANTS = ("gt_baseline", "marigold")
+VARIANTS = ("gt_baseline", "gt_full", "marigold", "driving_video")
 
 
 def is_rank_zero() -> bool:
@@ -160,7 +164,7 @@ def run(variant: str, train_clips: str, val_clips: str,
 
 def main() -> None:
     ap = argparse.ArgumentParser()
-    ap.add_argument("variant", choices=VARIANTS + ("both",))
+    ap.add_argument("variant", choices=VARIANTS + ("all",))
     ap.add_argument("--resume", default=None,
                     help="Checkpoint to resume from (applies to the first variant).")
     ap.add_argument("--gpus", nargs="+", type=int, default=[0])
@@ -199,7 +203,7 @@ def main() -> None:
                 break
             time.sleep(0.5)
 
-    variants = list(VARIANTS) if args.variant == "both" else [args.variant]
+    variants = list(VARIANTS) if args.variant == "all" else [args.variant]
     for i, v in enumerate(variants):
         run(v, train_clips, val_clips,
             resume=(args.resume if i == 0 else None),

@@ -63,7 +63,10 @@ class TalkingHeadDataset(Dataset):
                                deformation map video from
                                `{marigold_deform_root}/{clip_id}/deformation.mp4`
                                and packs the requested frames into the hint dict as
-                               `marigold_deform`.
+                               `marigold_deform`. "driving_video" — uses the raw
+                               natural video frames downsampled to latent resolution
+                               as spatial conditioning (3ch RGB in [-1, 1]),
+                               packed into `hint["driving_video"]`.
         marigold_deform_root : directory containing per-clip Marigold-predicted
                                deformation videos
                                (`{root}/{clip_id}/deformation.mp4`). Required when
@@ -85,8 +88,8 @@ class TalkingHeadDataset(Dataset):
         expression_source: str = "gt",
         marigold_deform_root: Optional[str] = None,
     ):
-        assert expression_source in ("gt", "marigold"), \
-            f"expression_source must be 'gt' or 'marigold', got {expression_source!r}"
+        assert expression_source in ("gt", "marigold", "driving_video"), \
+            f"expression_source must be 'gt', 'marigold', or 'driving_video', got {expression_source!r}"
         if expression_source == "marigold" and marigold_deform_root is None:
             raise ValueError(
                 "expression_source='marigold' requires marigold_deform_root to be set"
@@ -302,6 +305,23 @@ class TalkingHeadDataset(Dataset):
             # Pre-generated deformation map replaces the rasterization path.
             # THConditioning will detect this key and bypass mesh rasterization.
             hint["marigold_deform"] = self._load_marigold_deform_window(clip_id, all_frame_ids)
+
+        elif self.expression_source == "driving_video":
+            # Raw driving video frames downsampled to latent resolution as
+            # spatial conditioning. Tests whether structured FLAME decomposition
+            # adds value over simply showing the model the face at low resolution.
+            # imgs is (T, H, W, 3) float32 in [-1, 1] at full resolution;
+            # we downsample to latent_res here.
+            driving_frames = np.stack(
+                [rescale_image(
+                    ((img + 1.0) * 127.5).clip(0, 255).astype(np.uint8),
+                    self.latent_res,
+                ) for img in imgs],
+                axis=0,
+            ).astype(np.float32)                                # (T, latent_res, latent_res, 3)
+            driving_frames = driving_frames / 127.5 - 1.0      # back to [-1, 1]
+            driving_frames = np.transpose(driving_frames, (0, 3, 1, 2))  # (T, 3, H, W)
+            hint["driving_video"] = torch.from_numpy(driving_frames)
 
         return {
             "jpg":   torch.tensor(imgs),           # (T, H, W, 3) float32 [-1,1]

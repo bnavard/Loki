@@ -1,0 +1,11 @@
+# Ablate expression-map source — GT full (46ch).
+#
+# Full FLAME conditioning: 42ch positional encoding of vertex positions +
+# 3ch expression deformation + 1ch reference mask = 46 channels. This is the
+# strongest possible spatial conditioning (explicit geometry + explicit motion).
+# Serves as the upper-bound baseline for the ablation.
+
+base: marionette/configs/base.yaml
+
+# No overlays needed — the base config ships with full 46ch conditioning,
+# uniform loss, and expression_source="gt".

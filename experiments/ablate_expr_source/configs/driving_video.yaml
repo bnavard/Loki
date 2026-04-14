@@ -1,0 +1,13 @@
+# Ablate expression-map source — plain driving video.
+#
+# Raw natural video frames downsampled to 64x64 as spatial conditioning (3ch
+# RGB + 1ch ref_mask = 4ch). No FLAME decomposition — the UNet sees blurry
+# face appearance instead of a structured deformation signal. Tests whether
+# the structured FLAME expression map adds value over simply showing the model
+# what the face looks like at low resolution.
+
+base: marionette/configs/base.yaml
+
+overlays:
+  - marionette/configs/overlays/conditioning/deform_only.yaml
+  - marionette/configs/overlays/expr_source/driving_video.yaml

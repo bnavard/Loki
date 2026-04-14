@@ -1,0 +1,25 @@
+# Expression-map source variant: raw driving video frames.
+#
+# Instead of a structured FLAME deformation map, the UNet sees the raw natural
+# video frames downsampled to latent resolution (64x64) as its spatial
+# conditioning. The 3ch RGB signal carries implicit motion and appearance but
+# does not decompose deformation magnitude the way the expression map does.
+#
+# Output is 4ch (3 RGB + 1 ref_mask) — same channel budget as the deform-only
+# and Marigold modes, making the comparison fair.
+#
+# Combine with `overlays/conditioning/deform_only.yaml` so the UNet layer
+# dimensions match (condition_channels=4).
+train_dataset:
+  params:
+    expression_source: "driving_video"
+
+val_dataset:
+  params:
+    expression_source: "driving_video"
+
+model:
+  params:
+    cond_stage_config:
+      params:
+        expression_source: "driving_video"
