@@ -46,6 +46,13 @@ PYTHONPATH=. python scripts/cache/cache_marigold_deform.py \
 This writes `data/derived/marigold_deform/{clip_id}/deformation.mp4` for every
 clip in the manifest. The dataset decodes the requested frames on the fly.
 
+**The cache does not need to be complete.** `run.py` automatically intersects
+the train/val clip lists with the set of clips that actually have a
+`deformation.mp4` in the cache directory, and writes the filtered lists to
+`outputs/ablate_expr_source/filtered_clips/`. Both variants (GT and Marigold)
+train and evaluate on exactly this filtered subset, so the comparison is fair
+even when only a fraction of the full dataset has been processed.
+
 ## Running
 
 ```bash

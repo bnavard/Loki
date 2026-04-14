@@ -19,7 +19,7 @@
 seed: 42
 
 learning_rate:      1.0e-4
-gpu_batch_size:     1
+gpu_batch_size:     4
 virtual_batch_size: 4
 logger_freq:        50
 n_steps:            5000
