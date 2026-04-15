@@ -319,6 +319,73 @@ fi
 echo ""
 
 # =============================================================================
+# Step 9.5: Fix FLAME pickles in data/assets/flame/
+#   - Strip chumpy.Ch → plain ndarrays (chumpy is ancient, flaky on modern stack)
+#   - Rewrite under NumPy 1.23 so pickles don't reference numpy._core (2.x path)
+#   The fix is idempotent: re-running on an already-fixed file is a no-op.
+# =============================================================================
+echo "===== Step 9.5: Fix FLAME pickles (chumpy → ndarray, numpy 1.x paths) ====="
+
+FLAME_PKLS=(
+    "${REPO_ROOT}/data/assets/flame/flame2023.pkl"
+    "${REPO_ROOT}/data/assets/flame/flame2023_no_jaw.pkl"
+)
+
+for PKL in "${FLAME_PKLS[@]}"; do
+    if [ ! -f "${PKL}" ]; then
+        echo "SKIP: ${PKL} not found"
+        continue
+    fi
+    if [ ! -f "${PKL}.bak" ]; then
+        cp "${PKL}" "${PKL}.bak"
+        echo "Backed up: ${PKL}.bak"
+    fi
+    python - "${PKL}" <<'PYEOF'
+import sys, pickle, inspect
+import numpy as np
+
+# chumpy uses APIs removed in modern Python/NumPy — patch BEFORE importing chumpy
+if not hasattr(inspect, "getargspec"):
+    inspect.getargspec = inspect.getfullargspec
+for _name, _py in [("bool", bool), ("int", int), ("float", float),
+                   ("complex", complex), ("object", object),
+                   ("str", str), ("unicode", str)]:
+    if not hasattr(np, _name):
+        setattr(np, _name, _py)
+
+# Import chumpy before the numpy._core shim (shim-first order segfaults chumpy)
+import chumpy as ch
+
+# Load pickles produced under NumPy >=2.0 while running NumPy <2.0
+if not hasattr(np, "_core"):
+    sys.modules["numpy._core"] = np.core
+    sys.modules["numpy._core.multiarray"] = np.core.multiarray
+    sys.modules["numpy._core.numeric"] = np.core.numeric
+    sys.modules["numpy._core.umath"] = np.core.umath
+
+def ch_to_numpy(obj):
+    if isinstance(obj, ch.Ch):
+        return obj.r
+    if isinstance(obj, dict):
+        return {k: ch_to_numpy(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [ch_to_numpy(v) for v in obj]
+    if isinstance(obj, tuple):
+        return tuple(ch_to_numpy(v) for v in obj)
+    return obj
+
+path = sys.argv[1]
+with open(path, "rb") as f:
+    data = pickle.load(f, encoding="latin1")
+data = ch_to_numpy(data)
+with open(path, "wb") as f:
+    pickle.dump(data, f)
+print(f"  Fixed: {path}")
+PYEOF
+done
+echo ""
+
+# =============================================================================
 # Step 10: Phase 2 weights check
 # =============================================================================
 echo "===== Step 10: Phase 2 weights ====="

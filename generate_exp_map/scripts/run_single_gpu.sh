@@ -16,13 +16,13 @@
 #
 # Examples:
 #   bash generate_exp_map/scripts/run_single_gpu.sh data/talkvid/talkvid/my_video.mp4
-#   bash generate_exp_map/scripts/run_single_gpu.sh data/talkvid/talkvid/my_video.mp4 data/flowface 0
+#   bash generate_exp_map/scripts/run_single_gpu.sh data/talkvid/talkvid/my_video.mp4 data/flame_tracking/flowface 0
 # =============================================================================
 
 set -e
 
 VIDEO_PATH="${1:?Usage: $0 <video_path> [output_dir] [gpu_id]}"
-OUTPUT_DIR="${2:-data/flowface}"
+OUTPUT_DIR="${2:-data/flame_tracking/flowface}"
 GPU_ID="${3:-0}"
 
 # Auto-detect paths (all default to generate_exp_map/pixel3dmm and data/flame_tracking/)

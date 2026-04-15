@@ -19,13 +19,13 @@
 #
 # Examples:
 #   bash generate_exp_map/scripts/run_multi_gpu.sh
-#   bash generate_exp_map/scripts/run_multi_gpu.sh data/talkvid/talkvid data/flowface 8 2
+#   bash generate_exp_map/scripts/run_multi_gpu.sh data/talkvid/talkvid data/flame_tracking/flowface 8 2
 # =============================================================================
 
 set -e
 
 DATA_DIR="${1:-data/talkvid/talkvid}"
-OUTPUT_DIR="${2:-data/flowface}"
+OUTPUT_DIR="${2:-data/flame_tracking/flowface}"
 NUM_GPUS="${3:-8}"
 WORKERS_PER_GPU="${4:-2}"
 
