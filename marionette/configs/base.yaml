@@ -173,7 +173,7 @@ model:
         image_size:            64
         positional_channels:   42
         positional_multiplier: 1.0
-        super_resolution:      2
+        super_resolution:      8
         use_expr_deformation:  true
         expression_source:     "gt"    # "gt" | "marigold"
 
