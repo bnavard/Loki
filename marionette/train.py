@@ -116,10 +116,20 @@ class VisualizationCallback(Callback):
             return
         if trainer.global_step % self.vis_every_n_steps != 0:
             return
-        # Only rank 0 generates visualizations in DDP
-        if trainer.global_rank != 0:
-            return
-        self._generate_samples(trainer, pl_module)
+
+        # DDP safety: the vis callback runs only on rank 0 but takes several
+        # minutes (DDIM sampling + mp4 encoding). Without a barrier, other
+        # ranks advance into the next training step's allreduce while rank 0
+        # is still generating samples, eventually triggering the NCCL watchdog
+        # timeout. The barrier before + after ensures all ranks wait.
+        if trainer.world_size > 1:
+            torch.distributed.barrier()
+
+        if trainer.global_rank == 0:
+            self._generate_samples(trainer, pl_module)
+
+        if trainer.world_size > 1:
+            torch.distributed.barrier()
 
     @torch.no_grad()
     def _generate_samples(self, trainer, pl_module):
