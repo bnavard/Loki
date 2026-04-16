@@ -525,12 +525,14 @@ def run_training(
     train_loader = build_dataloader(cfg.train_dataset.params, cfg.gpu_batch_size,
                                     shuffle=True, drop_last=True)
     if is_rank_zero():
-        print(f"  Train clips: {len(train_loader.dataset)}")
+        print(f"  Train windows: {len(train_loader.dataset)} "
+              f"(from {len(train_loader.dataset.clips)} unique clips)")
         print("Building val dataloader...")
     val_loader = build_dataloader(cfg.val_dataset.params, cfg.gpu_batch_size,
                                   shuffle=False, drop_last=False)
     if is_rank_zero():
-        print(f"  Val clips: {len(val_loader.dataset)}")
+        print(f"  Val windows: {len(val_loader.dataset)} "
+              f"(from {len(val_loader.dataset.clips)} unique clips)")
 
     wrapper = LightningWrapper(model, cfg)
 

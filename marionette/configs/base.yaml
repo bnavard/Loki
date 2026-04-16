@@ -58,6 +58,13 @@ val_dataset:
     fps:                  25.0
     audio_context_frames: 2
     add_mouth:            true
+    # Cross-identity evaluation: each val sample takes its driver signal
+    # (expression map / deformation / driving video) AND its audio from a
+    # DIFFERENT clip, preventing the model from trivially reproducing signals
+    # extracted from the target itself. Pairings are seeded and exclude
+    # same-identity drivers where the val set permits.
+    cross_identity_driving: true
+    pairing_seed:           42
 
 # Validation & visualization
 val_every_n_steps: 250

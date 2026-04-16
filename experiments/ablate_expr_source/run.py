@@ -56,15 +56,23 @@ def is_rank_zero() -> bool:
 # Clip filtering
 # ---------------------------------------------------------------------------
 
-def get_marigold_cached_clip_ids() -> set[str]:
-    """Return the set of clip_ids that have a cached deformation.mp4."""
+def get_marigold_cached_clip_ids(min_size_bytes: int = 1024) -> set[str]:
+    """Return the set of clip_ids that have a cached deformation.mp4.
+
+    Skips files smaller than `min_size_bytes` to avoid picking up
+    partially-written files from a concurrently-running cache job
+    (a 44-byte mp4 has no moov atom and crashes the video reader).
+    """
     if not MARIGOLD_DEFORM_ROOT.exists():
         return set()
-    return {
-        d.name
-        for d in MARIGOLD_DEFORM_ROOT.iterdir()
-        if d.is_dir() and (d / "deformation.mp4").exists()
-    }
+    out = set()
+    for d in MARIGOLD_DEFORM_ROOT.iterdir():
+        if not d.is_dir():
+            continue
+        mp4 = d / "deformation.mp4"
+        if mp4.exists() and mp4.stat().st_size >= min_size_bytes:
+            out.add(d.name)
+    return out
 
 
 def filter_clip_list(clip_list_path: str, allowed: set[str]) -> list[str]:
@@ -74,26 +82,41 @@ def filter_clip_list(clip_list_path: str, allowed: set[str]) -> list[str]:
     return [cid for cid in all_ids if cid in allowed]
 
 
+def _extract_video_id(clip_id: str) -> str:
+    """YouTube video ID extractor — mirrors scripts/manifest/partition_dataset.py."""
+    import re
+    if "_NA_" in clip_id:
+        return clip_id.split("_NA_")[0]
+    m = re.search(r"videovideo(.+?)_scene", clip_id)
+    return m.group(1) if m else clip_id
+
+
 def write_filtered_clip_lists(
     cached_ids: set[str],
     val_ratio: float = 0.1,
     seed: int = 42,
 ) -> tuple[str, str]:
-    """Build train/val splits from the set of Marigold-cached clip IDs.
+    """Build train/val splits from the set of Marigold-cached clip IDs,
+    splitting BY IDENTITY so that no YouTube video ID appears in both splits.
 
     Instead of filtering the original project-wide train/val JSON files (which
     may not overlap with the cached subset at all), we treat the cached clips
-    as the whole dataset and split them directly:
+    as the whole dataset and split their identities directly:
 
-        train = first (1 - val_ratio) fraction
-        val   = remaining val_ratio fraction
+        1. Extract the unique identity (YouTube video ID) of each cached clip.
+        2. Shuffle identities (seeded).
+        3. Assign the first `1 - val_ratio` fraction of identities to train and
+           the remainder to val. All clips belonging to a given identity go
+           to the same split.
 
-    The split is seeded and deterministic. Both filtered lists are written to
-    `outputs/ablate_expr_source/filtered_clips/`.
+    This guarantees no identity leakage between the experiment's train and val
+    sets, which matters for cross-identity evaluation where val clips must be
+    paired with drivers drawn from clips the model has never seen.
 
     Returns (train_filtered_path, val_filtered_path).
     """
     import random
+    from collections import defaultdict
 
     filtered_dir = OUT_ROOT / "filtered_clips"
     filtered_dir.mkdir(parents=True, exist_ok=True)
@@ -101,22 +124,31 @@ def write_filtered_clip_lists(
     train_path = str(filtered_dir / "train_clips_filtered.json")
     val_path = str(filtered_dir / "val_clips_filtered.json")
 
-    all_clips = sorted(cached_ids)
-    rng = random.Random(seed)
-    rng.shuffle(all_clips)
+    # Group cached clips by identity.
+    id_to_clips: dict[str, list[str]] = defaultdict(list)
+    for clip_id in sorted(cached_ids):
+        id_to_clips[_extract_video_id(clip_id)].append(clip_id)
 
-    n_val = max(1, int(len(all_clips) * val_ratio))
-    val_clips = all_clips[:n_val]
-    train_clips = all_clips[n_val:]
+    identities = sorted(id_to_clips.keys())
+    rng = random.Random(seed)
+    rng.shuffle(identities)
+
+    n_val_ids = max(1, int(len(identities) * val_ratio))
+    val_ids = set(identities[:n_val_ids])
+    train_ids = set(identities[n_val_ids:])
+
+    train_clips = sorted(c for vid in train_ids for c in id_to_clips[vid])
+    val_clips = sorted(c for vid in val_ids for c in id_to_clips[vid])
 
     with open(train_path, "w") as f:
         json.dump(train_clips, f, indent=2)
     with open(val_path, "w") as f:
         json.dump(val_clips, f, indent=2)
 
-    print(f"[filter] Marigold cache has {len(all_clips)} clips total")
-    print(f"[filter] Train: {len(train_clips)} clips ({100 * (1 - val_ratio):.0f}%)")
-    print(f"[filter] Val:   {len(val_clips)} clips ({100 * val_ratio:.0f}%)")
+    print(f"[filter] Marigold cache has {len(cached_ids)} clips across "
+          f"{len(identities)} identities")
+    print(f"[filter] Train: {len(train_clips)} clips / {len(train_ids)} identities")
+    print(f"[filter] Val:   {len(val_clips)} clips / {len(val_ids)} identities")
     print(f"[filter] Saved to {filtered_dir}")
 
     return train_path, val_path

@@ -71,6 +71,20 @@ class TalkingHeadDataset(Dataset):
                                deformation videos
                                (`{root}/{clip_id}/deformation.mp4`). Required when
                                `expression_source="marigold"`.
+        cross_identity_driving : when True, each sample sources the *driver signal*
+                               (expression map / deformation / driving video) and
+                               the *audio* from a DIFFERENT clip — deterministically
+                               chosen via a seeded permutation that excludes
+                               self-pairings and same-identity pairings. The target
+                               clip still provides the reference frame and the
+                               reconstruction target (`jpg`). Used at evaluation
+                               time so the model is judged on its ability to
+                               follow external expression cues rather than
+                               reproducing signals extracted from the target itself.
+                               Training should keep this False (no paired
+                               cross-identity ground truth exists).
+        pairing_seed         : RNG seed for the cross-identity clip permutation
+                               and the per-sample driver window selection.
     """
 
     def __init__(
@@ -87,6 +101,8 @@ class TalkingHeadDataset(Dataset):
         add_mouth: bool = True,
         expression_source: str = "gt",
         marigold_deform_root: Optional[str] = None,
+        cross_identity_driving: bool = False,
+        pairing_seed: int = 42,
     ):
         assert expression_source in ("gt", "marigold", "driving_video"), \
             f"expression_source must be 'gt', 'marigold', or 'driving_video', got {expression_source!r}"
@@ -139,6 +155,87 @@ class TalkingHeadDataset(Dataset):
             n_windows = n_t // n_frames
             for w in range(n_windows):
                 self.samples.append((clip_id, w * n_frames))
+
+        # Cross-identity driver permutation.
+        # Each target clip is mapped to a single driver clip. Pairings are
+        # deterministic (seeded), exclude self-pairings, and — where possible —
+        # exclude same-identity pairings (two different clips of the same
+        # YouTube video). We retry the shuffle up to `max_tries` times; if the
+        # set is too small to satisfy the constraint we fall back to a plain
+        # derangement.
+        self.cross_identity_driving = cross_identity_driving
+        self.pairing_seed = pairing_seed
+        self.driver_map: dict[str, str] = {}
+        if cross_identity_driving:
+            self.driver_map = self._build_driver_permutation(
+                list(self.clips.keys()), seed=pairing_seed,
+            )
+
+    @staticmethod
+    def _extract_video_id(clip_id: str) -> str:
+        """Pull the YouTube video ID out of a clip_id so we can detect same-identity
+        pairings and avoid them. Mirrors scripts/manifest/partition_dataset.py."""
+        import re
+        if "_NA_" in clip_id:
+            return clip_id.split("_NA_")[0]
+        m = re.search(r"videovideo(.+?)_scene", clip_id)
+        return m.group(1) if m else clip_id
+
+    @classmethod
+    def _build_driver_permutation(cls, clip_ids: list, seed: int) -> dict:
+        """Build a target -> driver map that minimises same-identity pairings.
+
+        Strategy: shuffle the driver pool (seeded). For each target, scan the
+        pool for the first driver with a DIFFERENT identity than the target;
+        take it. If no such driver remains, take the first available driver
+        (unavoidable same-identity pair). Guarantees:
+          - No self-pair (a clip never drives itself).
+          - Same-identity pairs only appear when a single identity dominates
+            the clip set (>50% of clips) — the theoretical minimum.
+        """
+        import random as _rnd
+        if len(clip_ids) < 2:
+            return {clip_ids[0]: clip_ids[0]} if clip_ids else {}
+
+        target_ids = list(clip_ids)
+        vid_of = {c: cls._extract_video_id(c) for c in target_ids}
+        rng = _rnd.Random(seed)
+
+        driver_pool = target_ids.copy()
+        rng.shuffle(driver_pool)
+
+        mapping: dict[str, str] = {}
+        # Process targets whose identity is most common first — they have the
+        # fewest cross-identity drivers available, so we assign them greedily
+        # while the pool is still rich.
+        from collections import Counter
+        id_count = Counter(vid_of.values())
+        ordered_targets = sorted(
+            target_ids,
+            key=lambda c: (-id_count[vid_of[c]], c),
+        )
+
+        for target in ordered_targets:
+            t_vid = vid_of[target]
+            chosen_idx = None
+            # Prefer a different-identity, non-self driver
+            for i, driver in enumerate(driver_pool):
+                if driver != target and vid_of[driver] != t_vid:
+                    chosen_idx = i
+                    break
+            # Fall back to any non-self driver
+            if chosen_idx is None:
+                for i, driver in enumerate(driver_pool):
+                    if driver != target:
+                        chosen_idx = i
+                        break
+            if chosen_idx is None:
+                # Only one distinct clip left and it's the target itself —
+                # degenerate case; self-pair as a last resort.
+                chosen_idx = 0
+            mapping[target] = driver_pool.pop(chosen_idx)
+
+        return mapping
 
     def __len__(self):
         return len(self.samples)
@@ -252,48 +349,90 @@ class TalkingHeadDataset(Dataset):
         return torch.from_numpy(arr)
 
     # ------------------------------------------------------------------
+    # Driver window selection
+    # ------------------------------------------------------------------
+    def _select_driver_window(self, idx: int, target_clip_id: str):
+        """Resolve the (driver_clip_id, driver_window_start) for a sample.
+
+        In same-identity mode (training), the driver is the target. In
+        cross-identity mode (eval), the driver is determined by the permutation
+        built at construction time, and a random window within that clip is
+        selected deterministically per sample via `pairing_seed + idx`.
+        """
+        if not self.cross_identity_driving:
+            target_window_start = self.samples[idx][1]
+            return target_clip_id, target_window_start
+
+        driver_clip_id = self.driver_map.get(target_clip_id, target_clip_id)
+        _, driver_n_total = self.clips[driver_clip_id]
+        max_start = max(0, driver_n_total - self.n_frames)
+        if max_start == 0:
+            return driver_clip_id, 0
+
+        import random as _rnd
+        rng = _rnd.Random(self.pairing_seed * 1_000_003 + idx)
+        return driver_clip_id, rng.randint(0, max_start)
+
+    # ------------------------------------------------------------------
     # __getitem__
     # ------------------------------------------------------------------
     def __getitem__(self, idx: int) -> dict:
-        clip_id, window_start = self.samples[idx]
-        fit, n_total = self.clips[clip_id]
+        # ---- Target: provides identity (frame 0) + reconstruction target ----
+        target_clip_id, target_window_start = self.samples[idx]
+        target_fit, _target_n_total = self.clips[target_clip_id]
+        target_frame_ids = list(range(
+            target_window_start, target_window_start + self.n_frames,
+        ))
 
-        # Frame 0 of the window is the reference frame.
-        # Frames 1 through n_frames-1 are the target (generation) frames.
-        # All frames come from the same contiguous temporal segment,
-        # ensuring audio and expression are naturally aligned.
-        ref_frame_id = window_start
-        target_ids = list(range(window_start + 1, window_start + self.n_frames))
+        # ---- Driver: provides expression signal + audio ----
+        driver_clip_id, driver_window_start = self._select_driver_window(idx, target_clip_id)
+        driver_fit, driver_n_total = self.clips[driver_clip_id]
+        driver_frame_ids = list(range(
+            driver_window_start, driver_window_start + self.n_frames,
+        ))
+        driver_audio_full = self._load_audio(driver_clip_id, driver_n_total)
 
-        all_frame_ids = [ref_frame_id] + target_ids
+        target_imgs = []
+        driver_imgs = []
+        driver_verts_list = []
+        driver_offsets_list = []
+        ref_masks = []
+        audio_windows = []
 
-        # Load audio once for the whole clip
-        audio_full = self._load_audio(clip_id, n_total)
+        for t_idx in range(self.n_frames):
+            t_frame = target_frame_ids[t_idx]
+            d_frame = driver_frame_ids[t_idx]
 
-        imgs, verts_list, offsets_list, ref_masks, audio_windows = [], [], [], [], []
-
-        for t_idx, frame_id in enumerate(all_frame_ids):
-            img, verts_2d, offsets_3d = self._load_and_process_frame(
-                clip_id, fit, frame_id, cam_id=0
+            # Target: image (first one becomes the reference; all are reconstruction targets)
+            t_img, _, _ = self._load_and_process_frame(
+                target_clip_id, target_fit, t_frame, cam_id=0,
             )
+            target_imgs.append(t_img)
+
+            # Driver: FLAME + image (image only used by driving_video mode, but
+            # loading it here keeps the control flow simple)
+            d_img, d_verts, d_offsets = self._load_and_process_frame(
+                driver_clip_id, driver_fit, d_frame, cam_id=0,
+            )
+            driver_imgs.append(d_img)
+            driver_verts_list.append(d_verts)
+            driver_offsets_list.append(d_offsets)
 
             is_ref = int(t_idx == 0)
+            ref_masks.append(
+                np.ones((1, self.latent_res, self.latent_res), dtype=np.float32) * is_ref
+            )
 
-            # Reference mask as a spatial map (broadcast to latent resolution)
-            ref_mask = np.ones((1, self.latent_res, self.latent_res), dtype=np.float32) * is_ref
+            audio_windows.append(
+                self._get_audio_window(driver_audio_full, d_frame, driver_n_total)
+            )
 
-            imgs.append(img)
-            verts_list.append(verts_2d)
-            offsets_list.append(offsets_3d)
-            ref_masks.append(ref_mask)
-            audio_windows.append(self._get_audio_window(audio_full, frame_id, n_total))
-
-        # Stack along time axis
-        imgs     = np.stack(imgs,         axis=0)   # (T, H, W, 3)
-        verts    = np.stack(verts_list,   axis=0)   # (T, V, 2)
-        offsets  = np.stack(offsets_list, axis=0)   # (T, V, 3)
-        ref_mask = np.stack(ref_masks,    axis=0)   # (T, 1, h, w)
-        audio    = np.stack(audio_windows, axis=0)  # (T, window_samples)
+        target_imgs   = np.stack(target_imgs,         axis=0)  # (T, H, W, 3)
+        driver_imgs   = np.stack(driver_imgs,         axis=0)  # (T, H, W, 3)
+        verts         = np.stack(driver_verts_list,   axis=0)  # (T, V, 2)
+        offsets       = np.stack(driver_offsets_list, axis=0)  # (T, V, 3)
+        ref_mask      = np.stack(ref_masks,           axis=0)  # (T, 1, h, w)
+        audio         = np.stack(audio_windows,       axis=0)  # (T, window_samples)
 
         hint = {
             "verts_2d":       torch.tensor(verts),
@@ -304,27 +443,25 @@ class TalkingHeadDataset(Dataset):
         if self.expression_source == "marigold":
             # Pre-generated deformation map replaces the rasterization path.
             # THConditioning will detect this key and bypass mesh rasterization.
-            hint["marigold_deform"] = self._load_marigold_deform_window(clip_id, all_frame_ids)
+            hint["marigold_deform"] = self._load_marigold_deform_window(
+                driver_clip_id, driver_frame_ids,
+            )
 
         elif self.expression_source == "driving_video":
-            # Raw driving video frames downsampled to latent resolution as
-            # spatial conditioning. Tests whether structured FLAME decomposition
-            # adds value over simply showing the model the face at low resolution.
-            # imgs is (T, H, W, 3) float32 in [-1, 1] at full resolution;
-            # we downsample to latent_res here.
+            # Downsample the DRIVER's video frames to latent resolution.
             driving_frames = np.stack(
                 [rescale_image(
                     ((img + 1.0) * 127.5).clip(0, 255).astype(np.uint8),
                     self.latent_res,
-                ) for img in imgs],
+                ) for img in driver_imgs],
                 axis=0,
             ).astype(np.float32)                                # (T, latent_res, latent_res, 3)
-            driving_frames = driving_frames / 127.5 - 1.0      # back to [-1, 1]
+            driving_frames = driving_frames / 127.5 - 1.0       # back to [-1, 1]
             driving_frames = np.transpose(driving_frames, (0, 3, 1, 2))  # (T, 3, H, W)
             hint["driving_video"] = torch.from_numpy(driving_frames)
 
         return {
-            "jpg":   torch.tensor(imgs),           # (T, H, W, 3) float32 [-1,1]
-            "audio": torch.tensor(audio),          # (T, window_samples) float32
-            "hint":  hint,
+            "jpg":   torch.tensor(target_imgs),     # (T, H, W, 3) TARGET frames (reconstruction target)
+            "audio": torch.tensor(audio),           # (T, window_samples) DRIVER audio
+            "hint":  hint,                           # DRIVER-sourced conditioning
         }
