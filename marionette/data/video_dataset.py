@@ -461,7 +461,8 @@ class TalkingHeadDataset(Dataset):
             hint["driving_video"] = torch.from_numpy(driving_frames)
 
         return {
-            "jpg":   torch.tensor(target_imgs),     # (T, H, W, 3) TARGET frames (reconstruction target)
-            "audio": torch.tensor(audio),           # (T, window_samples) DRIVER audio
-            "hint":  hint,                           # DRIVER-sourced conditioning
+            "jpg":        torch.tensor(target_imgs),   # (T, H, W, 3) TARGET frames (reconstruction target)
+            "driver_jpg": torch.tensor(driver_imgs),   # (T, H, W, 3) DRIVER frames (for vis; same as jpg when same-identity)
+            "audio":      torch.tensor(audio),         # (T, window_samples) DRIVER audio
+            "hint":       hint,                        # DRIVER-sourced conditioning
         }

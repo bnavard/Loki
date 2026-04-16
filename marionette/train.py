@@ -142,6 +142,15 @@ class VisualizationCallback(Callback):
         fps = self.cfg.get("train_dataset", self.cfg.get("dataset", {})).get(
             "params", {}).get("fps", 25.0)
 
+        # Detect cross-identity mode from the val dataset config
+        val_params = self.cfg.get("val_dataset", {}).get("params", {})
+        is_cross_identity = val_params.get("cross_identity_driving", False)
+
+        # Resolution for expression map vis — use the full image resolution so
+        # the expression map is rendered at the original rasterization quality,
+        # not downsampled to 64x64 latent space.
+        resolution = val_params.get("resolution", 512)
+
         step_dir = self.output_dir / f"step_{step:06d}"
         step_dir.mkdir(parents=True, exist_ok=True)
 
@@ -176,12 +185,6 @@ class VisualizationCallback(Callback):
                 ctrl_i = {k: v[[i]] if v is not None else None for k, v in ctrl.items()}
                 uncond_i = {k: v[[i]] if v is not None else None for k, v in c_uncond.items()}
 
-                # Split conditioning along time axis into reference (frame 0)
-                # and generation (frames 1:) for the Stochastic I/O sampler.
-                # squeeze(0) removes the batch dim since we're processing one
-                # sample at a time — sampler expects (T, ...) not (1, T, ...).
-                # cond = conditioning for the conditional branch (model sees full signal)
-                # uncond = conditioning for the unconditional branch (zeroed, for CFG)
                 ref_cond   = {k: v[:, :1].squeeze(0) if v is not None else None for k, v in ctrl_i.items()}
                 ref_uncond = {k: v[:, :1].squeeze(0) if v is not None else None for k, v in uncond_i.items()}
                 gen_cond   = {k: v[:, 1:].squeeze(0) if v is not None else None for k, v in ctrl_i.items()}
@@ -207,31 +210,48 @@ class VisualizationCallback(Callback):
                     gen_imgs = model.decode_first_stage(all_latents[None]).squeeze(0)
                     gen_imgs = ((gen_imgs.clamp(-1, 1) + 1) / 2 * 255).byte().cpu().numpy()
 
-                    gt_imgs = model.decode_first_stage(z[i:i+1]).squeeze(0)
-                    gt_imgs = ((gt_imgs.clamp(-1, 1) + 1) / 2 * 255).byte().cpu().numpy()
-
-                    # Expression map visualization from pos_enc
+                    # Expression map at full resolution (not downsampled to 64x64)
                     pos_enc_i = ctrl_i["pos_enc"][0]  # (T, H, W, C_cond)
-                    expr_vis = self._render_expression_maps(pos_enc_i, gen_imgs.shape[-1])
+                    expr_vis = self._render_expression_maps(pos_enc_i, resolution)
 
-                    # Form 1: image grid (GT / Expression Map / Generated) with labels
+                    # Build the row layout depending on cross-identity mode
+                    if is_cross_identity:
+                        # Row 1: Driver's natural video (person B — source of expression)
+                        driver_jpg_i = batch["driver_jpg"][i]  # (T, H, W, 3) float [-1,1]
+                        driver_vis = ((driver_jpg_i.clamp(-1, 1) + 1) / 2 * 255).byte().cpu()
+                        driver_vis = driver_vis.numpy().transpose(0, 3, 1, 2)  # (T, 3, H, W)
+
+                        rows_data = [driver_vis, expr_vis, gen_imgs]
+                        labels = ["Driving Video", "Expression Map", "Generated"]
+                        title = f"Cross-Identity Talking Head Generation | Step {step}"
+                    else:
+                        # Same-identity: Row 1 = GT target video
+                        gt_imgs = model.decode_first_stage(z[i:i+1]).squeeze(0)
+                        gt_imgs = ((gt_imgs.clamp(-1, 1) + 1) / 2 * 255).byte().cpu().numpy()
+
+                        rows_data = [gt_imgs, expr_vis, gen_imgs]
+                        labels = ["Ground Truth", "Expression Map", "Generated"]
+                        title = f"Same-Identity Reconstruction | Step {step}"
+
+                    # Image grid
                     self._save_labeled_grid(
-                        gt_imgs, expr_vis, gen_imgs,
+                        rows_data, labels,
                         step_dir / f"sample_{n_generated:02d}.png",
+                        title=title,
                     )
 
-                    # Form 2: video with audio
+                    # Video with audio
                     audio_i = batch.get("audio", None)
                     audio_np = audio_i[i].cpu().numpy() if audio_i is not None else None
                     self._save_video_with_audio(
-                        gt_imgs, expr_vis, gen_imgs, audio_np,
+                        rows_data, labels, audio_np,
                         step_dir / f"sample_{n_generated:02d}.mp4",
-                        fps=fps,
+                        fps=fps, title=title,
                     )
 
-                    # Log image grid to tensorboard
+                    # Tensorboard
                     if trainer.logger:
-                        grid = self._make_grid_tensor(gt_imgs, expr_vis, gen_imgs)
+                        grid = self._make_grid_tensor(rows_data)
                         trainer.logger.experiment.add_image(
                             f"vis/sample_{n_generated}", grid, global_step=step,
                         )
@@ -264,7 +284,11 @@ class VisualizationCallback(Callback):
     def _render_expression_maps(self, pos_enc, target_size):
         """
         Extract a 3-channel expression deformation slice from pos_enc and
-        render as a uint8 image array (T, 3, H_out, W_out).
+        render as a uint8 image array (T, 3, H_out, W_out) at `target_size`.
+
+        The expression map is rendered at its native resolution (the resolution
+        it was rasterized at, e.g. 512x512) and only resized if needed to match
+        `target_size`, using INTER_LINEAR for smooth upscaling from latent res.
 
         pos_enc: (T, H, W, C_cond) on GPU or CPU
         """
@@ -292,11 +316,14 @@ class VisualizationCallback(Callback):
             expr = np.zeros_like(expr)
         expr = (expr * 255).astype(np.uint8)
 
-        # Resize to match generated image resolution and convert to (T, 3, H, W)
+        # Resize to target resolution using bilinear (smooth upscale from 64 → 512)
         frames = []
         for t in range(T):
-            frame = cv2.resize(expr[t], (target_size, target_size),
-                               interpolation=cv2.INTER_NEAREST)
+            if H != target_size or W != target_size:
+                frame = cv2.resize(expr[t], (target_size, target_size),
+                                   interpolation=cv2.INTER_LINEAR)
+            else:
+                frame = expr[t]
             frames.append(frame.transpose(2, 0, 1))  # (3, H, W)
         return np.stack(frames, axis=0)  # (T, 3, H, W)
 
@@ -316,63 +343,101 @@ class VisualizationCallback(Callback):
                     font_scale, (255, 255, 255), thickness, cv2.LINE_AA)
         return canvas
 
-    def _save_labeled_grid(self, gt_imgs, expr_imgs, gen_imgs, path):
+    @staticmethod
+    def _add_red_border(frame_bgr, border_width=4):
+        """Draw a red border around a BGR frame (in-place)."""
+        import cv2
+        h, w = frame_bgr.shape[:2]
+        cv2.rectangle(frame_bgr, (0, 0), (w - 1, h - 1),
+                      color=(0, 0, 255), thickness=border_width)
+        return frame_bgr
+
+    def _save_labeled_grid(self, rows_data, labels, path, title=None):
         """
-        Save a 3-row grid: Ground Truth / Expression Map / Generated.
-        Each row has a label on the left. Shows up to 8 evenly spaced frames.
-        All inputs are (T, 3, H, W) uint8 numpy arrays.
+        Save an N-row grid image with labels and an optional title.
+
+        Args:
+            rows_data: list of (T, 3, H, W) uint8 numpy arrays, one per row.
+            labels:    list of str row labels, same length as rows_data.
+            path:      output file path.
+            title:     optional title string drawn at the top of the image.
+
+        The "Generated" row (detected by label) gets a red border on frame 0
+        to highlight the reference identity frame.
         """
         import cv2
-        T = gt_imgs.shape[0]
+        T = rows_data[0].shape[0]
         n_show = min(T, 8)
         indices = np.linspace(0, T - 1, n_show, dtype=int)
 
-        labels = ["Ground Truth", "Expression", "Generated"]
-        all_rows = [gt_imgs, expr_imgs, gen_imgs]
         labeled_rows = []
-
-        for imgs, label in zip(all_rows, labels):
-            frames = [imgs[idx].transpose(1, 2, 0) for idx in indices]  # (H, W, 3) RGB
+        for imgs, label in zip(rows_data, labels):
+            frames = []
+            for col_idx, t_idx in enumerate(indices):
+                frame = imgs[t_idx].transpose(1, 2, 0).copy()  # (H, W, 3) RGB
+                frame_bgr = frame[..., ::-1].copy()
+                # Red border on frame 0 of the Generated row
+                if "Generated" in label and t_idx == 0:
+                    self._add_red_border(frame_bgr)
+                frames.append(frame_bgr)
             strip = np.concatenate(frames, axis=1)
-            strip_bgr = strip[..., ::-1].copy()
-            labeled = self._add_label(strip_bgr, label)
+            labeled = self._add_label(strip, label)
             labeled_rows.append(labeled)
 
         grid = np.concatenate(labeled_rows, axis=0)
+
+        # Optional title bar at the top
+        if title:
+            title_h = 40
+            title_bar = np.zeros((title_h, grid.shape[1], 3), dtype=np.uint8)
+            text_size = cv2.getTextSize(title, cv2.FONT_HERSHEY_SIMPLEX, 0.8, 2)[0]
+            text_x = (grid.shape[1] - text_size[0]) // 2
+            cv2.putText(title_bar, title, (text_x, 28), cv2.FONT_HERSHEY_SIMPLEX,
+                        0.8, (255, 255, 255), 2, cv2.LINE_AA)
+            grid = np.concatenate([title_bar, grid], axis=0)
+
         cv2.imwrite(str(path), grid)
 
-    def _save_video_with_audio(self, gt_imgs, expr_imgs, gen_imgs, audio_np,
-                                path, fps=25.0):
+    def _save_video_with_audio(self, rows_data, labels, audio_np,
+                                path, fps=25.0, title=None):
         """
-        Save a side-by-side video (3 rows stacked) with embedded audio.
-        gt_imgs, expr_imgs, gen_imgs: (T, 3, H, W) uint8
-        audio_np: (T, window_samples) float32 or None
+        Save a stacked video with row labels and optional embedded audio.
+
+        Args:
+            rows_data: list of (T, 3, H, W) uint8 arrays.
+            labels:    row label strings, same length as rows_data.
+            audio_np:  (T, window_samples) float32 or None.
+            path:      output mp4 path.
+            fps:       video frame rate.
+            title:     optional title string drawn at the top of every frame.
         """
         import cv2
         import tempfile
         import subprocess
 
-        T = gt_imgs.shape[0]
-        H_frame = gt_imgs.shape[2]
-        W_frame = gt_imgs.shape[3]
-
-        # Build composite frames: 3 rows with labels
-        label_w = 180
-        comp_w = label_w + W_frame
-        comp_h = H_frame * 3
-
-        labels = ["Ground Truth", "Expression", "Generated"]
-        all_rows = [gt_imgs, expr_imgs, gen_imgs]
+        T = rows_data[0].shape[0]
 
         frames = []
         for t in range(T):
             rows = []
-            for imgs, label in zip(all_rows, labels):
-                frame_rgb = imgs[t].transpose(1, 2, 0)  # (H, W, 3)
+            for imgs, label in zip(rows_data, labels):
+                frame_rgb = imgs[t].transpose(1, 2, 0).copy()
                 frame_bgr = frame_rgb[..., ::-1].copy()
+                if "Generated" in label and t == 0:
+                    self._add_red_border(frame_bgr)
                 labeled = self._add_label(frame_bgr, label, font_scale=0.7, thickness=1)
                 rows.append(labeled)
             composite = np.concatenate(rows, axis=0)
+
+            if title:
+                title_h = 30
+                title_bar = np.zeros((title_h, composite.shape[1], 3), dtype=np.uint8)
+                text_size = cv2.getTextSize(title, cv2.FONT_HERSHEY_SIMPLEX, 0.6, 1)[0]
+                text_x = (composite.shape[1] - text_size[0]) // 2
+                cv2.putText(title_bar, title, (text_x, 22), cv2.FONT_HERSHEY_SIMPLEX,
+                            0.6, (255, 255, 255), 1, cv2.LINE_AA)
+                composite = np.concatenate([title_bar, composite], axis=0)
+
             frames.append(composite)
 
         # Write video without audio first
@@ -424,18 +489,18 @@ class VisualizationCallback(Callback):
         import shutil
         shutil.move(tmp_video_path, str(path))
 
-    def _make_grid_tensor(self, gt_imgs, expr_imgs, gen_imgs):
-        """Create a (3, 3*H, n*W) tensor for tensorboard logging."""
-        T = gt_imgs.shape[0]
+    def _make_grid_tensor(self, rows_data):
+        """Create a (3, N*H, n*W) tensor for tensorboard logging."""
+        T = rows_data[0].shape[0]
         n_show = min(T, 8)
         indices = np.linspace(0, T - 1, n_show, dtype=int)
 
         rows = []
-        for imgs in [gt_imgs, expr_imgs, gen_imgs]:
+        for imgs in rows_data:
             frames = [imgs[idx] for idx in indices]  # list of (3, H, W)
             rows.append(np.concatenate(frames, axis=2))  # (3, H, n*W)
 
-        grid = np.concatenate(rows, axis=1)  # (3, 3*H, n*W)
+        grid = np.concatenate(rows, axis=1)  # (3, N*H, n*W)
         return torch.tensor(grid, dtype=torch.uint8)
 
 
