@@ -326,27 +326,28 @@ class TalkingHeadDataset(Dataset):
         return img, verts_2d_p3d, offsets_3d
 
     def _load_marigold_deform_window(self, clip_id: str, frame_ids: list) -> torch.Tensor:
-        """Load Marigold-predicted deformation frames by decoding the cached mp4.
+        """Load Marigold-predicted deformation frames from the cached fp16 tensor.
 
-        Reads `{marigold_deform_root}/{clip_id}/deformation.mp4`, extracts only
-        the frames in `frame_ids`, and returns a normalized float tensor.
+        Reads `{marigold_deform_root}/{clip_id}/deform_field.pt`, indexes the
+        requested frames, and returns them as a float32 tensor.
 
         Returns:
-            (T, 3, H, W) float32 in [-1, 1], resized to `self.resolution`.
+            (T, 3, H, W) float32 in original prediction range.
         """
-        video_path = self.marigold_deform_root / clip_id / "deformation.mp4"
-        if not video_path.exists():
+        pt_path = self.marigold_deform_root / clip_id / "deform_field.pt"
+        if not pt_path.exists():
             raise FileNotFoundError(
-                f"Marigold deformation video not found: {video_path}. "
+                f"Marigold deformation tensor not found: {pt_path}. "
                 f"Run scripts/cache/cache_marigold_deform.py first."
             )
 
-        frames = [load_frame(video_path, f) for f in frame_ids]  # list of (H, W, 3) uint8
-        frames = [rescale_image(f, self.resolution) for f in frames]
-        arr = np.stack(frames, axis=0).astype(np.float32)        # (T, H, W, 3) in [0, 255]
-        arr = arr / 127.5 - 1.0                                  # normalize to [-1, 1]
-        arr = np.transpose(arr, (0, 3, 1, 2))                    # (T, 3, H, W)
-        return torch.from_numpy(arr)
+        deform_field = torch.load(str(pt_path), map_location="cpu", weights_only=True)
+        frames = deform_field[frame_ids].float()  # (T, 3, H, W)
+        if frames.shape[-1] != self.resolution:
+            frames = torch.nn.functional.interpolate(
+                frames, size=self.resolution, mode="bilinear", align_corners=False,
+            )
+        return frames
 
     # ------------------------------------------------------------------
     # Driver window selection

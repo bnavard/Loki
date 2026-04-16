@@ -4,10 +4,11 @@ Cache deformation maps predicted by the Marigold-trained SD3.5 model.
 For each clip, reads every frame from the preprocessed 512x512 video
 (data/talkvid/talkvid/{clip_id}.mp4) and runs it through the Marigold model.
 Frames are fed directly at 512x512 — no FLAME crop is applied.
+Inference is batched (default 16 frames) for better GPU utilization.
 
 Output per clip:
-  {output_dir}/{clip_id}/deform_field.pt    — [T, 3, 512, 512] float32 tensor (disabled for now because of space limitation)
-  {output_dir}/{clip_id}/deformation.mp4    — visualization video
+  {output_dir}/{clip_id}/deform_field.pt    — [T, 3, 512, 512] float16 tensor
+  {output_dir}/{clip_id}/deformation.mp4    — visualization video (lossy, for inspection only)
 
 Usage:
     cd <repo_root>
@@ -54,6 +55,7 @@ def parse_args():
     p.add_argument("--seed", type=int, default=42)
     p.add_argument("--gpu", type=int, default=0)
     p.add_argument("--num_gpus", type=int, default=1)
+    p.add_argument("--batch_size", type=int, default=16)
     p.add_argument("--test", action="store_true")
     p.add_argument("--clip", type=str, default=None)
     return p.parse_args()
@@ -103,39 +105,51 @@ def load_marigold_model(model_id, checkpoint_path, device):
 
 
 @torch.no_grad()
-def predict_deform_frame(transformer, vae, img_tensor, null_text, null_pooled,
-                         scaling_factor, shift_factor, num_steps, seed, device):
+def predict_deform_batch(transformer, vae, img_batch, null_text, null_pooled,
+                         scaling_factor, shift_factor, num_steps, base_seed, device):
     """
-    Run one 512x512 frame through the Marigold pipeline.
+    Run a batch of 512x512 frames through the Marigold pipeline.
 
     Args:
-        img_tensor: [3, H, W] float32 in [-1, 1]
+        img_batch:  [B, 3, H, W] float32 in [-1, 1]. B can be any size
+                    (handles the last partial batch of a clip naturally).
+        base_seed:  seed for the first frame in this batch; frame i uses
+                    base_seed + i.
 
     Returns:
-        [3, H, W] float32 deformation map
+        [B, 3, H, W] float16 deformation maps
     """
+    B = img_batch.shape[0]
+
     nat_latent = vae.encode(
-        img_tensor.unsqueeze(0).to(device, dtype=vae.dtype)
+        img_batch.to(device, dtype=vae.dtype)
     ).latent_dist.mode()
     nat_latent = ((nat_latent - shift_factor) * scaling_factor).to(dtype=torch.bfloat16)
 
-    torch.manual_seed(seed)
-    x = torch.randn_like(nat_latent)
+    # Generate per-frame noise with deterministic seeds.
+    noise_list = []
+    for i in range(B):
+        torch.manual_seed(base_seed + i)
+        noise_list.append(torch.randn_like(nat_latent[:1]))
+    x = torch.cat(noise_list, dim=0)
+
     timesteps = torch.linspace(1.0, 0.0, num_steps + 1, device=device)
+    null_text_b = null_text.expand(B, -1, -1)
+    null_pooled_b = null_pooled.expand(B, -1)
 
     for i in range(num_steps):
         model_input = torch.cat([x, nat_latent], dim=1)
-        t_ms = (timesteps[i] * 1000).long().expand(1)
+        t_ms = (timesteps[i] * 1000).long().expand(B)
         velocity = transformer(
             hidden_states=model_input, timestep=t_ms,
-            encoder_hidden_states=null_text,
-            pooled_projections=null_pooled,
+            encoder_hidden_states=null_text_b,
+            pooled_projections=null_pooled_b,
         ).sample
         x = x + velocity * (timesteps[i + 1] - timesteps[i])
 
     raw = x.float() / scaling_factor + shift_factor
     decoded = vae.decode(raw.to(vae.dtype), return_dict=False)[0]
-    return decoded.squeeze(0).float().cpu()
+    return decoded.float().cpu().to(torch.float16)
 
 
 def read_video_frames(video_path):
@@ -151,6 +165,34 @@ def read_video_frames(video_path):
         frames.append(torch.from_numpy(frame).permute(2, 0, 1))
     cap.release()
     return frames
+
+
+def identity_first_ordering(clip_ids: list[str]) -> list[str]:
+    """Reorder clips so that every identity appears once before any repeats.
+
+    Identity is the portion before '_NA_' (the YouTube video ID). The result
+    is a round-robin over identities: the first pass picks one clip per
+    identity, the second pass picks the next clip from identities that have
+    more, and so on. This maximises identity coverage early in the run so
+    training can start on a diverse set while caching is still in progress.
+    """
+    from collections import defaultdict
+    buckets = defaultdict(list)
+    for cid in clip_ids:
+        ident = cid.split("_NA_")[0] if "_NA_" in cid else cid
+        buckets[ident].append(cid)
+
+    # Round-robin: take one clip per identity per pass.
+    ordered = []
+    while buckets:
+        empty = []
+        for ident in sorted(buckets):
+            ordered.append(buckets[ident].pop(0))
+            if not buckets[ident]:
+                empty.append(ident)
+        for ident in empty:
+            del buckets[ident]
+    return ordered
 
 
 def main():
@@ -169,7 +211,9 @@ def main():
         import json
         with open(args.manifest) as f:
             manifest = json.load(f)
-        all_clips = [entry["clip_id"] for entry in manifest]
+        all_clips = identity_first_ordering(
+            [entry["clip_id"] for entry in manifest]
+        )
 
     print(f"Total clips: {len(all_clips)}")
 
@@ -206,29 +250,33 @@ def main():
                 tqdm.write(f"[SKIP] {clip_id}: empty video")
                 continue
 
-            deform_frames = []
-            for t, frame_tensor in enumerate(frames):
-                deform = predict_deform_frame(
-                    transformer, vae, frame_tensor, null_text, null_pooled,
-                    sf, shf, args.num_steps, args.seed + t, device,
+            # Batched inference — process `batch_size` frames at a time.
+            # The last batch may be smaller (no padding needed).
+            all_frames = torch.stack(frames, dim=0)  # [T, 3, H, W]
+            deform_batches = []
+            for b_start in range(0, len(frames), args.batch_size):
+                batch = all_frames[b_start : b_start + args.batch_size]
+                deform = predict_deform_batch(
+                    transformer, vae, batch, null_text, null_pooled,
+                    sf, shf, args.num_steps, args.seed + b_start, device,
                 )
-                deform_frames.append(deform)
+                deform_batches.append(deform)
 
-            deform_field = torch.stack(deform_frames, dim=0)  # [T, 3, H, W]
+            deform_field = torch.cat(deform_batches, dim=0)  # [T, 3, H, W] float16
 
-            # Save
+            # Save fp16 tensor (lossless relative to bf16 inference precision)
             clip_dir = output_dir / clip_id
             clip_dir.mkdir(parents=True, exist_ok=True)
-            # torch.save(deform_field, str(clip_dir / "deform_field.pt"))
+            torch.save(deform_field, str(clip_dir / "deform_field.pt"))
 
-            # Save visualization video
+            # Save visualization video (lossy, for inspection only)
             T, _, H, W = deform_field.shape
             writer = cv2.VideoWriter(
                 str(clip_dir / "deformation.mp4"),
                 cv2.VideoWriter_fourcc(*"mp4v"), args.fps, (W, H),
             )
             for t in range(T):
-                vis = normalize_to_uint8(deform_field[t].numpy().transpose(1, 2, 0))
+                vis = normalize_to_uint8(deform_field[t].float().numpy().transpose(1, 2, 0))
                 writer.write(vis[..., ::-1])
             writer.release()
 

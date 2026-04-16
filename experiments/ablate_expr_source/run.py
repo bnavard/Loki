@@ -57,11 +57,10 @@ def is_rank_zero() -> bool:
 # ---------------------------------------------------------------------------
 
 def get_marigold_cached_clip_ids(min_size_bytes: int = 1024) -> set[str]:
-    """Return the set of clip_ids that have a cached deformation.mp4.
+    """Return the set of clip_ids that have a cached deform_field.pt.
 
     Skips files smaller than `min_size_bytes` to avoid picking up
-    partially-written files from a concurrently-running cache job
-    (a 44-byte mp4 has no moov atom and crashes the video reader).
+    partially-written files from a concurrently-running cache job.
     """
     if not MARIGOLD_DEFORM_ROOT.exists():
         return set()
@@ -69,8 +68,8 @@ def get_marigold_cached_clip_ids(min_size_bytes: int = 1024) -> set[str]:
     for d in MARIGOLD_DEFORM_ROOT.iterdir():
         if not d.is_dir():
             continue
-        mp4 = d / "deformation.mp4"
-        if mp4.exists() and mp4.stat().st_size >= min_size_bytes:
+        pt = d / "deform_field.pt"
+        if pt.exists() and pt.stat().st_size >= min_size_bytes:
             out.add(d.name)
     return out
 
