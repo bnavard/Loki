@@ -44,7 +44,7 @@ OUT_ROOT = REPO_ROOT / "outputs" / "ablate_expr_source"
 
 MARIGOLD_DEFORM_ROOT = REPO_ROOT / "data" / "derived" / "marigold_deform"
 
-VARIANTS = ("gt_baseline", "gt_full", "marigold", "driving_video")
+VARIANTS = ("gt_baseline", "gt_full", "marigold", "marigold_with_pose", "driving_video")
 
 
 def is_rank_zero() -> bool:

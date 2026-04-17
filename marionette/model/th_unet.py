@@ -111,6 +111,7 @@ class THUnetModel(UNetModel):
                          z_input       (B, T, 4, H, W)        GT latents (refs only)
                          ref_mask      (B, T, 1, H, W)        1=reference, 0=generated
                          audio_context (B, T, S, D)           audio features per frame
+                         pose_emb      (B*T, emb_dim)         head pose embedding (optional)
         Returns:
             (B, T, 4, H, W)  predicted noise (reference slots pass through unchanged)
         """
@@ -143,10 +144,17 @@ class THUnetModel(UNetModel):
                 control["audio_context"], 'b t s d -> (b t) s d'
             ).type(self.dtype)
 
+        # ------- head pose embedding (added to timestep embedding) -------
+        # When present, pose_emb modulates every ResBlock and transformer block
+        # via the existing `emb` pathway, just like the timestep signal does.
+        pose_emb = control.get("pose_emb", None)
+
         # ------- UNet forward -------
         hs = []
         t_emb = timestep_embedding(timesteps, self.model_channels, repeat_only=False).type(self.dtype)
         emb   = self.time_embed(t_emb)
+        if pose_emb is not None:
+            emb = emb + pose_emb.type(self.dtype)
         h     = x.type(self.dtype)
 
         for module in self.input_blocks:

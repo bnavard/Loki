@@ -57,6 +57,7 @@ class THDiffusion(LatentDiffusion):
         n_frames: int,
         audio_key: str = "audio",
         audio_encoder_config: dict = None,   # instantiate_from_config spec
+        pose_encoder_config: dict = None,    # instantiate_from_config spec
         *args,
         cfg_probability: float = 0.1,
         shift_schedule_flag: bool = False,
@@ -84,6 +85,11 @@ class THDiffusion(LatentDiffusion):
         self.audio_encoder = None
         if audio_encoder_config is not None:
             self.audio_encoder = instantiate_from_config(audio_encoder_config)
+
+        # Pose encoder (optional — 6DRepNet head pose → embedding added to timestep emb)
+        self.pose_encoder = None
+        if pose_encoder_config is not None:
+            self.pose_encoder = instantiate_from_config(pose_encoder_config)
 
         # Sanity: audio encoder presence must match UNet cross-attention flag
         unet_wants_audio = getattr(self.model.diffusion_model, "use_context", True)
@@ -129,11 +135,26 @@ class THDiffusion(LatentDiffusion):
                     audio = audio[:bs]
                 audio_context = self.audio_encoder(audio)  # (B, T, S, D)
 
+            # ---- encode head pose to per-frame embedding ----
+            pose_emb = None
+            if self.pose_encoder is not None and "driver_jpg" in batch:
+                # driver_jpg: (B, T, H, W, 3) in [-1, 1]
+                driver_frames = batch["driver_jpg"]
+                if bs is not None:
+                    driver_frames = driver_frames[:bs]
+                # Convert from (B, T, H, W, 3) [-1,1] to (B, T, 3, H, W) [0,1]
+                driver_chw = rearrange(driver_frames, 'b t h w c -> b t c h w')
+                driver_01 = (driver_chw + 1.0) / 2.0  # [-1,1] → [0,1]
+                pose_emb = self.pose_encoder(driver_01)  # (B*T, embed_dim)
+
             # ---- unconditional conditioning (zeros) ----
             c_uncond = self.get_unconditional_conditioning(batch[self.control_key])
             # Zero out audio context for unconditional branch
             c_uncond["audio_context"] = (
                 torch.zeros_like(audio_context) if audio_context is not None else None
+            )
+            c_uncond["pose_emb"] = (
+                torch.zeros_like(pose_emb) if pose_emb is not None else None
             )
 
             loss_mask = batch.get("mask", None)
@@ -141,6 +162,7 @@ class THDiffusion(LatentDiffusion):
         # ---- conditional conditioning ----
         c_cond = self.get_learned_conditioning(batch[self.control_key])
         c_cond["audio_context"] = audio_context
+        c_cond["pose_emb"] = pose_emb
 
 
         # ---- stochastic CFG mixing ----
@@ -383,6 +405,9 @@ class THDiffusion(LatentDiffusion):
         if self.audio_encoder is not None:
             # Only add unfrozen audio encoder parameters
             params += [p for p in self.audio_encoder.parameters() if p.requires_grad]
+        if self.pose_encoder is not None:
+            # Only the learned projection MLP (backbone is frozen)
+            params += [p for p in self.pose_encoder.parameters() if p.requires_grad]
         if self.cond_stage_trainable:
             params += [p for p in self.cond_stage_model.parameters() if p.requires_grad]
         return torch.optim.AdamW(params, lr=lr)
