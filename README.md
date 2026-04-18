@@ -20,12 +20,13 @@ The two training pipelines are complementary:
 .
 ├── marionette/                          # Talking-head video rendering (SD 2.1 UNet + 3D attention)
 ├── marigold_training/                   # Marigold-style face → deformation map (SD3.5 DiT)
-├── generate_exp_map/                    # FLAME tracking pipeline (pixel3dmm → fit.npz)
+├── experiments/                         # Ablation study organisation (launchers, configs, eval metrics)
 ├── scripts/                             # Full data-prep pipeline: download → preprocess → caption → cache → manifest
-├── experiments/                         # Ablation study organisation (launchers, docs, eval)
+├── generate_exp_map/                    # FLAME tracking pipeline (pixel3dmm → fit.npz)
 ├── ldm_base/                            # Vendored Stable Diffusion LDM utilities
 ├── data/assets/flame/                   # FLAME model files (mesh, blendshapes)
-├── instructions/                        # Design documents
+├── data/models/                         # SD 2.1 init checkpoint (gitignored)
+├── instructions/                        # Design documents + paper context
 └── README.md
 ```
 
@@ -33,7 +34,7 @@ The two training pipelines are complementary:
 
 ### marionette
 
-Talking-head video rendering. Three conditioning signals: FLAME expression maps (46ch spatial addition), wav2vec2 audio (cross-attention), reference frame (identity passthrough). Expression-weighted diffusion loss amplifies gradients on high-deformation face regions. Five experiment configs for ablation studies.
+Talking-head video rendering. Four conditioning signals (each independently toggleable): FLAME expression map (46ch / 4ch / 1ch configurable), wav2vec2 audio cross-attention, 6DRepNet head pose embedding added to the timestep, and reference-frame identity passthrough. Expression-weighted diffusion loss amplifies gradients on high-deformation face regions. Configs are composed from a single `base.yaml` plus overlays — no duplicated concrete configs. Evaluation uses cross-identity driving by default (target's reference frame, driver's expression + audio) so models are judged on following external cues rather than trivial reconstruction.
 
 See [`marionette/README.md`](marionette/README.md).
 
@@ -43,9 +44,15 @@ Marigold-style deformation map generation. Given a natural face frame, generates
 
 See [`marigold_training/README.md`](marigold_training/README.md).
 
+### experiments
+
+Ablation study organisation. Each sub-folder targets a single axis of variation and holds thin experiment configs (base + overlay references) plus a `run.py` that calls `marionette.train.run_training()` directly. Current studies: `ablate_expr_source/` (gt_full / gt_baseline / marigold / driving_video), `ablate_audio/` (audio cross-attention on/off), `ablate_conditioning/` (channel budget matrix), `ablate_loss_weighting/` (uniform vs expression-weighted loss). Quantitative metrics (lip sync via SyncNet) live in `evaluation_metrics/`.
+
+See [`experiments/README.md`](experiments/README.md).
+
 ### scripts
 
-Full data-preparation pipeline, organised by stage: `download/` (YouTube clip scraping), `preprocess/` (face crop + resample), `caption/` (Whisper + Qwen2-Audio prosody), `cache/` (expression field + Marigold deformation tensors), `manifest/` (train/val split).
+Full data-preparation pipeline, organised by stage: `download/` (YouTube clip scraping), `preprocess/` (face crop + resample), `caption/` (Whisper + Qwen2-Audio prosody), `cache/` (expression field + Marigold deformation tensors), `manifest/` (train/val split with identity-based 98/2 split to prevent identity leakage), `tools/` (devops utilities).
 
 See [`scripts/README.md`](scripts/README.md).
 
@@ -104,14 +111,27 @@ Used by `generate_exp_map` for computing `fit.npz` from videos via [pixel3dmm](h
 
 ```
 data/
-├── talkvid/talkvid/{clip_id}.mp4      # source videos
-├── talkvid/audio/{clip_id}.wav        # 16kHz mono audio
-├── flowface/{clip_id}/fit.npz         # FLAME tracking parameters
-├── flowface/{clip_id}/images/cam0/    # extracted frames
-├── derived/captions/                  # text captions
-├── derived/vae_latent_cache/          # precomputed VAE latents
-├── derived/prompt_latent_cache/       # precomputed text embeddings
-└── assets/flame/                      # FLAME model files (in repo)
+├── assets/flame/                              # FLAME model files (tracked in repo)
+├── weights/{l2cs,mmdm,rvm,syncnet}            # pretrained auxiliary weights (tracked except *.pth)
+├── models/v2-1_512-ema-pruned.ckpt            # SD 2.1 init checkpoint (gitignored)
+├── talkvid/talkvid/{clip_id}.mp4              # source videos (symlink, gitignored)
+├── talkvid/audio/{clip_id}.wav                # 16 kHz mono audio (symlink, gitignored)
+├── flame_tracking/
+│   ├── flowface/{clip_id}/fit.npz             # FLAME tracking parameters (fit.npz, images, bg)
+│   ├── preprocessing/{clip_id}/p3dmm/
+│   │   ├── normals/*.png                      # pixel3dmm predicted surface normals
+│   │   └── uv_map/*.png                       # pixel3dmm UV coordinate maps
+│   └── tracking/{clip_id}_nV1_noPho_uv2000.0_n1000.0/
+│       ├── checkpoint/*.frame                 # per-frame tracking states
+│       ├── mesh/*.ply, flowface_mesh/*.ply    # fitted meshes
+│       └── result.mp4                         # overlay visualization
+└── derived/
+    ├── captions/{clip_id}.json                # Whisper + Qwen2-Audio prosody
+    ├── expression_field/{clip_id}/            # GT rasterized 45-channel expression fields
+    ├── marigold_deform/{clip_id}/             # Marigold-generated deformation mp4s
+    ├── manifest.json                          # clip_id + paths + frame counts
+    ├── train_clips.json, val_clips.json       # identity-based split (98/2)
+    └── (run-time filtered clip lists under outputs/<experiment>/filtered_clips/)
 ```
 
 ## Acknowledgements

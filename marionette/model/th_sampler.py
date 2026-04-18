@@ -4,11 +4,10 @@ Stochastic I/O sampler for Marionette talking-head generation.
 Key features:
   1. R defaults to 1 (single reference frame for talking head). Can still be
      increased if multiple reference images are provided.
-  2. audio_context is threaded through ref_cond / gen_cond dicts and concatenated
-     along the time axis alongside the spatial conditioning keys — the UNet
-     receives a combined (B, V, S, D) audio tensor that it reshapes to
-     (B*V, S, D) internally.
-  3. Import paths updated: talkinghead.*.
+  2. audio_context and pose_emb are threaded through ref_cond / gen_cond dicts
+     and concatenated along the time axis alongside the spatial conditioning
+     keys — the UNet receives combined (B, V, S, D) / (B*V, D) tensors that
+     it reshapes internally.
 
 Usage:
     sampler = THSampler(model)

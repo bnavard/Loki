@@ -2,12 +2,18 @@
 Latent video diffusion model for talking-head generation.
 
 Wraps the SD 2.1 UNet in a training loop with:
-  - Image → VAE latent encoding
-  - FLAME conditioning via THConditioning (spatial addition)
-  - Audio encoding via wav2vec2 (cross-attention context)
+  - Image → VAE latent encoding (frozen VAE)
+  - Spatial conditioning via THConditioning (GT FLAME rasterization, cached
+    Marigold deformations, or raw driver frames — chosen by `expression_source`)
+  - Audio encoding via wav2vec2 (cross-attention context, optional)
+  - Head pose encoding via 6DRepNet (added to timestep embedding, optional)
   - Expression-weighted loss (amplify gradients on active face regions)
   - Classifier-free guidance dropout
   - Loss masking to non-reference frames
+
+The audio encoder and pose encoder are both optional; a sanity check ensures
+their configs agree with the corresponding UNet flags (e.g. `audio_encoder_config=null`
+requires `unet_config.params.use_audio_context=false`).
 
 The expr_weight_map is always available for loss weighting, even when the
 UNet's spatial conditioning is ablated (drop_expression_map=True). The

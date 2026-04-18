@@ -1,12 +1,26 @@
 """
 SD 2.1 UNet extended for talking-head video generation.
 
-Cross-attention is controlled by use_audio_context (default True): when
-enabled, audio tokens from wav2vec2 flow through every transformer block; when
-disabled (audio-ablation), cross-attention is skipped entirely across the UNet.
-FLAME conditioning enters via spatial addition to the first feature map
-(cond_linear projects condition_channels -> model_channels). Reference frames
-bypass denoising via the ref_mask + z_input passthrough mechanism.
+Three conditioning pathways:
+
+  * Spatial (FLAME expression / Marigold deformation / driving video): enters
+    via a learned linear projection of `condition_channels` -> `model_channels`
+    added to the first UNet feature map. The channel count (1 / 4 / 46) is
+    set by the conditioning overlay.
+
+  * Audio (wav2vec2 cross-attention): controlled by `use_audio_context`.
+    When True, audio tokens are passed as the `context` argument to every
+    transformer block. When False (audio-ablation), cross-attention is
+    skipped entirely across the UNet.
+
+  * Head pose (6DRepNet embedding, optional): when `control["pose_emb"]` is
+    present, it is added to the timestep embedding so head pose modulates
+    every ResBlock and transformer block through the existing `emb` pathway.
+
+Reference frames bypass denoising via the ref_mask + z_input passthrough
+mechanism — frame 0 (ref_mask=1) outputs the known noise residual so the
+reference passes through unchanged while still participating in 3D attention
+for identity conditioning.
 """
 
 import torch

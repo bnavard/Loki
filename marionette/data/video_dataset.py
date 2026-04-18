@@ -3,11 +3,24 @@ Video dataset for talking-head generation training.
 
 Each clip is split into non-overlapping n_frames-sized windows (deterministic).
 Frame 0 of each window is the reference frame; frames 1:n_frames are the
-generation targets. Audio windows are extracted from the same temporal segment,
-ensuring audio-expression alignment.
+generation targets.
 
 The flat sample index maps across all windows from all clips, so a 125-frame
 clip at n_frames=16 yields 7 training samples (windows starting at 0, 16, 32, ...).
+
+Same-identity vs cross-identity driving
+---------------------------------------
+When `cross_identity_driving=False` (training), the driver signal (FLAME
+verts / Marigold deformation / driving video frames) and the audio come from
+the same clip as the target — paired ground truth needed for the denoising
+objective.
+
+When `cross_identity_driving=True` (evaluation default), the driver clip is
+drawn from a seeded permutation over the dataset's clip list that minimises
+same-identity and self-pairings. The target clip still provides the reference
+frame (frame 0) and the reconstruction target (`jpg`), but the expression
+signal and the audio come from a different clip — so the model is judged on
+following external cues rather than trivially reproducing the target.
 """
 
 import json
