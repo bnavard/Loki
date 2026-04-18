@@ -8,7 +8,7 @@ export HF_TOKEN=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
 export PYTHONPATH=.
 
 for i in 0 1 2 3; do
-    python scripts/cache/cache_marigold_deform.py \
+    python scripts/cache/marigold_deform/cache.py \
         --gpu $i --num_gpus 4 &
 done
 wait
