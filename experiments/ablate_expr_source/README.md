@@ -39,7 +39,7 @@ experiments/ablate_expr_source/configs/
 The `marigold` variant requires pre-cached deformation videos:
 
 ```bash
-PYTHONPATH=. python scripts/cache/cache_marigold_deform.py \
+PYTHONPATH=. python scripts/cache/marigold_deform/cache.py \
     --checkpoint <path/to/marigold_checkpoint.pt> \
     --output_dir data/derived/marigold_deform
 ```

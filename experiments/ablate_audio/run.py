@@ -169,7 +169,7 @@ def main() -> None:
         if not cached_ids:
             raise RuntimeError(
                 f"No Marigold-cached clips found in {MARIGOLD_DEFORM_ROOT}. "
-                f"Run scripts/cache/cache_marigold_deform.py first."
+                f"Run scripts/cache/marigold_deform/cache.py first."
             )
         train_clips, val_clips = write_filtered_clip_lists(cached_ids)
     else:

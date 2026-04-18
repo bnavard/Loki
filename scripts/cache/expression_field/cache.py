@@ -13,19 +13,19 @@ Usage:
     cd <repo_root>
 
     # Single GPU:
-    PYTHONPATH=. python scripts/cache/cache_expression_fields.py
+    PYTHONPATH=. python scripts/cache/expression_field/cache.py
 
     # Also save the full 45ch tensor (~5GB each):
-    PYTHONPATH=. python scripts/cache/cache_expression_fields.py --save_tensor
+    PYTHONPATH=. python scripts/cache/expression_field/cache.py --save_tensor
 
     # Parallel across 4 GPUs:
-    PYTHONPATH=. python scripts/cache/cache_expression_fields.py --gpu 0 --num_gpus 4
-    PYTHONPATH=. python scripts/cache/cache_expression_fields.py --gpu 1 --num_gpus 4
-    PYTHONPATH=. python scripts/cache/cache_expression_fields.py --gpu 2 --num_gpus 4
-    PYTHONPATH=. python scripts/cache/cache_expression_fields.py --gpu 3 --num_gpus 4
+    PYTHONPATH=. python scripts/cache/expression_field/cache.py --gpu 0 --num_gpus 4
+    PYTHONPATH=. python scripts/cache/expression_field/cache.py --gpu 1 --num_gpus 4
+    PYTHONPATH=. python scripts/cache/expression_field/cache.py --gpu 2 --num_gpus 4
+    PYTHONPATH=. python scripts/cache/expression_field/cache.py --gpu 3 --num_gpus 4
 
     # Test on one clip:
-    PYTHONPATH=. python scripts/cache/cache_expression_fields.py --test
+    PYTHONPATH=. python scripts/cache/expression_field/cache.py --test
 """
 
 import argparse

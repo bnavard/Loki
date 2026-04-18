@@ -53,27 +53,36 @@ PYTHONPATH=. python scripts/caption/generate_captions.py --asr_only
 # Output: data/derived/captions/{clip_id}.json
 ```
 
-### `cache/` — precomputed tensors
+### `cache/` — precomputed tensors (modular, one subfolder per signal)
 
-Two active cache producers and an `archive/` for deprecated Wan-based scripts.
+Each cache signal is its own self-contained module with its own entry point,
+README, and (where needed) dependencies.
 
-**Ground-truth expression fields** — 45ch FLAME rasterization per clip.
+**Ground-truth expression fields** (`cache/expression_field/`) — 45ch FLAME
+rasterization per clip. Runs in the `marionette` env.
 
 ```bash
-PYTHONPATH=. python scripts/cache/cache_expression_fields.py --gpu 0 --num_gpus 4
+PYTHONPATH=. python scripts/cache/expression_field/cache.py --gpu 0 --num_gpus 4
 # Output: data/derived/expression_field/{clip_id}/{expr_field.pt, deformation.mp4, deform_rgb/}
 ```
 
-**Marigold-generated deformations** — runs the trained SD3.5 Marigold model
-over every frame of every clip to produce deformation-map videos. Required
-before running the `ablate_expr_source` study in Marigold mode.
+**Marigold-generated deformations** (`cache/marigold_deform/`) — runs the
+trained SD3.5 Marigold model over every frame of every clip. Required before
+running the `ablate_expr_source` study in Marigold mode. Runs in the
+`marionette` env.
 
 ```bash
-PYTHONPATH=. python scripts/cache/cache_marigold_deform.py \
+PYTHONPATH=. python scripts/cache/marigold_deform/cache.py \
     --checkpoint <path/to/marigold_checkpoint> \
     --output_dir data/derived/marigold_deform
 # Output: data/derived/marigold_deform/{clip_id}/deformation.mp4
 ```
+
+> Per-pixel 3D face surface position is already available via the FLAME
+> rasterized positional encoding (channels 0–41 of the 46ch GT expression
+> map), and per-pixel UV coordinates via
+> `data/flame_tracking/preprocessing/{clip_id}/p3dmm/uv_map/` (output of
+> pixel3dmm's UV head). No separate PRNet pipeline is needed.
 
 ### `manifest/` — training manifest + train/val split
 
@@ -121,8 +130,9 @@ scripts/
 ├── download/                            # YouTube scraping
 ├── preprocess/                          # face crop + resample
 ├── caption/                             # Whisper + Qwen2-Audio
-├── cache/                               # expression / deformation tensors
-│   └── archive/                         # deprecated Wan-based cache scripts
+├── cache/                               # precomputed tensors
+│   ├── expression_field/                # GT FLAME rasterization (45ch)
+│   └── marigold_deform/                 # Marigold-predicted deformation mp4s
 ├── manifest/                            # validation, train/val split
 └── tools/                               # devops utilities
 ```

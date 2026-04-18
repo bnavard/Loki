@@ -4,7 +4,7 @@
 # rasterization ("gt") to pre-generated Marigold deformation videos, decoded
 # per-window from data/derived/marigold_deform/{clip_id}/deformation.mp4.
 #
-# Prerequisite: run scripts/cache/cache_marigold_deform.py to populate the
+# Prerequisite: run scripts/cache/marigold_deform/cache.py to populate the
 # deformation cache before training.
 #
 # Because the Marigold module only produces the 3ch deformation (not the 42ch

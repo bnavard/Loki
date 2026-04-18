@@ -26,7 +26,7 @@ Same as `ablate_expr_source/marigold` — the Marigold deformation cache must be
 populated:
 
 ```bash
-PYTHONPATH=. python scripts/cache/cache_marigold_deform.py \
+PYTHONPATH=. python scripts/cache/marigold_deform/cache.py \
     --checkpoint <path/to/marigold_checkpoint.pt> \
     --output_dir data/derived/marigold_deform
 ```

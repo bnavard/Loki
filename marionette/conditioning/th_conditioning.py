@@ -9,7 +9,7 @@ Three sources are supported:
 
   - `expression_source="marigold"`: the 3ch expression deformation is taken
     directly from `batch["marigold_deform"]` (decoded from the cached
-    `deformation.mp4` written by `scripts/cache/cache_marigold_deform.py`).
+    `deformation.mp4` written by `scripts/cache/marigold_deform/cache.py`).
     FLAME rasterization is skipped entirely — the Marigold module only produces
     the deformation map, not the positional encoding channels — so the output
     is always 4 channels (3 deform + 1 ref_mask).
