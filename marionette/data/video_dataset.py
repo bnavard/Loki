@@ -338,7 +338,7 @@ class TalkingHeadDataset(Dataset):
         if not pt_path.exists():
             raise FileNotFoundError(
                 f"Marigold deformation tensor not found: {pt_path}. "
-                f"Run scripts/cache/cache_marigold_deform.py first."
+                f"Run scripts/cache/marigold_deform/cache.py first."
             )
 
         deform_field = torch.load(str(pt_path), map_location="cpu", weights_only=True)
