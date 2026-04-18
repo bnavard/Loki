@@ -145,6 +145,12 @@ model:
         use_checkpoint:            false
         legacy:                    false
         use_audio_context:         true
+        # Conditioning encoder (SD-style conv stack) — must match
+        # cond_stage_config.params.image_size (input) and the UNet's latent
+        # spatial size (output). stage_channels must halve resolution per entry.
+        cond_input_resolution:     512
+        cond_latent_resolution:    64
+        cond_stage_channels:       [64, 128, 256, 320]   # 512 → 256 → 128 → 64
 
     # ---- VAE (frozen) ----
     first_stage_config:
@@ -170,12 +176,16 @@ model:
     cond_stage_config:
       target: marionette.conditioning.th_conditioning.THConditioning
       params:
-        image_size:            64
+        # Emit conditioning at full image resolution (512×512). The UNet's
+        # ConditioningEncoder downsamples to latent resolution (64×64).
+        image_size:            512
         positional_channels:   42
         positional_multiplier: 1.0
-        super_resolution:      8
+        # FLAME-rasterization antialiasing factor only. Set to 1 since we
+        # already emit at full res — no further downsample happens here.
+        super_resolution:      1
         use_expr_deformation:  true
-        expression_source:     "gt"    # "gt" | "marigold"
+        expression_source:     "gt"    # "gt" | "marigold" | "driving_video"
 
 # ---------------------------------------------------------------------------
 # Inference defaults (used by generate.py / THSampler)

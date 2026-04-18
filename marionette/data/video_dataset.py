@@ -77,9 +77,11 @@ class TalkingHeadDataset(Dataset):
                                `{marigold_deform_root}/{clip_id}/deformation.mp4`
                                and packs the requested frames into the hint dict as
                                `marigold_deform`. "driving_video" — uses the raw
-                               natural video frames downsampled to latent resolution
-                               as spatial conditioning (3ch RGB in [-1, 1]),
-                               packed into `hint["driving_video"]`.
+                               natural video frames at full image resolution as
+                               spatial conditioning (3ch RGB in [-1, 1]),
+                               packed into `hint["driving_video"]`. The
+                               ConditioningEncoder in the UNet handles the
+                               downsample to latent resolution.
         marigold_deform_root : directory containing per-clip Marigold-predicted
                                deformation videos
                                (`{root}/{clip_id}/deformation.mp4`). Required when
@@ -462,17 +464,12 @@ class TalkingHeadDataset(Dataset):
             )
 
         elif self.expression_source == "driving_video":
-            # Downsample the DRIVER's video frames to latent resolution.
-            driving_frames = np.stack(
-                [rescale_image(
-                    ((img + 1.0) * 127.5).clip(0, 255).astype(np.uint8),
-                    self.latent_res,
-                ) for img in driver_imgs],
-                axis=0,
-            ).astype(np.float32)                                # (T, latent_res, latent_res, 3)
-            driving_frames = driving_frames / 127.5 - 1.0       # back to [-1, 1]
-            driving_frames = np.transpose(driving_frames, (0, 3, 1, 2))  # (T, 3, H, W)
-            hint["driving_video"] = torch.from_numpy(driving_frames)
+            # Driver video frames at full resolution (e.g. 512×512).
+            # The ConditioningEncoder in the UNet will downsample to the
+            # latent resolution and learn a richer representation than a
+            # plain area-downsample would produce.
+            driving_frames = np.transpose(driver_imgs, (0, 3, 1, 2))  # (T, 3, H, W) in [-1, 1]
+            hint["driving_video"] = torch.from_numpy(driving_frames.copy())
 
         return {
             "jpg":        torch.tensor(target_imgs),   # (T, H, W, 3) TARGET frames (reconstruction target)

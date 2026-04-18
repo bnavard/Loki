@@ -4,9 +4,14 @@ SD 2.1 UNet extended for talking-head video generation.
 Three conditioning pathways:
 
   * Spatial (FLAME expression / Marigold deformation / driving video): enters
-    via a learned linear projection of `condition_channels` -> `model_channels`
-    added to the first UNet feature map. The channel count (1 / 4 / 46) is
-    set by the conditioning overlay.
+    through a small SD-style convolutional encoder (`ConditioningEncoder`)
+    that takes the conditioning at full image resolution (default 512×512),
+    downsamples it through three strided ResBlocks to the UNet's latent
+    resolution (64×64), and emits `model_channels` feature maps that are
+    added to the UNet's first feature map. The encoder's final Conv3×3 is
+    zero-initialised so conditioning contributes zero at step 0 and the
+    pretrained UNet starts from its known-good state. The encoder is trained
+    jointly with the UNet.
 
   * Audio (wav2vec2 cross-attention): controlled by `use_audio_context`.
     When True, audio tokens are passed as the `context` argument to every
@@ -28,9 +33,10 @@ import torch.nn as nn
 import einops
 
 from ldm_base.ldm.modules.diffusionmodules.openaimodel import UNetModel
-from ldm_base.ldm.modules.diffusionmodules.util import zero_module, timestep_embedding
+from ldm_base.ldm.modules.diffusionmodules.util import timestep_embedding
 
 from marionette.model.attention import SpatioTemporalTransformer
+from marionette.model.conditioning_encoder import ConditioningEncoder
 
 
 class THUnetModel(UNetModel):
@@ -42,14 +48,26 @@ class THUnetModel(UNetModel):
         are passed as the `context` argument at every transformer block so each
         spatial position can attend to its frame's audio representation. When
         False, cross-attention is skipped throughout the UNet (audio ablation).
-      - Spatial conditioning (FLAME expression map) is injected as a learned
-        linear projection added to the first feature map.
+      - Spatial conditioning (FLAME expression map / Marigold deformation /
+        driving video) is injected through a learned `ConditioningEncoder` that
+        takes the conditioning at full image resolution (default 512×512),
+        downsamples it through three strided ResBlocks to the UNet's latent
+        resolution (64×64), and produces `model_channels` feature maps that
+        are added to the first UNet feature map. The encoder is trained jointly
+        with the UNet; its final projection is zero-initialised.
       - Reference-masking logic: replace latent with GT where ref_mask=1, and
         pass those frames through unchanged at the output.
 
     Args:
         time_steps        : video window length T.
         condition_channels: channels in the spatial conditioning tensor (default 46).
+        cond_input_resolution : spatial size of the incoming conditioning tensor
+                            (default 512 — must match THConditioning.image_size).
+        cond_latent_resolution: target spatial size after the encoder (default 64
+                            — must match the UNet's first feature map).
+        cond_stage_channels: channel progression through the encoder's downsample
+                            stages. Default `(64, 128, 256, model_channels)`
+                            (3 downsample stages: 512 → 256 → 128 → 64).
         context_dim       : audio context feature dimension (default 768, matches
                             wav2vec2-base / HuBERT-base output).
         temporal_mode     : "3d" or "temporal" — controls spatio-temporal attention.
@@ -66,6 +84,9 @@ class THUnetModel(UNetModel):
         context_dim: int = 768,              # audio cross-attention dim
         temporal_mode: str = "3d",           # ["3d", "temporal"]
         use_audio_context: bool = True,      # False -> skip cross-attn entirely (no-audio ablation)
+        cond_input_resolution: int = 512,
+        cond_latent_resolution: int = 64,
+        cond_stage_channels: tuple | list | None = None,
         **kwargs,
     ):
         assert temporal_mode in ["3d", "temporal"]
@@ -81,9 +102,20 @@ class THUnetModel(UNetModel):
             **kwargs,
         )
 
-        # Linear projection: spatial conditioning channels → model channels
-        # (added to the first UNet feature map)
-        self.cond_linear = zero_module(nn.Linear(condition_channels, model_channels))
+        # Learned conditioning encoder: full-res spatial conditioning →
+        # `model_channels` feature maps at the UNet's latent resolution.
+        # Zero-initialised at its final layer so training starts from the
+        # pretrained UNet's behaviour (no conditioning contribution at step 0).
+        self.cond_encoder = ConditioningEncoder(
+            in_channels=condition_channels,
+            model_channels=model_channels,
+            input_resolution=cond_input_resolution,
+            output_resolution=cond_latent_resolution,
+            stage_channels=(
+                tuple(cond_stage_channels) if cond_stage_channels is not None
+                else None
+            ),
+        )
 
     def create_attention_block(
         self,
@@ -145,10 +177,13 @@ class THUnetModel(UNetModel):
         x         = einops.rearrange(x,         'b t c h w -> (b t) c h w')
         timesteps = einops.rearrange(timesteps, 'b t      -> (b t)')
 
-        # ------- spatial conditioning (linear proj + add to first feature map) -------
-        pos_enc      = einops.rearrange(control["pos_enc"], 'b t h w c -> (b t) h w c')
-        pos_enc      = pos_enc.type(self.dtype)
-        pos_embedding = self.cond_linear(pos_enc).permute(0, 3, 1, 2)  # (B*T, model_ch, H, W)
+        # ------- spatial conditioning (conv encoder, add to first feature map) -------
+        # Incoming pos_enc is (B, T, H_hi, W_hi, C_cond) at full image resolution.
+        # Rearrange to channels-first, run through the encoder which downsamples
+        # to (B*T, model_ch, H_lat, W_lat) matching the UNet's first feature map.
+        pos_enc       = einops.rearrange(control["pos_enc"], 'b t h w c -> (b t) c h w')
+        pos_enc       = pos_enc.type(self.dtype)
+        pos_embedding = self.cond_encoder(pos_enc)   # (B*T, model_ch, H_lat, W_lat)
 
         # ------- audio context for cross-attention -------
         # Shape: (B, T, S, D) → (B*T, S, D).  Skipped entirely when audio is ablated.

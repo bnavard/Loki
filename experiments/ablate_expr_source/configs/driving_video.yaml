@@ -11,3 +11,4 @@ base: marionette/configs/base.yaml
 overlays:
   - marionette/configs/overlays/conditioning/deform_only.yaml
   - marionette/configs/overlays/expr_source/driving_video.yaml
+  - marionette/configs/overlays/pose/on.yaml

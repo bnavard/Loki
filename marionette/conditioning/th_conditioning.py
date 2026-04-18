@@ -81,10 +81,15 @@ class THConditioning(nn.Module):
 
     def __init__(
         self,
-        image_size: int = 64,
+        image_size: int = 512,               # spatial size at which the conditioning is emitted;
+                                              # must match the ConditioningEncoder's input_resolution.
+                                              # The 512 → 64 (latent) downsample is performed
+                                              # downstream by the ConditioningEncoder, not here.
         positional_channels: int = 42,
         positional_multiplier: float = 1.0,
-        super_resolution: int = 2,
+        super_resolution: int = 1,            # FLAME-rasterization antialiasing factor only:
+                                              # rasterize at image_size * super_resolution, then
+                                              # antialias-down to image_size. Set to 1 to skip.
         use_expr_deformation: bool = True,
         std_expr_deformation: float = 0.0104,
         drop_expression_map: bool = False,   # ablation: UNet sees only ref_mask (1ch)
