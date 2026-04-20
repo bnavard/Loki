@@ -6,12 +6,10 @@ Overlays are partial configs that modify only the fields they care about.
 
 Experiment-side usage:
 
-    # experiments/ablate_expr_source/configs/marigold.yaml
+    # experiments/<name>/configs/variant.yaml
     base: marionette/configs/base.yaml
     overlays:
-      - marionette/configs/overlays/conditioning/deform_only.yaml
-      - marionette/configs/overlays/loss/uniform.yaml
-      - marionette/configs/overlays/expr_source/marigold.yaml
+      - marionette/configs/overlays/audio/off.yaml
 
     # optional inline overrides (applied last) go here
 

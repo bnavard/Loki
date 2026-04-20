@@ -4,11 +4,9 @@ timeout so corrupt videos that hang decord (a likely cause of NCCL timeouts
 during DDP training) are caught instead of stalling the inspector.
 
 Checks per clip_id:
-  1. data/flame_tracking/flowface/{clip}/fit.npz         — load with np.load
-  2. data/talkvid/talkvid/{clip}.mp4                     — open + decode 4 sample frames
-  3. data/talkvid/audio/{clip}.wav                       — load full waveform
-  4. data/derived/marigold_deform/{clip}/deformation.mp4 — open + decode 4 sample frames
-                                                            (only when --check_marigold)
+  1. data/flame_tracking/flowface/{clip}/fit.npz   — load with np.load
+  2. data/talkvid/talkvid/{clip}.mp4               — open + decode 4 sample frames
+  3. data/talkvid/audio/{clip}.wav                 — load full waveform
 
 Each check runs in a worker process; the pool kills the worker if it exceeds
 `--timeout` seconds. Bad clips are reported by reason and written to a JSON
@@ -16,27 +14,21 @@ file for later use (e.g. removing them from the filtered clip lists).
 
 Usage (from repo root):
 
-    PYTHONPATH=. python scripts/tools/inspect_clip_data.py \
-        --clip_lists outputs/ablate_expr_source/filtered_clips/train_clips_filtered.json \
-                     outputs/ablate_expr_source/filtered_clips/val_clips_filtered.json \
-        --check_marigold \
-        --workers 16 \
-        --timeout 30 \
-        --output outputs/ablate_expr_source/bad_clips.json
+    PYTHONPATH=. python scripts/tools/inspect_clip_data.py \\
+        --clip_lists data/derived/train_clips.json data/derived/val_clips.json \\
+        --workers 16 \\
+        --timeout 30 \\
+        --output data/derived/bad_clips.json
 """
 
 import argparse
 import concurrent.futures as cf
 import json
-import os
 import sys
 import time
 from collections import defaultdict
 from pathlib import Path
 
-
-# Per-clip check function (runs in a worker process)
-# ---------------------------------------------------------------------------
 
 def _check_clip(args):
     """Return (clip_id, status, details).
@@ -44,7 +36,7 @@ def _check_clip(args):
     status: 'ok' or 'bad'
     details: dict with per-file results when status == 'bad'
     """
-    clip_id, paths, n_sample_frames, check_audio, check_marigold = args
+    clip_id, paths, n_sample_frames, check_audio = args
     failures = {}
 
     # 1. FLAME fit
@@ -77,7 +69,6 @@ def _check_clip(args):
             if n < 1:
                 failures["video_mp4"] = "0 frames"
             else:
-                # Sample 4 evenly-spaced frames; covers head/middle/tail decode paths
                 indices = [int(i) for i in [0, n // 3, 2 * n // 3, n - 1]]
                 for idx in indices:
                     f = vr[idx]
@@ -95,42 +86,16 @@ def _check_clip(args):
                 failures["audio_wav"] = f"missing: {audio_path}"
             else:
                 import soundfile as sf
-                arr, sr = sf.read(str(audio_path), dtype="float32", always_2d=False)
+                arr, _ = sf.read(str(audio_path), dtype="float32", always_2d=False)
                 if arr.size == 0:
                     failures["audio_wav"] = "empty audio"
         except Exception as e:
             failures["audio_wav"] = f"{type(e).__name__}: {e}"
 
-    # 4. Marigold deformation video
-    if check_marigold:
-        marigold_path = paths["marigold_root"] / clip_id / "deformation.mp4"
-        try:
-            if not marigold_path.exists():
-                failures["marigold_mp4"] = f"missing: {marigold_path}"
-            else:
-                from decord import VideoReader
-                vr = VideoReader(str(marigold_path))
-                n = len(vr)
-                if n < 1:
-                    failures["marigold_mp4"] = "0 frames"
-                else:
-                    indices = [int(i) for i in [0, n // 3, 2 * n // 3, n - 1]]
-                    for idx in indices:
-                        f = vr[idx]
-                        if f is None:
-                            failures["marigold_mp4"] = f"None frame at idx {idx}"
-                            break
-        except Exception as e:
-            failures["marigold_mp4"] = f"{type(e).__name__}: {e}"
-
     if failures:
         return clip_id, "bad", failures
     return clip_id, "ok", {}
 
-
-# ---------------------------------------------------------------------------
-# Main
-# ---------------------------------------------------------------------------
 
 def parse_args():
     p = argparse.ArgumentParser()
@@ -141,11 +106,6 @@ def parse_args():
     p.add_argument("--video_root", default="data/talkvid/talkvid")
     p.add_argument("--audio_root", default="data/talkvid/audio")
     p.add_argument("--flame_root", default="data/flame_tracking/flowface")
-    p.add_argument("--marigold_root", default="data/derived/marigold_deform")
-    p.add_argument(
-        "--check_marigold", action="store_true",
-        help="Also validate the Marigold deformation mp4s.",
-    )
     p.add_argument(
         "--no_check_audio", action="store_true",
         help="Skip audio validation (audio files are large; saves time).",
@@ -174,7 +134,6 @@ def parse_args():
 def main():
     args = parse_args()
 
-    # Aggregate clip IDs across all input files (deduped, preserves first-seen order).
     seen = set()
     clip_ids = []
     for path in args.clip_lists:
@@ -189,30 +148,25 @@ def main():
     print(f"[scan] inspecting {len(clip_ids)} unique clips with {args.workers} workers, "
           f"per-clip timeout = {args.timeout}s")
     print(f"[scan] checks: fit + source mp4"
-          f"{' + audio' if not args.no_check_audio else ''}"
-          f"{' + marigold mp4' if args.check_marigold else ''}")
+          f"{' + audio' if not args.no_check_audio else ''}")
 
     paths = {
-        "video_root":    Path(args.video_root),
-        "audio_root":    Path(args.audio_root),
-        "flame_root":    Path(args.flame_root),
-        "marigold_root": Path(args.marigold_root),
+        "video_root": Path(args.video_root),
+        "audio_root": Path(args.audio_root),
+        "flame_root": Path(args.flame_root),
     }
 
     work_items = [
-        (cid, paths, args.n_sample_frames,
-         not args.no_check_audio, args.check_marigold)
+        (cid, paths, args.n_sample_frames, not args.no_check_audio)
         for cid in clip_ids
     ]
 
-    bad: dict[str, dict] = {}        # clip_id -> failure reasons
-    timeouts: list[str] = []         # clip_ids that exceeded the timeout
+    bad: dict[str, dict] = {}
+    timeouts: list[str] = []
     n_ok = 0
     started_at = time.monotonic()
     last_report = started_at
 
-    # Use ProcessPoolExecutor; submit one future per clip with a per-future timeout.
-    # If a future times out, cancel it and record the clip as "timeout".
     with cf.ProcessPoolExecutor(max_workers=args.workers) as pool:
         futures = {pool.submit(_check_clip, w): w[0] for w in work_items}
         for fut in cf.as_completed(futures):
@@ -241,7 +195,6 @@ def main():
                       flush=True)
                 last_report = now
 
-    # Summary
     print()
     print("=" * 72)
     print(f"Scanned {len(clip_ids)} clips in {time.monotonic() - started_at:.1f}s")
@@ -251,7 +204,6 @@ def main():
     print()
 
     if bad:
-        # Group failures by category
         by_reason = defaultdict(list)
         for cid, details in bad.items():
             for fkey in details.keys():

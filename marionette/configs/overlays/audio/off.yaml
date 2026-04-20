@@ -1,6 +1,6 @@
 # Audio variant: disable audio cross-attention entirely.
 # The audio encoder is not instantiated, and every transformer block in the UNet
-# skips its cross-attention pass (THDiffusion validates that these two flags
+# skips its cross-attention pass (MarionetteDiffusion validates that these two flags
 # are consistent at construction time).
 model:
   params:

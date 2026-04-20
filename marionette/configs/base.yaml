@@ -1,26 +1,23 @@
 # =============================================================================
 # Marionette — Base Config
 #
-# Default values for every field. Experiments compose this with overlays under
-# `marionette/configs/overlays/` to produce concrete training configurations.
+# Same-identity self-supervised training:
+#   spatial conditioning    : 49 channels
+#     [0:42]  pos_enc         42ch sinusoidal encoding of FLAME vertex positions
+#     [42:45] driver_deform   3ch per-vertex expression offsets
+#     [45:48] warped_ref      3ch backward-warped reference image (grid_sample)
+#     [48]    ref_mask        1ch reference-slot indicator
+#   audio                   : wav2vec2 cross-attention ON
+#   video length            : 16 frames per sample (1 ref + 15 targets)
 #
-# Defaults:
-#   conditioning  : 46 channels (42ch pos enc + 3ch expr deform + 1ch ref mask)
-#   expr source   : "gt" (FLAME rasterization)
-#   loss weighting: uniform (alpha = 0.0) — overlay `overlays/loss/weighted.yaml`
-#                   to switch to expression-weighted loss
-#   audio         : wav2vec2 cross-attention ON
-#   video length  : 16 frames per sample
-#
-# `output_dir` is intentionally unset here; experiment runners populate it
-# (usually to `outputs/<experiment_name>/<variant>/`).
+# `output_dir` is intentionally unset here; experiment runners populate it.
 # =============================================================================
 
 seed: 42
 
 learning_rate:      1.0e-4
-gpu_batch_size:     4
-virtual_batch_size: 4
+gpu_batch_size:     1
+virtual_batch_size: 1
 logger_freq:        50
 n_steps:            5000
 save_every_n_steps: 250
@@ -58,28 +55,21 @@ val_dataset:
     fps:                  25.0
     audio_context_frames: 2
     add_mouth:            true
-    # Cross-identity evaluation: each val sample takes its driver signal
-    # (expression map / deformation / driving video) AND its audio from a
-    # DIFFERENT clip, preventing the model from trivially reproducing signals
-    # extracted from the target itself. Pairings are seeded and exclude
-    # same-identity drivers where the val set permits.
-    cross_identity_driving: true
-    pairing_seed:           42
 
 # Validation & visualization
-val_every_n_steps: 250
-n_val_batches:     20        # number of val batches per evaluation
-n_vis_samples:     8         # samples to visualize per evaluation (rotates through val set)
-vis_ddim_steps:    20        # DDIM steps for visualization (fewer = faster)
+val_every_n_steps: 1
+n_val_batches:     20
+n_vis_samples:     8
+vis_ddim_steps:    20
 
 # ---------------------------------------------------------------------------
 # Model
 # ---------------------------------------------------------------------------
 model:
-  target: marionette.model.th_diffusion.THDiffusion
+  target: marionette.model.diffusion.MarionetteDiffusion
   params:
     # Inputs
-    first_stage_key: "jpg"
+    first_stage_key: "target_video"
     control_key:     "hint"
     audio_key:       "audio"
 
@@ -88,9 +78,6 @@ model:
 
     # Guidance (classifier-free dropout probability)
     cfg_probability: 0.1
-
-    # Loss weighting (default: uniform — all pixels weighted equally)
-    expr_weight_alpha: 0.0
 
     # Noise schedule
     linear_start:        0.00085
@@ -125,7 +112,7 @@ model:
 
     # ---- UNet ----
     unet_config:
-      target: marionette.model.th_unet.THUnetModel
+      target: marionette.model.unet.MarionetteUNet
       params:
         image_size:                64     # unused, required by parent
         time_steps:                16     # must match model.params.n_frames
@@ -133,7 +120,7 @@ model:
         in_channels:               4
         out_channels:              4
         model_channels:            320
-        condition_channels:        46     # 42 pos + 3 expr + 1 ref_mask
+        condition_channels:        49     # 42 pos + 3 deform + 3 warp + 1 ref_mask
         context_dim:               1024   # matches SD 2.1 checkpoint
         attention_resolutions:     [4, 2, 1]
         num_res_blocks:            2
@@ -145,7 +132,7 @@ model:
         use_checkpoint:            false
         legacy:                    false
         use_audio_context:         true
-        # Conditioning encoder (SD-style conv stack) — must match
+        # ConditioningEncoder (conv stack 512 → 64) must match
         # cond_stage_config.params.image_size (input) and the UNet's latent
         # spatial size (output). stage_channels must halve resolution per entry.
         cond_input_resolution:     512
@@ -174,25 +161,15 @@ model:
 
     # ---- Conditioning module ----
     cond_stage_config:
-      target: marionette.conditioning.th_conditioning.THConditioning
+      target: marionette.conditioning.conditioning.SpatialConditioning
       params:
-        # Emit conditioning at full image resolution (512×512). The UNet's
-        # ConditioningEncoder downsamples to latent resolution (64×64).
-        image_size:            512
+        image_size:            512     # emit conditioning at full image res
         positional_channels:   42
         positional_multiplier: 1.0
-        # FLAME-rasterization antialiasing factor only. Set to 1 since we
-        # already emit at full res — no further downsample happens here.
-        super_resolution:      1
-        use_expr_deformation:  true
-        expression_source:     "gt"    # "gt" | "marigold" | "driving_video"
 
 # ---------------------------------------------------------------------------
-# Inference defaults (used by generate.py / THSampler)
+# Inference defaults (used by generate.py + VisualizationCallback)
 # ---------------------------------------------------------------------------
 inference:
-  n_ddim_steps: 50
-  cfg_scale:    2.0
-  eta:          0.0
-  n_frames:     16
-  seed:         42
+  n_frames:  16     # sampler window size V; generate.py reads this
+  cfg_scale: 2.0    # classifier-free guidance scale; VisualizationCallback reads this

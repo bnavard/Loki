@@ -90,7 +90,7 @@ class ConditioningEncoder(nn.Module):
 
     Args:
         in_channels      : number of channels in the conditioning tensor
-                           (matches `THConditioning.n_conditioning_channels`;
+                           (matches `SpatialConditioning.n_conditioning_channels`;
                            typically 46, 4, or 1).
         model_channels   : UNet's first feature map channel count (320 for SD 2.1).
         input_resolution : spatial size of the incoming conditioning tensor

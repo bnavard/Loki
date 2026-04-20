@@ -1,7 +1,0 @@
-# Loss variant: expression-weighted loss.
-# Amplifies per-pixel diffusion loss on high-deformation face regions:
-#   weight = 1 + alpha * normalize(deformation_magnitude)
-# alpha = 0 recovers uniform loss (the base default).
-model:
-  params:
-    expr_weight_alpha: 5.0
