@@ -110,3 +110,48 @@ def retarget_driver_verts(
         np.stack(verts_list,   axis=0),
         np.stack(offsets_list, axis=0),
     )
+
+
+def prepare_driver_frames(
+    driver_fit: dict,
+    video_path: Path,
+    n_frames: int,
+    resolution: int,
+    flame_skinner: CAP4DFlameSkinner,
+    head_vert_ids: np.ndarray,
+) -> np.ndarray:
+    """Load the driver's own face-cropped video frames for visualization.
+
+    Each frame is cropped by the DRIVER's FLAME (so the face stays centered in
+    the driver's own pixel space), then resized to `resolution`. Intended for
+    side-by-side "this is what the driver looked like" rows — not consumed by
+    the diffusion model itself.
+
+    Returns: (T, resolution, resolution, 3) uint8 RGB.
+    """
+    n_drv = driver_fit["expr"].shape[0]
+    frames = []
+    for t in range(n_frames):
+        t_d = min(t, n_drv - 1)
+        fi = {
+            "shape":   driver_fit["shape"],
+            "expr":    driver_fit["expr"][[t_d]],
+            "rot":     driver_fit["rot"][[t_d]],
+            "tra":     driver_fit["tra"][[t_d]],
+            "eye_rot": driver_fit["eye_rot"][[t_d]],
+            "fx":      driver_fit["fx"][[0]], "fy": driver_fit["fy"][[0]],
+            "cx":      driver_fit["cx"][[0]], "cy": driver_fit["cy"][[0]],
+            "extr":    driver_fit["extr"][[0]],
+        }
+        if "jaw_rot" in driver_fit:
+            fi["jaw_rot"] = driver_fit["jaw_rot"][[t_d]]
+        fo = compute_flame(flame_skinner, fi)
+        verts_2d = fo["verts_2d"][0, 0]
+        crop_box = get_bbox_from_verts(verts_2d.copy(), head_vert_ids)
+
+        img = load_frame(video_path, t_d)
+        img = crop_image(img, crop_box, bg_value=255)
+        img = rescale_image(img, resolution)
+        frames.append(img.astype(np.uint8))
+
+    return np.stack(frames, axis=0)

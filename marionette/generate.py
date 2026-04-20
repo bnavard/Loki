@@ -36,8 +36,13 @@ from ldm_base.ldm.util import instantiate_from_config
 from marionette.model.sampler import SlidingWindowSampler
 from marionette.flame.flame import CAP4DFlameSkinner
 from marionette.conditioning.conditioning import SpatialConditioning
-from marionette.retargeting import prepare_reference, retarget_driver_verts
-from marionette.utils import SAMPLE_RATE, load_clip_audio_windows
+from marionette.retargeting import (
+    prepare_reference, retarget_driver_verts, prepare_driver_frames,
+)
+from marionette.utils import (
+    SAMPLE_RATE, load_clip_audio_windows,
+    slice_cond_rgb, save_labeled_grid, save_video_with_audio,
+)
 
 
 HEAD_VERT_PATH = "data/assets/flame/head_vertices.txt"
@@ -129,7 +134,20 @@ def main():
 
     model = instantiate_from_config(cfg.model)
     ckpt  = torch.load(args.checkpoint, map_location="cpu", weights_only=False)
-    model.load_state_dict(ckpt.get("state_dict", ckpt), strict=False)
+
+    # Lightning wraps MarionetteDiffusion as `self.model = model` in LightningWrapper,
+    # so every key in the saved state_dict is prefixed with "model.". Strip it before
+    # loading into a bare MarionetteDiffusion. `strict=False` + explicit mismatch check
+    # catches silent failures (e.g. a wholesale key mismatch that would leave the VAE
+    # at random init and decode everything to noise).
+    raw_sd = ckpt.get("state_dict", ckpt)
+    sd = {k[len("model."):]: v for k, v in raw_sd.items() if k.startswith("model.")}
+    missing, unexpected = model.load_state_dict(sd, strict=False)
+    if missing or unexpected:
+        raise RuntimeError(
+            f"Checkpoint load incomplete: {len(missing)} missing, {len(unexpected)} unexpected. "
+            f"First missing: {missing[:3]}. First unexpected: {unexpected[:3]}."
+        )
     model.eval().to(device)
 
     ds_params = cfg.train_dataset.params
@@ -209,14 +227,49 @@ def main():
 
     all_latents = torch.cat([ref_z, latents], dim=0).unsqueeze(0)
     imgs = model.decode_first_stage(all_latents).squeeze(0)
-    imgs = ((imgs.clamp(-1, 1) + 1) / 2 * 255).byte().cpu().numpy()
+    imgs = ((imgs.clamp(-1, 1) + 1) / 2 * 255).byte().cpu().numpy()   # (T, 3, H, W) RGB
 
-    frame_dir = Path(args.output_dir) / "frames"
+    # ---- raw per-frame dump (generated only) ----
+    out_dir = Path(args.output_dir)
+    frame_dir = out_dir / "frames"
     frame_dir.mkdir(parents=True, exist_ok=True)
     for i, img in enumerate(imgs):
         bgr = img.transpose(1, 2, 0)[..., [2, 1, 0]]
         cv2.imwrite(str(frame_dir / f"{i:05d}.png"), bgr)
+
+    # ---- 5-row side-by-side panel: Reference | Driver Video | Driver Expression | Warped Ref | Generated ----
+    # Reference row: the static identity anchor, repeated T times for alignment.
+    ref_rgb_u8 = ((ref_img_norm + 1) / 2 * 255).clip(0, 255).astype(np.uint8)  # (H, W, 3)
+    ref_row = np.broadcast_to(
+        ref_rgb_u8.transpose(2, 0, 1)[None], (n_frames, 3, resolution, resolution),
+    ).copy()
+
+    # Driver video row: the driver's actual face-cropped frames for visual reference.
+    driver_frames = prepare_driver_frames(
+        driver_fit, video_root / f"{args.driver_clip}.mp4",
+        n_frames, resolution, flame_skinner, head_vert_ids,
+    )                                                                  # (T, H, W, 3) uint8
+    driver_row = driver_frames.transpose(0, 3, 1, 2).copy()            # (T, 3, H, W)
+
+    # Conditioning slices (channels [42:45] deform, [45:48] warp) visualized.
+    spatial_cond_ct = c_cond["spatial_cond"][0]                        # (T, H, W, 49)
+    expr_row = slice_cond_rgb(spatial_cond_ct, 42, resolution)
+    warp_row = slice_cond_rgb(spatial_cond_ct, 45, resolution)
+
+    rows_data = [ref_row, driver_row, expr_row, warp_row, imgs]
+    labels    = ["Reference", "Driver Video", "Driver Expression", "Warped Ref", "Generated"]
+    title = (f"{'Cross' if is_cross_id else 'Same'}-Identity | "
+             f"ref={args.ref_clip[:32]} → drv={args.driver_clip[:32]}")
+
+    save_labeled_grid(rows_data, labels, out_dir / "panel.png", title=title)
+    save_video_with_audio(
+        rows_data, labels, audio_windows,
+        out_dir / "panel.mp4", fps=ds_params.fps, title=title,
+    )
+
     print(f"[generate] saved {len(imgs)} frames to {frame_dir}")
+    print(f"[generate] saved side-by-side panel → {out_dir / 'panel.png'}")
+    print(f"[generate] saved video w/ driver audio → {out_dir / 'panel.mp4'}")
 
 
 if __name__ == "__main__":
