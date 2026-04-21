@@ -136,7 +136,12 @@ class AttentionModule(nn.Module):
             nn.Dropout(dropout)
         )
 
-    def forward(self, x, context=None, mask=None):
+    def forward(self, x, context=None, mask=None, ref_kv=None):
+        """ref_kv is a pre-norm feature map `(B, N_ref, D)` captured from a
+        frozen reference UNet at this layer. When present, its K/V contribution
+        is concatenated onto the gen K/V pool so every gen query attends to
+        both gen tokens and ref tokens. Ignored for temporal and cross-attn
+        modes — temporal collapses a different axis and context is audio."""
         h = self.heads
         t = self.num_timesteps
         b = x.shape[0]
@@ -154,13 +159,32 @@ class AttentionModule(nn.Module):
             k = self.to_k(x)
             v = self.to_v(x)
 
+        inject_ref = ref_kv is not None and self.mode in ("spatial", "3d")
+        if inject_ref:
+            k_ref = self.to_k(ref_kv)
+            v_ref = self.to_v(ref_kv)
+
         if _USE_FLASH or XFORMERS_IS_AVAILBLE:
             if self.mode == "3d":
                 q, k, v = map(lambda yt: rearrange(yt, '(b t) n (h d) -> b (n t) h d', h=h, t=t), (q, k, v))
+                if inject_ref:
+                    k_ref = rearrange(k_ref, 'b n (h d) -> b n h d', h=h)
+                    v_ref = rearrange(v_ref, 'b n (h d) -> b n h d', h=h)
+                    k = torch.cat([k, k_ref], dim=1)
+                    v = torch.cat([v, v_ref], dim=1)
             elif self.mode == "temporal":
                 q, k, v = map(lambda yt: rearrange(yt, '(b t) n (h d) -> (b n) t h d', h=h, t=t), (q, k, v))
             elif self.mode in ("context", "spatial"):
                 q, k, v = map(lambda yt: rearrange(yt, 'b n (h d) -> b n h d', h=h), (q, k, v))
+                if inject_ref and self.mode == "spatial":
+                    # Gen q/k/v are at layout (B*T, N, h, d); ref is (B, N_ref, h, d).
+                    # Broadcast ref across T so each gen slot sees the same ref tokens.
+                    k_ref = rearrange(k_ref, 'b n (h d) -> b n h d', h=h)
+                    v_ref = rearrange(v_ref, 'b n (h d) -> b n h d', h=h)
+                    k_ref = repeat(k_ref, 'b n h d -> (b t) n h d', t=t)
+                    v_ref = repeat(v_ref, 'b n h d -> (b t) n h d', t=t)
+                    k = torch.cat([k, k_ref], dim=1)
+                    v = torch.cat([v, v_ref], dim=1)
 
             if _USE_FLASH:
                 dtype_before = q.dtype
@@ -181,10 +205,22 @@ class AttentionModule(nn.Module):
         else:
             if self.mode == "3d":
                 q, k, v = map(lambda yt: rearrange(yt, '(b t) n (h d) -> (b h) (n t) d', h=h, t=t), (q, k, v))
+                if inject_ref:
+                    k_ref = rearrange(k_ref, 'b n (h d) -> (b h) n d', h=h)
+                    v_ref = rearrange(v_ref, 'b n (h d) -> (b h) n d', h=h)
+                    k = torch.cat([k, k_ref], dim=1)
+                    v = torch.cat([v, v_ref], dim=1)
             elif self.mode == "temporal":
                 q, k, v = map(lambda yt: rearrange(yt, '(b t) n (h d) -> (b h n) t d', h=h, t=t), (q, k, v))
             elif self.mode in ("context", "spatial"):
                 q, k, v = map(lambda yt: rearrange(yt, 'b n (h d) -> (b h) n d', h=h), (q, k, v))
+                if inject_ref and self.mode == "spatial":
+                    k_ref = rearrange(k_ref, 'b n (h d) -> (b h) n d', h=h)
+                    v_ref = rearrange(v_ref, 'b n (h d) -> (b h) n d', h=h)
+                    k_ref = repeat(k_ref, '(b h) n d -> (b t h) n d', h=h, t=t)
+                    v_ref = repeat(v_ref, '(b h) n d -> (b t h) n d', h=h, t=t)
+                    k = torch.cat([k, k_ref], dim=1)
+                    v = torch.cat([v, v_ref], dim=1)
 
             if _USE_FP16_ATTENTION:
                 dtype_before = q.dtype
@@ -236,8 +272,8 @@ class BasicTransformerBlock(nn.Module):
         self.norm3 = LayerNorm32(dim)
         self.ff = FeedForward(dim, dropout=dropout, glu=gated_ff)
 
-    def forward(self, x, context=None):
-        x = self.attn1(self.norm1(x), context=None) + x
+    def forward(self, x, context=None, ref_kv=None):
+        x = self.attn1(self.norm1(x), context=None, ref_kv=ref_kv) + x
 
         if self.use_context:
             assert context is not None, "Audio context must be provided when use_context=True"
@@ -281,14 +317,19 @@ class SpatioTemporalTransformer(nn.Module):
         self.has_context = True
 
     def forward(self, x, context=None):
+        """`ref_kv` is read from `self._ref_kv_feature` if set by the owning
+        UNet before the forward pass. This attribute-based plumbing avoids
+        widening the signature, which would require patching
+        `TimestepEmbedSequential`'s dispatcher in the LDM base."""
         assert not isinstance(context, list)
+        ref_kv = getattr(self, "_ref_kv_feature", None)
         b, c, h, w = x.shape
         x_in = x
         x = self.norm(x)
         x = rearrange(x, 'b c h w -> b (h w) c').contiguous()
         x = self.proj_in(x)
         for block in self.transformer_blocks:
-            x = block(x, context=context)
+            x = block(x, context=context, ref_kv=ref_kv)
         x = self.proj_out(x)
         x = rearrange(x, 'b (h w) c -> b c h w', h=h, w=w).contiguous()
         return x + x_in

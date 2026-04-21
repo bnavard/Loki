@@ -1,33 +1,30 @@
 """
 Video dataset for talking-head generation training.
 
-Each clip is split into non-overlapping n_frames-sized windows (deterministic).
-Frame 0 of each window is the reference frame; frames 1:n_frames are the
-generation targets.
+Each clip is split into non-overlapping `n_frames`-sized target windows.
+Independently per sample, a **reference frame** is drawn uniformly at random
+from anywhere in the same clip and prepended as slot 0 of `target_video`.
+This is the CAP4D / AnimateAnyone convention: the ref provides an identity
+anchor whose pose/expression need not match the first frame of the gen
+window, and the model learns to reconstruct any target pose under any ref.
 
-Training is strictly same-identity: target, driver (FLAME signal), reference
-image — all sourced from the same clip and same window. Cross-identity
-retargeting happens at inference time only, in `generate.py`.
-
-NDC = Normalized Device Coordinates — pytorch3d's convention where visible
-on-screen content maps to [-1, 1] per axis, +x=left, +y=up. `grid_sample` uses
-the other sign convention (+x=right, +y=down); the flip happens inside the
-warp step, not here.
-
-Per sample returned:
-    target_video      : (T, H, W, 3)   frames to reconstruct, [-1, 1]
-    audio             : (T, W)         driver audio window per frame
+Per-sample output:
+    target_video : (T+1, H, W, 3)  slot 0 = ref, slots 1..T = target window
+                                    in [-1, 1].
+    audio        : (T, W_audio)    per-frame audio windows for the T gen
+                                    slots only (no audio for the ref slot).
     hint:
-        driver_verts   : (T, V, 3)     driver's FLAME verts in target-camera NDC
-        driver_deform  : (T, V, 3)     per-vertex expression deformation
-        ref_mask       : (T, 1, h, w)  1 on slot 0 (reference), 0 elsewhere
-        ref_image      : (3, H, W)     reference frame in [-1, 1] (= slot 0)
-        ref_verts      : (V, 3)        reference's FLAME verts in NDC (warp source)
+        driver_verts  : (T, V, 3)  driver (= target) FLAME verts per gen slot,
+                                    in pytorch3d NDC relative to the per-slot
+                                    face crop.
+        driver_deform : (T, V, 3)  per-vertex expression deformation.
+
+NDC = Normalized Device Coordinates — pytorch3d's convention: +x=left, +y=up,
+visible content in [-1, 1] per axis.
 """
 
 import json
 from pathlib import Path
-from typing import Optional
 
 import numpy as np
 import torch
@@ -47,18 +44,24 @@ HEAD_VERT_PATH = "data/assets/flame/head_vertices.txt"
 class TalkingHeadDataset(Dataset):
     """
     Args:
-        clip_list_path       : path to a JSON file of clip IDs (produced by
+        clip_list_path       : JSON list of clip IDs (produced by
                                `scripts/manifest/partition_dataset.py`).
-        video_root           : root directory for videos ({video_root}/{id}.mp4).
-        audio_root           : root directory for audio  ({audio_root}/{id}.wav).
-        flame_root           : root directory for FLAME  ({flame_root}/{id}/fit.npz).
-        n_frames             : total frames per sample (1 ref + n_frames-1 targets).
+        video_root           : root dir for videos ({video_root}/{id}.mp4).
+        audio_root           : root dir for audio  ({audio_root}/{id}.wav).
+        flame_root           : root dir for FLAME  ({flame_root}/{id}/fit.npz).
+        n_frames             : number of gen target frames per sample. The ref
+                               slot is added on top, so each returned sample
+                               carries n_frames + 1 video frames in
+                               `target_video`.
         resolution           : image resolution (default 512).
-        downsample_ratio     : VAE downsampling factor (default 8, so latent is 64²).
+        downsample_ratio     : VAE downsampling factor (default 8).
         fps                  : video frame rate (used for audio alignment).
-        audio_context_frames : number of frames on each side of the current frame
-                               to include in the audio window (default 2 → 5-frame window).
-        add_mouth            : whether to include mouth vertices in FLAME skinner.
+        audio_context_frames : number of frames on each side of the current
+                               frame to include in the audio window.
+        add_mouth            : include mouth vertices in the FLAME skinner.
+        ref_sampling_seed    : base seed for per-sample ref draws. Combined
+                               with sample index so two workers / epochs
+                               agree on which frame is the ref.
     """
 
     def __init__(
@@ -73,6 +76,7 @@ class TalkingHeadDataset(Dataset):
         fps: float = 25.0,
         audio_context_frames: int = 2,
         add_mouth: bool = True,
+        ref_sampling_seed: int = 0,
     ):
         self.video_root = Path(video_root)
         self.audio_root = Path(audio_root)
@@ -85,6 +89,7 @@ class TalkingHeadDataset(Dataset):
         self.samples_per_frame    = int(SAMPLE_RATE / fps)
         self.audio_context_frames = audio_context_frames
         self.audio_window_samples = self.samples_per_frame * (1 + 2 * audio_context_frames)
+        self.ref_sampling_seed    = ref_sampling_seed
 
         self.flame_skinner = CAP4DFlameSkinner(
             add_mouth=add_mouth,
@@ -93,10 +98,6 @@ class TalkingHeadDataset(Dataset):
         )
         self.head_vertex_ids = np.genfromtxt(HEAD_VERT_PATH).astype(int)
 
-        # Build a flat index of non-overlapping windows across all clips. Each
-        # clip is split into (T_total // n_frames) windows; frame 0 of each
-        # window is the reference slot, all frames are reconstruction targets
-        # (loss masked to the non-reference slots via ref_mask).
         with open(clip_list_path) as f:
             all_ids = json.load(f)
         self.clips = {}    # clip_id -> (fit, n_total)
@@ -124,7 +125,7 @@ class TalkingHeadDataset(Dataset):
         timestep_id: int,
         cam_id: int = 0,
     ):
-        """Load one video frame + its FLAME conditioning.
+        """Load one video frame + its FLAME conditioning at this timestep.
 
         Returns:
             img      : (H, W, 3) float32 in [-1, 1]
@@ -164,16 +165,21 @@ class TalkingHeadDataset(Dataset):
     def __getitem__(self, idx: int) -> dict:
         clip_id, window_start = self.samples[idx]
         fit, n_total = self.clips[clip_id]
-        frame_ids = list(range(window_start, window_start + self.n_frames))
+
+        # Deterministic ref draw: same idx always picks the same ref frame.
+        rng = np.random.default_rng(self.ref_sampling_seed ^ (idx + 0x9E3779B1))
+        ref_frame_id = int(rng.integers(0, n_total))
+
+        frame_ids = [ref_frame_id] + list(
+            range(window_start, window_start + self.n_frames)
+        )
 
         audio_full = load_audio_mono(
             self.audio_root / f"{clip_id}.wav",
             expected_len=n_total * self.samples_per_frame,
         )
 
-        imgs, verts_list, offsets_list = [], [], []
-        ref_masks, audio_windows       = [], []
-
+        imgs, verts_list, offsets_list, audio_windows = [], [], [], []
         for t_idx, t_frame in enumerate(frame_ids):
             img, verts, offsets = self._load_and_process_frame(
                 clip_id, fit, t_frame, cam_id=0,
@@ -182,27 +188,19 @@ class TalkingHeadDataset(Dataset):
             verts_list.append(verts)
             offsets_list.append(offsets)
 
-            is_ref = int(t_idx == 0)
-            ref_masks.append(
-                np.ones((1, self.latent_res, self.latent_res), dtype=np.float32) * is_ref
-            )
-            audio_windows.append(
-                frame_window(
-                    audio_full, t_frame, n_total,
-                    self.samples_per_frame, self.audio_context_frames,
+            # Audio is aligned with gen slots only (skip slot 0 = ref).
+            if t_idx >= 1:
+                audio_windows.append(
+                    frame_window(
+                        audio_full, t_frame, n_total,
+                        self.samples_per_frame, self.audio_context_frames,
+                    )
                 )
-            )
 
-        imgs     = np.stack(imgs,          axis=0)
-        verts    = np.stack(verts_list,    axis=0)
-        offsets  = np.stack(offsets_list,  axis=0)
-        ref_mask = np.stack(ref_masks,     axis=0)
-        audio    = np.stack(audio_windows, axis=0)
-
-        # Reference = slot 0. HWC→CHW so grid_sample in SpatialConditioning consumes
-        # it directly; verts stay (V, 3) to be broadcast across T downstream.
-        ref_image = torch.from_numpy(imgs[0].copy()).permute(2, 0, 1)
-        ref_verts = torch.from_numpy(verts[0].copy())
+        imgs    = np.stack(imgs,              axis=0)   # (T+1, H, W, 3)
+        verts   = np.stack(verts_list[1:],    axis=0)   # (T, V, 3) gen only
+        offsets = np.stack(offsets_list[1:],  axis=0)   # (T, V, 3) gen only
+        audio   = np.stack(audio_windows,     axis=0)   # (T, W_audio)
 
         return {
             "target_video": torch.from_numpy(imgs),
@@ -210,8 +208,5 @@ class TalkingHeadDataset(Dataset):
             "hint": {
                 "driver_verts":  torch.from_numpy(verts),
                 "driver_deform": torch.from_numpy(offsets),
-                "ref_mask":      torch.from_numpy(ref_mask),
-                "ref_image":     ref_image,
-                "ref_verts":     ref_verts,
             },
         }

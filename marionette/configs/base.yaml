@@ -19,8 +19,8 @@ learning_rate:      1.0e-4
 gpu_batch_size:     2
 virtual_batch_size: 2
 logger_freq:        50
-n_steps:            5000
-save_every_n_steps: 250
+n_steps:            30000
+save_every_n_steps: 3000
 
 # SD 2.1 checkpoint used to initialise the UNet + VAE weights.
 init_path: "data/models/v2-1_512-ema-pruned.ckpt"
@@ -57,7 +57,7 @@ val_dataset:
     add_mouth:            true
 
 # Validation & visualization
-val_every_n_steps: 1000
+val_every_n_steps: 3000
 n_val_batches:     20
 n_vis_samples:     8
 vis_ddim_steps:    50
@@ -110,17 +110,17 @@ model:
         freeze_backbone: true
         use_pretrained:  true
 
-    # ---- UNet ----
+    # ---- Generation UNet ----
     unet_config:
       target: marionette.model.unet.MarionetteUNet
       params:
         image_size:                64     # unused, required by parent
         time_steps:                16     # must match model.params.n_frames
-        temporal_mode:             "3d"   # or "temporal"
+        temporal_mode:             "3d"
         in_channels:               4
         out_channels:              4
         model_channels:            320
-        condition_channels:        49     # 42 pos + 3 deform + 3 warp + 1 ref_mask
+        condition_channels:        45     # 42 pos_enc + 3 driver_deform
         context_dim:               1024   # matches SD 2.1 checkpoint
         attention_resolutions:     [4, 2, 1]
         num_res_blocks:            2
@@ -138,6 +138,27 @@ model:
         cond_input_resolution:     512
         cond_latent_resolution:    64
         cond_stage_channels:       [64, 128, 256, 320]   # 512 → 256 → 128 → 64
+
+    # ---- Reference UNet (frozen SD 2.1) ----
+    # Runs once per sample on the VAE-encoded reference frame; per-layer
+    # self-attention inputs are injected into the gen UNet's K/V. Loaded with
+    # the same SD 2.1 pretrained weights as the gen UNet (see
+    # train.py::load_model → RefFeatureExtractor.load_sd21_into_ref).
+    ref_unet_config:
+      image_size:                64
+      in_channels:               4
+      out_channels:              4
+      model_channels:            320
+      context_dim:               1024
+      attention_resolutions:     [4, 2, 1]
+      num_res_blocks:            2
+      channel_mult:              [1, 2, 4, 4]
+      num_head_channels:         64
+      use_spatial_transformer:   true
+      use_linear_in_transformer: true
+      transformer_depth:         1
+      use_checkpoint:            false
+      legacy:                    false
 
     # ---- VAE (frozen) ----
     first_stage_config:

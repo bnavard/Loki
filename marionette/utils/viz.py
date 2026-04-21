@@ -248,8 +248,9 @@ class VisualizationCallback(Callback):
 
     Fires every `vis_every_n_steps` steps (rank 0 only, DDP-safe via explicit
     barriers). For each of `n_vis_samples` val samples:
-      - Runs SlidingWindowSampler on the full window (R=1 ref + V-R generated).
-      - Builds a 4-row labeled grid [Ground Truth | Driver Deform | Warped Ref
+      - Runs `model.sample_video` over the T gen slots (ref lives in the
+        separate frozen ref UNet, not in the time axis).
+      - Builds a 4-row labeled grid [Reference | Ground Truth | Driver Deform
         | Generated], saved as both a PNG grid and an audio-muxed mp4.
       - Logs the grid to tensorboard as a single image.
     """
@@ -286,8 +287,6 @@ class VisualizationCallback(Callback):
 
     @torch.no_grad()
     def _generate_samples(self, trainer, pl_module):
-        from marionette.model.sampler import SlidingWindowSampler
-
         model = pl_module.model
         model.eval()
         device = pl_module.device
@@ -300,7 +299,7 @@ class VisualizationCallback(Callback):
         step_dir = self.output_dir / f"step_{step:06d}"
         step_dir.mkdir(parents=True, exist_ok=True)
 
-        sampler = SlidingWindowSampler(model)
+        cfg_scale = self.cfg.inference.get("cfg_scale", 2.0)
 
         n_skip = self._vis_call_count * self.n_vis_samples
         self._vis_call_count += 1
@@ -316,52 +315,46 @@ class VisualizationCallback(Callback):
 
             batch = _to_device(batch, device)
 
-            z, cond = model.get_input(batch, model.first_stage_key, force_conditional=True)
-            ctrl = cond['c_concat'][0]
+            gen_z, cond = model.get_input(batch, model.first_stage_key, force_conditional=True)
+            ctrl     = cond['c_concat'][0]
             c_uncond = cond['c_uncond'][0]
 
-            b = z.shape[0]
+            b = gen_z.shape[0]
             for i in range(b):
                 if n_generated >= self.n_vis_samples:
                     break
 
-                ctrl_i = {k: v[[i]] if v is not None else None for k, v in ctrl.items()}
-                uncond_i = {k: v[[i]] if v is not None else None for k, v in c_uncond.items()}
-
-                ref_cond   = {k: v[:, :1].squeeze(0) if v is not None else None for k, v in ctrl_i.items()}
-                ref_uncond = {k: v[:, :1].squeeze(0) if v is not None else None for k, v in uncond_i.items()}
-                gen_cond   = {k: v[:, 1:].squeeze(0) if v is not None else None for k, v in ctrl_i.items()}
-                gen_uncond = {k: v[:, 1:].squeeze(0) if v is not None else None for k, v in uncond_i.items()}
-
-                V = z.shape[1]
-                R = 1
-                latent_shape = z.shape[2:]
+                ctrl_i   = {k: (v[[i]] if v is not None else None) for k, v in ctrl.items()}
+                uncond_i = {k: (v[[i]] if v is not None else None) for k, v in c_uncond.items()}
 
                 try:
-                    gen_latents = sampler.sample(
-                        S=self.vis_ddim_steps,
-                        ref_cond=ref_cond, ref_uncond=ref_uncond,
-                        gen_cond=gen_cond, gen_uncond=gen_uncond,
-                        latent_shape=latent_shape, V=V, R=R,
-                        cfg_scale=self.cfg.inference.get("cfg_scale", 2.0),
-                        verbose=False,
+                    gen_latents = model.sample_video(
+                        control=ctrl_i, control_uncond=uncond_i,
+                        n_frames=gen_z.shape[1],
+                        latent_shape=tuple(gen_z.shape[2:]),
+                        n_ddim_steps=self.vis_ddim_steps,
+                        cfg_scale=cfg_scale,
                     )
 
-                    ref_latent = z[i, :1]
-                    all_latents = torch.cat([ref_latent, gen_latents], dim=0)
-
-                    gen_imgs = model.decode_first_stage(all_latents[None]).squeeze(0)
+                    gen_imgs = model.decode_first_stage(gen_latents.unsqueeze(0)).squeeze(0)
                     gen_imgs = ((gen_imgs.clamp(-1, 1) + 1) / 2 * 255).byte().cpu().numpy()
+
+                    gt_imgs = model.decode_first_stage(gen_z[i:i+1]).squeeze(0)
+                    gt_imgs = ((gt_imgs.clamp(-1, 1) + 1) / 2 * 255).byte().cpu().numpy()
 
                     spatial_cond_i = ctrl_i["spatial_cond"][0]
                     deform_vis = slice_cond_rgb(spatial_cond_i, 42, resolution)
-                    warp_vis   = slice_cond_rgb(spatial_cond_i, 45, resolution)
 
-                    gt_imgs = model.decode_first_stage(z[i:i+1]).squeeze(0)
-                    gt_imgs = ((gt_imgs.clamp(-1, 1) + 1) / 2 * 255).byte().cpu().numpy()
+                    # Static reference row: decode the ref latent from control
+                    # and broadcast across T for grid alignment.
+                    ref_z_i = ctrl_i["ref_z"]
+                    ref_img = model.decode_first_stage(ref_z_i.unsqueeze(1)).squeeze(0)
+                    ref_u8  = ((ref_img.clamp(-1, 1) + 1) / 2 * 255).byte().cpu().numpy()[0]
+                    T_gen   = gen_z.shape[1]
+                    ref_row = np.broadcast_to(ref_u8[None], (T_gen, *ref_u8.shape)).copy()
 
-                    rows_data = [gt_imgs, deform_vis, warp_vis, gen_imgs]
-                    labels = ["Ground Truth", "Driver Deform", "Warped Ref", "Generated"]
+                    rows_data = [ref_row, gt_imgs, deform_vis, gen_imgs]
+                    labels = ["Reference", "Ground Truth", "Driver Deform", "Generated"]
                     title = f"Same-Identity Reconstruction | Step {step}"
 
                     save_labeled_grid(

@@ -63,6 +63,8 @@ def is_rank_zero():
 
 
 def load_model(cfg, init_path=None):
+    from marionette.model.ref_unet import RefFeatureExtractor
+
     model = instantiate_from_config(cfg.model)
 
     if init_path and Path(init_path).exists():
@@ -70,6 +72,10 @@ def load_model(cfg, init_path=None):
             print(f"Loading SD 2.1 weights from {init_path}")
         sd = torch.load(init_path, map_location="cpu")
         state_dict = sd.get("state_dict", sd)
+        # Duplicate SD 2.1's `model.diffusion_model.*` keys under
+        # `ref_extractor.unet.*` so one load call populates both the gen UNet
+        # and the frozen reference UNet from the same pretrained source.
+        state_dict = RefFeatureExtractor.load_sd21_into_ref(state_dict)
         missing, unexpected = model.load_state_dict(state_dict, strict=False)
         if is_rank_zero():
             print(f"  Missing keys : {len(missing)}")

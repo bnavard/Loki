@@ -1,16 +1,21 @@
 """
-Cross-identity retargeted inference for Marionette.
+Cross-identity talking-head inference.
 
 Given a reference clip (identity source β_ref) and a driver clip (motion
-source ψ_driver, θ_driver) — possibly the same clip, for same-identity
-reconstruction — this script produces a video of the reference identity
+source ψ_driver, θ_driver) — possibly the same clip for same-identity
+reconstruction — produces an `n_frames`-long video of the reference identity
 performing the driver's expression and head pose, with the driver's audio.
 
 Recipe:
-  FLAME(shape=β_ref, expression=ψ_driver[t], pose=θ_driver[t], camera=ref)
-  → verts + offsets projected into ref pixel space.
-  → SpatialConditioning: rasterize [pos_enc | driver_deform | warped_ref | ref_mask]
-    = 49-channel spatial_cond fed to the UNet's ConditioningEncoder.
+  * `RefFeatureExtractor` runs the frozen SD 2.1 UNet on the VAE-encoded
+    reference image once, caching per-layer self-attention inputs.
+  * FLAME(β_ref, ψ_driver[t], θ_driver[t], camera=ref) is rasterized into the
+    ref's pixel space — `SpatialConditioning` emits a 45-channel `spatial_cond`
+    (pos_enc + driver_deform) at every gen slot.
+  * DDIM denoising on T pure-noise latents with classifier-free guidance.
+    At each step the gen UNet receives both `spatial_cond` (additive to the
+    first feature map) and `ref_features` (concatenated into self-attention
+    K/V at every layer). The ref never occupies a slot in the output.
 
 Usage:
     python marionette/generate.py \\
@@ -33,7 +38,6 @@ import cv2
 from omegaconf import OmegaConf
 
 from ldm_base.ldm.util import instantiate_from_config
-from marionette.model.sampler import SlidingWindowSampler
 from marionette.flame.flame import CAP4DFlameSkinner
 from marionette.conditioning.conditioning import SpatialConditioning
 from marionette.retargeting import (
@@ -52,68 +56,39 @@ def _load_fit(path: Path) -> dict:
     return {k: v for k, v in np.load(str(path)).items()}
 
 
-def _round_to_sampler_window(n_frames: int, V: int, R: int) -> int:
-    """Sampler needs (n_frames - R) % (V - R) == 0. Round DOWN to closest fit."""
-    G = V - R
-    n_gen = n_frames - R
-    valid = (n_gen // G) * G + R
-    return max(valid, V)
-
-
-def _build_hint(
-    verts_np: np.ndarray,         # (T, V, 3)
-    offsets_np: np.ndarray,       # (T, V, 3)
-    ref_image_np: np.ndarray,     # (H, W, 3) in [-1, 1]
-    ref_verts_np: np.ndarray,     # (V, 3)
-    n_frames: int,
-    latent_res: int,
-    device: torch.device,
-) -> dict:
-    ref_mask = np.zeros((n_frames, 1, latent_res, latent_res), dtype=np.float32)
-    ref_mask[0] = 1.0
-    ref_image = torch.from_numpy(ref_image_np).permute(2, 0, 1)
-    return {
-        "driver_verts":  torch.from_numpy(verts_np).unsqueeze(0).to(device),
-        "driver_deform": torch.from_numpy(offsets_np).unsqueeze(0).to(device),
-        "ref_mask":      torch.from_numpy(ref_mask).unsqueeze(0).to(device),
-        "ref_image":     ref_image.unsqueeze(0).to(device),
-        "ref_verts":     torch.from_numpy(ref_verts_np.astype(np.float32)).unsqueeze(0).to(device),
-    }
-
-
-def _null_token(cond: dict) -> dict:
-    """Zero every tensor in `cond`, leave non-tensors alone. The CFG null token."""
-    return {
-        k: (torch.zeros_like(v) if torch.is_tensor(v) else v)
-        for k, v in cond.items()
-    }
-
-
-def _split_ref_gen(cond: dict, n_frames: int) -> tuple[dict, dict]:
-    """Split a (1, T, ...) control dict into (R=1 ref, T-1 generated) sampler inputs."""
-    def _slice(d, idx):
-        return {
-            k: (v[:, idx].squeeze(0) if v is not None else None)
-            for k, v in d.items()
-        }
-    return _slice(cond, [0]), _slice(cond, list(range(1, n_frames)))
+def _load_checkpoint_into(model, ckpt_path: str):
+    """Load a Lightning checkpoint into a bare `MarionetteDiffusion` — strip
+    the outer `model.` prefix and fail loud on any missing or unexpected keys
+    so we never silently train on partial weights."""
+    ckpt = torch.load(ckpt_path, map_location="cpu", weights_only=False)
+    raw = ckpt.get("state_dict", ckpt)
+    sd = {k[len("model."):]: v for k, v in raw.items() if k.startswith("model.")}
+    missing, unexpected = model.load_state_dict(sd, strict=False)
+    # Ref extractor params are frozen and may legitimately be absent from a
+    # Lightning checkpoint if they weren't saved; tolerate that one case.
+    unexpected = [k for k in unexpected if not k.startswith("ref_extractor.")]
+    missing    = [k for k in missing    if not k.startswith("ref_extractor.")]
+    if missing or unexpected:
+        raise RuntimeError(
+            f"Checkpoint load incomplete: {len(missing)} missing, "
+            f"{len(unexpected)} unexpected. "
+            f"First missing: {missing[:3]}. First unexpected: {unexpected[:3]}."
+        )
 
 
 def parse_args():
     p = argparse.ArgumentParser()
     p.add_argument("--checkpoint",   required=True)
     p.add_argument("--config",       required=True)
-    p.add_argument("--ref_clip",     required=True,
-                   help="Reference clip ID (identity source).")
+    p.add_argument("--ref_clip",     required=True)
     p.add_argument("--ref_frame",    type=int, default=0)
-    p.add_argument("--driver_clip",  required=True,
-                   help="Driver clip ID (motion + audio source). "
-                        "Set equal to --ref_clip for same-identity reconstruction.")
+    p.add_argument("--driver_clip",  required=True)
     p.add_argument("--flame_root",   default="data/flame_tracking/flowface")
     p.add_argument("--video_root",   default="data/talkvid/talkvid")
     p.add_argument("--audio_root",   default="data/talkvid/audio")
     p.add_argument("--output_dir",   default="outputs/generated")
-    p.add_argument("--n_frames",     type=int, default=16)
+    p.add_argument("--n_frames",     type=int, default=16,
+                   help="Number of gen target frames; matches the UNet's time_steps.")
     p.add_argument("--cfg_scale",    type=float, default=2.0)
     p.add_argument("--n_ddim_steps", type=int, default=50)
     p.add_argument("--device",       default="cuda")
@@ -133,34 +108,16 @@ def main():
     np.random.seed(seed)
 
     model = instantiate_from_config(cfg.model)
-    ckpt  = torch.load(args.checkpoint, map_location="cpu", weights_only=False)
-
-    # Lightning wraps MarionetteDiffusion as `self.model = model` in LightningWrapper,
-    # so every key in the saved state_dict is prefixed with "model.". Strip it before
-    # loading into a bare MarionetteDiffusion. `strict=False` + explicit mismatch check
-    # catches silent failures (e.g. a wholesale key mismatch that would leave the VAE
-    # at random init and decode everything to noise).
-    raw_sd = ckpt.get("state_dict", ckpt)
-    sd = {k[len("model."):]: v for k, v in raw_sd.items() if k.startswith("model.")}
-    missing, unexpected = model.load_state_dict(sd, strict=False)
-    if missing or unexpected:
-        raise RuntimeError(
-            f"Checkpoint load incomplete: {len(missing)} missing, {len(unexpected)} unexpected. "
-            f"First missing: {missing[:3]}. First unexpected: {unexpected[:3]}."
-        )
+    _load_checkpoint_into(model, args.checkpoint)
     model.eval().to(device)
 
     ds_params = cfg.train_dataset.params
     resolution = ds_params.resolution
     latent_res = resolution // ds_params.downsample_ratio
-    samples_per_frame = int(SAMPLE_RATE / ds_params.fps)
+    samples_per_frame    = int(SAMPLE_RATE / ds_params.fps)
     audio_context_frames = ds_params.audio_context_frames
 
-    V = cfg.inference.get("n_frames", cfg.model.params.n_frames)
-    R = 1
-    n_frames = _round_to_sampler_window(args.n_frames, V, R)
-    if n_frames != args.n_frames:
-        print(f"[generate] rounded n_frames {args.n_frames} → {n_frames} for V={V}, R={R}")
+    n_frames = args.n_frames
 
     cond_module = SpatialConditioning(
         **OmegaConf.to_container(cfg.model.params.cond_stage_config.params),
@@ -178,7 +135,7 @@ def main():
     print(f"[generate] {'cross-identity' if is_cross_id else 'same-identity'}: "
           f"ref={args.ref_clip} driver={args.driver_clip}")
 
-    ref_img_norm, ref_verts_ndc, crop_box = prepare_reference(
+    ref_img_norm, _, crop_box = prepare_reference(
         ref_fit, args.ref_frame, video_root / f"{args.ref_clip}.mp4",
         resolution, flame_skinner, head_vert_ids,
     )
@@ -186,21 +143,16 @@ def main():
         ref_fit, driver_fit, crop_box, n_frames, flame_skinner,
     )
 
-    hint = _build_hint(
-        verts_np, offsets_np, ref_img_norm, ref_verts_ndc,
-        n_frames, latent_res, device,
-    )
+    hint = {
+        "driver_verts":  torch.from_numpy(verts_np).unsqueeze(0).to(device),
+        "driver_deform": torch.from_numpy(offsets_np).unsqueeze(0).to(device),
+    }
 
     ref_tensor = torch.from_numpy(ref_img_norm).permute(2, 0, 1).unsqueeze(0).to(device)
     ref_z = model.get_first_stage_encoding(model.encode_first_stage(ref_tensor))
-    hint["z"] = torch.cat(
-        [ref_z.unsqueeze(0),
-         torch.zeros(1, n_frames - 1, 4, latent_res, latent_res, device=device)],
-        dim=1,
-    )
 
-    c_cond   = cond_module(hint)
-    c_uncond = _null_token(c_cond)
+    c_cond = cond_module(hint)
+    c_cond["ref_z"] = ref_z
 
     audio_windows = load_clip_audio_windows(
         audio_root / f"{args.driver_clip}.wav",
@@ -208,28 +160,24 @@ def main():
     )
     audio_t = torch.from_numpy(audio_windows).unsqueeze(0).to(device)
     audio_ctx = model.audio_encoder(audio_t) if model.audio_encoder is not None else None
-    c_cond["audio_context"]   = audio_ctx
-    c_uncond["audio_context"] = (
-        torch.zeros_like(audio_ctx) if audio_ctx is not None else None
-    )
+    c_cond["audio_context"] = audio_ctx
 
-    ref_cond,   gen_cond   = _split_ref_gen(c_cond,   n_frames)
-    ref_uncond, gen_uncond = _split_ref_gen(c_uncond, n_frames)
+    c_uncond = {
+        k: (torch.zeros_like(v) if torch.is_tensor(v) else v)
+        for k, v in c_cond.items()
+    }
 
-    sampler = SlidingWindowSampler(model)
-    latents = sampler.sample(
-        S=args.n_ddim_steps,
-        ref_cond=ref_cond, ref_uncond=ref_uncond,
-        gen_cond=gen_cond, gen_uncond=gen_uncond,
+    latents = model.sample_video(
+        control=c_cond, control_uncond=c_uncond,
+        n_frames=n_frames,
         latent_shape=(4, latent_res, latent_res),
-        V=V, R=R, cfg_scale=args.cfg_scale,
+        n_ddim_steps=args.n_ddim_steps,
+        cfg_scale=args.cfg_scale,
     )
 
-    all_latents = torch.cat([ref_z, latents], dim=0).unsqueeze(0)
-    imgs = model.decode_first_stage(all_latents).squeeze(0)
-    imgs = ((imgs.clamp(-1, 1) + 1) / 2 * 255).byte().cpu().numpy()   # (T, 3, H, W) RGB
+    imgs = model.decode_first_stage(latents.unsqueeze(0)).squeeze(0)
+    imgs = ((imgs.clamp(-1, 1) + 1) / 2 * 255).byte().cpu().numpy()   # (T, 3, H, W)
 
-    # ---- raw per-frame dump (generated only) ----
     out_dir = Path(args.output_dir)
     frame_dir = out_dir / "frames"
     frame_dir.mkdir(parents=True, exist_ok=True)
@@ -237,27 +185,23 @@ def main():
         bgr = img.transpose(1, 2, 0)[..., [2, 1, 0]]
         cv2.imwrite(str(frame_dir / f"{i:05d}.png"), bgr)
 
-    # ---- 5-row side-by-side panel: Reference | Driver Video | Driver Expression | Warped Ref | Generated ----
-    # Reference row: the static identity anchor, repeated T times for alignment.
-    ref_rgb_u8 = ((ref_img_norm + 1) / 2 * 255).clip(0, 255).astype(np.uint8)  # (H, W, 3)
+    # 4-row panel: Reference (static) | Driver Video | Driver Expression | Generated
+    ref_rgb_u8 = ((ref_img_norm + 1) / 2 * 255).clip(0, 255).astype(np.uint8)
     ref_row = np.broadcast_to(
         ref_rgb_u8.transpose(2, 0, 1)[None], (n_frames, 3, resolution, resolution),
     ).copy()
 
-    # Driver video row: the driver's actual face-cropped frames for visual reference.
     driver_frames = prepare_driver_frames(
         driver_fit, video_root / f"{args.driver_clip}.mp4",
         n_frames, resolution, flame_skinner, head_vert_ids,
-    )                                                                  # (T, H, W, 3) uint8
-    driver_row = driver_frames.transpose(0, 3, 1, 2).copy()            # (T, 3, H, W)
+    )
+    driver_row = driver_frames.transpose(0, 3, 1, 2).copy()
 
-    # Conditioning slices (channels [42:45] deform, [45:48] warp) visualized.
-    spatial_cond_ct = c_cond["spatial_cond"][0]                        # (T, H, W, 49)
-    expr_row = slice_cond_rgb(spatial_cond_ct, 42, resolution)
-    warp_row = slice_cond_rgb(spatial_cond_ct, 45, resolution)
+    spatial_cond_t = c_cond["spatial_cond"][0]                       # (T, H, W, 45)
+    expr_row = slice_cond_rgb(spatial_cond_t, 42, resolution)
 
-    rows_data = [ref_row, driver_row, expr_row, warp_row, imgs]
-    labels    = ["Reference", "Driver Video", "Driver Expression", "Warped Ref", "Generated"]
+    rows_data = [ref_row, driver_row, expr_row, imgs]
+    labels    = ["Reference", "Driver Video", "Driver Expression", "Generated"]
     title = (f"{'Cross' if is_cross_id else 'Same'}-Identity | "
              f"ref={args.ref_clip[:32]} → drv={args.driver_clip[:32]}")
 
