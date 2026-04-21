@@ -1,18 +1,19 @@
-# Marionette — Warp-Conditioned Talking-Head Video Diffusion
+# Marionette — Identity-Preserving Talking-Head Video Diffusion
 
 A latent video diffusion model for identity-preserving talking-head generation.
 Given a reference portrait and a driver clip, the model produces video of the
 reference identity performing the driver's expression and head pose,
 synchronised to the driver's audio.
 
-The core signal is a **backward-warped reference**: under FLAME's
-identity-agnostic topology, we drive the reference's mesh with the driver's
-expression + head pose, rasterize the reference's per-vertex NDC coordinates
-through that mesh, and `grid_sample` the reference image over the resulting
-UV map. The warp is identity-locked where the mesh explains the pixels (skin,
-jaw) and has characteristic artifacts where it doesn't (eye interior, mouth
-interior, hair) — the UNet learns to inpaint those artifacts while keeping
-the warp's identity prior intact.
+Identity is preserved by a **reference UNet** (AnimateAnyone / ReferenceNet
+pattern). A frozen SD 2.1 UNet runs once on the VAE-encoded reference frame
+and we cache the input to each self-attention block. Those per-layer features
+are then injected as additional K/V tokens into the generation UNet's
+corresponding self-attention layers, so every generated frame attends to
+both its own tokens and the reference's — rich, multi-scale identity
+conditioning that does not need a hand-designed warp. Motion is specified
+separately by a 45-channel FLAME conditioning map (sinusoidal pos_enc of
+rasterized vertex positions + per-vertex expression deformation).
 
 ## Repository Structure
 
@@ -20,8 +21,8 @@ the warp's identity prior intact.
 .
 ├── marionette/                       # the video diffusion model (training + inference)
 │   ├── configs/base.yaml             # canonical config
-│   ├── conditioning/conditioning.py  # SpatialConditioning — 49ch (pos_enc + deform + warp + ref_mask)
-│   ├── model/{diffusion,unet,sampler,conditioning_encoder,audio_encoder,attention}.py
+│   ├── conditioning/conditioning.py  # SpatialConditioning — 45ch (pos_enc + driver_deform)
+│   ├── model/{diffusion,unet,ref_unet,conditioning_encoder,audio_encoder,attention}.py
 │   ├── data/{video_dataset,types}.py
 │   ├── utils/                        # audio / viz / video_io / image_ops / verts
 │   ├── flame/                        # FLAME 3DMM
@@ -80,6 +81,8 @@ To produce `fit.npz` from raw videos, see [generate_exp_map/README.md](generate_
 ## Acknowledgements
 
 This codebase inherits from [CAP4D](https://github.com/felixtaubner/cap4d)
-(CVPR 2025) — we adopt their SD 2.1 UNet + 3D attention scaffold, FLAME
-rasterization utilities, and sliding-window DDIM sampler. The warp-conditioning
-idea and the v3 reorganisation are specific to this branch.
+(CVPR 2025) — we adopt their SD 2.1 UNet + 3D attention scaffold and FLAME
+rasterization utilities. The reference-UNet identity pathway follows
+[AnimateAnyone](https://arxiv.org/abs/2311.17117) (Hu et al., 2024). The
+reorganisation and the combined ReferenceNet + FLAME + audio recipe are
+specific to this branch.

@@ -1,16 +1,22 @@
-# Warp-Conditioned Baseline
+# Marionette Baseline
 
-Full training run against the canonical v3 recipe
+Full training run against the canonical recipe
 ([`marionette/configs/base.yaml`](../../marionette/configs/base.yaml)) — no
 overlays applied. Keep this experiment as the "point of truth" for what the
-v3 model does out of the box.
+model does out of the box.
+
+> Folder name (`warp_baseline`) is historical — the current recipe uses a
+> frozen reference UNet for identity (AnimateAnyone / ReferenceNet pattern),
+> not a backward warp. Rename pending.
 
 ## Recipe in one line
 
-Same-identity self-supervised video diffusion with 49-channel spatial
-conditioning (`pos_enc + driver_deform + warped_ref + ref_mask`) + wav2vec2
-audio cross-attention, SD 2.1 UNet + 3D attention, 16-frame windows, ref frame
-at slot 0.
+Same-identity self-supervised video diffusion: 45-channel FLAME spatial
+conditioning (`pos_enc + driver_deform`), wav2vec2 audio cross-attention, SD
+2.1 generation UNet with 3D spatiotemporal attention, and a frozen SD 2.1
+reference UNet whose per-layer self-attention features are injected as K/V
+tokens into the gen UNet. T=16 target frames per forward pass; the reference
+does not occupy a slot in the output.
 
 ## Running
 
@@ -39,7 +45,7 @@ outputs/warp_baseline/run_<timestamp>/
 ├── logs/                                          # TensorBoard
 └── visualizations/
     └── step_<step>/
-        ├── sample_NN.png                          # 4-row grid (GT | deform | warped_ref | generated)
+        ├── sample_NN.png                          # 4-row grid (Reference | Ground Truth | Driver Deform | Generated)
         └── sample_NN.mp4                          # same rows, with driver audio muxed in
 ```
 
@@ -53,7 +59,7 @@ Three independent periodic things fire during training:
 - **What:** `validation_step` runs `model.get_input(..., force_conditional=True)`
   (no CFG dropout) and computes the ε-MSE loss identical to training.
 - **Metrics logged** (via `log_dict(sync_dist=True)` → averaged across ranks):
-  - `val/loss_simple` — uniform ε-MSE, masked to non-reference slots.
+  - `val/loss_simple` — uniform ε-MSE across all T target slots (no slot masking; the reference lives in the separate ref UNet, not in the loss tensor).
   - `val/loss_vlb` — VLB-weighted version.
   - `val/loss` — combined (what `best_ckpt` monitors).
 - **Budget:** at most `n_val_batches` batches per call (default 20).
@@ -66,15 +72,15 @@ Three independent periodic things fire during training:
   other ranks wait through the long sampling phase (otherwise NCCL watchdog
   times out).
 - **What:** for `n_vis_samples` val samples (rotates through the val set
-  between firings), runs `SlidingWindowSampler` with `vis_ddim_steps`
-  denoising steps, then saves:
-  - **PNG grid** — 4 rows × 8 frames, labeled:
+  between firings), runs `MarionetteDiffusion.sample_video` with
+  `vis_ddim_steps` denoising steps and classifier-free guidance at
+  `cfg.inference.cfg_scale`, then saves:
+  - **PNG grid** — 4 rows × up to 8 frames, labeled:
+    - `Reference` — decoded reference latent, broadcast across time (static row). Red border on frame 0 is a label-driven artifact of the viz helper, not a model slot.
     - `Ground Truth` — decoded target latents.
     - `Driver Deform` — `spatial_cond[..., 42:45]` (the 3-channel per-vertex
       deformation map rasterized from the driver's FLAME).
-    - `Warped Ref` — `spatial_cond[..., 45:48]` (the 3-channel backward-warped
-      reference — this is the core v3 signal).
-    - `Generated` — DDIM-sampled frames, red border on the reference slot.
+    - `Generated` — DDIM+CFG-sampled frames from `sample_video`.
   - **MP4** — the same 4 rows stacked vertically, with the driver's audio
     muxed in by ffmpeg (no audio → silent mp4).
   - **TensorBoard image** — the grid, logged under `vis/sample_<N>`.
