@@ -1,4 +1,4 @@
-"""
+r"""
 Same-identity evaluation runner.
 
 Every usable YouTube identity contributes `samples_per_identity` reconstructions
@@ -10,8 +10,8 @@ well outside the target window — mirroring the training-time convention.
 Usage (from repo root):
 
     conda activate marionette
-    PYTHONPATH=. python experiments/marionette_eval/run_same_identity.py \\
-        --config     experiments/marionette_eval/configs/same_identity.yaml \\
+    PYTHONPATH=. python experiments/marionette_eval/run_same_identity.py \
+        --config     experiments/marionette_eval/configs/same_identity.yaml \
         --checkpoint outputs/marionette_baseline/run_<ts>/checkpoints/<ckpt>.ckpt
 
 Outputs:

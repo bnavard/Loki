@@ -1,4 +1,4 @@
-"""
+r"""
 Entry script for the Marionette baseline — a full training run against the
 canonical recipe (`marionette/configs/base.yaml`).
 
@@ -11,7 +11,7 @@ Usage (from repo root):
     PYTHONPATH=. python experiments/marionette_baseline/run.py --gpus 0 1 2 3
 
     # Resume from a checkpoint
-    PYTHONPATH=. python experiments/marionette_baseline/run.py \\
+    PYTHONPATH=. python experiments/marionette_baseline/run.py \
         --resume outputs/marionette_baseline/run_YYYYmmdd_HHMMSS/checkpoints/th-<step>.ckpt
 
 Outputs:

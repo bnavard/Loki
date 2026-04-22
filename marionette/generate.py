@@ -1,4 +1,4 @@
-"""
+r"""
 Cross-identity talking-head inference.
 
 Given a reference clip (identity source β_ref) and a driver clip (motion
@@ -18,12 +18,12 @@ Recipe:
     K/V at every layer). The ref never occupies a slot in the output.
 
 Usage:
-    python marionette/generate.py \\
-        --checkpoint  outputs/<run>/<ckpt>.ckpt \\
-        --config      marionette/configs/base.yaml \\
-        --ref_clip    <reference_clip_id> \\
-        --ref_frame   0 \\
-        --driver_clip <driver_clip_id> \\
+    python marionette/generate.py \
+        --checkpoint  outputs/<run>/<ckpt>.ckpt \
+        --config      marionette/configs/base.yaml \
+        --ref_clip    <reference_clip_id> \
+        --ref_frame   0 \
+        --driver_clip <driver_clip_id> \
         --output_dir  outputs/generated/
 """
 from __future__ import annotations

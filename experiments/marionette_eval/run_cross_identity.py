@@ -1,4 +1,4 @@
-"""
+r"""
 Cross-identity evaluation runner.
 
 Every usable YouTube identity in the validation set appears exactly once as
@@ -10,15 +10,15 @@ optional audio). Produces N panels, N = number of usable identities.
 Usage (from repo root):
 
     conda activate marionette
-    PYTHONPATH=. python experiments/marionette_eval/run_cross_identity.py \\
-        --config     experiments/marionette_eval/configs/cross_identity.yaml \\
+    PYTHONPATH=. python experiments/marionette_eval/run_cross_identity.py \
+        --config     experiments/marionette_eval/configs/cross_identity.yaml \
         --checkpoint outputs/marionette_baseline/run_<ts>/checkpoints/<ckpt>.ckpt
 
     # Override output_dir / cfg_scale / seed on the fly:
-    PYTHONPATH=. python experiments/marionette_eval/run_cross_identity.py \\
-        --config      experiments/marionette_eval/configs/cross_identity.yaml \\
-        --checkpoint  outputs/marionette_baseline/run_<ts>/checkpoints/<ckpt>.ckpt \\
-        --output_dir  outputs/marionette_eval/cross_identity_cfg3 \\
+    PYTHONPATH=. python experiments/marionette_eval/run_cross_identity.py \
+        --config      experiments/marionette_eval/configs/cross_identity.yaml \
+        --checkpoint  outputs/marionette_baseline/run_<ts>/checkpoints/<ckpt>.ckpt \
+        --output_dir  outputs/marionette_eval/cross_identity_cfg3 \
         --cfg_scale   3.0
 
 Outputs:
