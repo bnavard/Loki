@@ -75,11 +75,16 @@ def retarget_driver_verts(
     crop_box: np.ndarray,
     n_frames: int,
     flame_skinner: CAP4DFlameSkinner,
+    driver_start: int = 0,
 ) -> tuple[np.ndarray, np.ndarray]:
     """Per-frame FLAME: β_ref + ψ_driver[t] + θ_driver[t] under the ref's camera.
 
     Same-identity case (ref_fit == driver_fit) is a no-op — returns the
     reference's own projected verts at each timestep.
+
+    `driver_start` shifts which driver frame corresponds to gen slot 0; the
+    window covered is `[driver_start, driver_start + n_frames)`, clamped at
+    the clip's tail.
 
     Returns:
         verts_ndc : (T, V, 3) pytorch3d NDC relative to crop_box
@@ -88,7 +93,7 @@ def retarget_driver_verts(
     n_drv = driver_fit["expr"].shape[0]
     verts_list, offsets_list = [], []
     for t in range(n_frames):
-        t_d = min(t, n_drv - 1)
+        t_d = min(driver_start + t, n_drv - 1)
         fi = {
             "shape":   ref_fit["shape"],
             "expr":    driver_fit["expr"][[t_d]],
@@ -119,6 +124,7 @@ def prepare_driver_frames(
     resolution: int,
     flame_skinner: CAP4DFlameSkinner,
     head_vert_ids: np.ndarray,
+    driver_start: int = 0,
 ) -> np.ndarray:
     """Load the driver's own face-cropped video frames for visualization.
 
@@ -127,12 +133,16 @@ def prepare_driver_frames(
     side-by-side "this is what the driver looked like" rows — not consumed by
     the diffusion model itself.
 
+    `driver_start` shifts the window covered to `[driver_start,
+    driver_start + n_frames)`; both fit indexing and `load_frame(video, t_d)`
+    follow the same offset so the fit and the pixel frames stay in sync.
+
     Returns: (T, resolution, resolution, 3) uint8 RGB.
     """
     n_drv = driver_fit["expr"].shape[0]
     frames = []
     for t in range(n_frames):
-        t_d = min(t, n_drv - 1)
+        t_d = min(driver_start + t, n_drv - 1)
         fi = {
             "shape":   driver_fit["shape"],
             "expr":    driver_fit["expr"][[t_d]],
