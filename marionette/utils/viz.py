@@ -362,8 +362,16 @@ class VisualizationCallback(Callback):
                         step_dir / f"sample_{n_generated:02d}.png", title=title,
                     )
 
-                    audio_i = batch.get("audio", None)
-                    audio_np = audio_i[i].cpu().numpy() if audio_i is not None else None
+                    # Only mux audio into the viz mp4 if the model actually
+                    # consumes it. The audio-off arm still receives audio in
+                    # the batch (dataset stays uniform across ablations), but
+                    # surfacing it in the viz would misrepresent what the
+                    # model had access to.
+                    if model.audio_encoder is not None:
+                        audio_i = batch.get("audio", None)
+                        audio_np = audio_i[i].cpu().numpy() if audio_i is not None else None
+                    else:
+                        audio_np = None
                     save_video_with_audio(
                         rows_data, labels, audio_np,
                         step_dir / f"sample_{n_generated:02d}.mp4",

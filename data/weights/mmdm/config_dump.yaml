@@ -1,0 +1,150 @@
+dataset_root: PATH_TO_DATASET
+
+gpu_batch_size: 1
+virtual_batch_size: 64
+logger_freq: 400
+learning_rate: 1e-4
+n_steps: 100000
+n_ref: 4
+save_every_n_steps: 1000
+init_path: "models/v2-1_512-ema-pruned.ckpt"
+
+dataset:
+  target: cap4d.datasets.concat_dataset.ConcatDataset
+  params:
+    dataset_configs:
+      - target: cap4d.datasets.flow_face_dataset.FlowFaceDataset
+        params:
+          data_path: ${dataset_root}/mead-compressed/
+          split: train
+          source_frame: shuffle
+          resolution: 512
+          n_views: 8
+          max_n_references: ${n_ref}
+          add_mouth: True
+          adapter_config:
+            target: cap4d.datasets.adapters.nersemble_adapter.NersembleAdapter
+            params:
+              is_compressed: True
+      - target: cap4d.datasets.flow_face_dataset.FlowFaceDataset
+        params:
+          data_path: ${dataset_root}/vfhq-compressed/
+          split: train
+          source_frame: shuffle
+          resolution: 512
+          n_views: 8
+          max_n_references: ${n_ref}
+          add_mouth: True
+          adapter_config:
+            target: cap4d.datasets.adapters.vfhq_adapter.VFHQAdapter
+            params:
+              is_compressed: True
+      - target: cap4d.datasets.flow_face_dataset.FlowFaceDataset
+        params:
+          data_path: ${dataset_root}/ava-compressed/
+          split: train
+          source_frame: shuffle
+          resolution: 512
+          n_views: 8
+          max_n_references: ${n_ref}
+          add_mouth: True
+          adapter_config:
+            target: cap4d.datasets.adapters.ava_adapter.AvaAdapter
+            params:
+              is_compressed: True
+      - target: cap4d.datasets.flow_face_dataset.FlowFaceDataset
+        params:
+          data_path: ${dataset_root}/nersemble-compressed/
+          split: train
+          source_frame: shuffle
+          resolution: 512
+          n_views: 8
+          max_n_references: ${n_ref}
+          add_mouth: True
+          adapter_config:
+            target: cap4d.datasets.adapters.nersemble_adapter.NersembleAdapter
+            params:
+              is_compressed: True
+
+model:
+  target: cap4d.mmdm.mmdm.MMLDM
+  params:
+    linear_start: 0.00085
+    linear_end: 0.0120
+    num_timesteps_cond: 1
+    log_every_t: 200
+    timesteps: 1000
+    n_frames: 8
+    first_stage_key: "jpg"
+    cond_stage_key: "txt"
+    control_key: "hint"
+    image_size: 64
+    channels: 4
+    cond_stage_trainable: False
+    conditioning_key: crossattn
+    monitor: val/loss_simple_ema
+    scale_factor: 0.18215
+    use_ema: False
+    only_mid_control: False
+
+    shift_schedule: True
+    zero_snr_shift: True
+    sqrt_shift: True
+    minus_one_shift: True
+
+    unet_config:
+      target: cap4d.mmdm.net.mmdm_unet.MMDMUnetModel
+      params:
+        # use_checkpoint: True
+        image_size: 64 # unused
+        time_steps: 8
+        temporal_mode: "3d"
+        in_channels: 4
+        out_channels: 4
+        model_channels: 320
+        condition_channels: 50  # 42 (pos map) + 3 (expr deform map) + 3 (ray map) + 1 (ref mask) + 1 (crop mask) 
+        attention_resolutions: [ 4, 2, 1 ]
+        num_res_blocks: 2
+        channel_mult: [ 1, 2, 4, 4 ]
+        num_head_channels: 64 
+        use_spatial_transformer: True
+        use_linear_in_transformer: True
+        transformer_depth: 1
+        context_dim: 1024
+        use_checkpoint: False
+        legacy: False
+
+    first_stage_config:
+      target: controlnet.ldm.models.autoencoder.AutoencoderKL
+      params:
+        embed_dim: 4
+        monitor: val/rec_loss
+        ddconfig:
+          #attn_type: "vanilla-xformers"
+          double_z: true
+          z_channels: 4
+          resolution: 512
+          in_channels: 3
+          out_ch: 3
+          ch: 128
+          ch_mult:
+          - 1
+          - 2
+          - 4
+          - 4
+          num_res_blocks: 2
+          attn_resolutions: []
+          dropout: 0.0
+        lossconfig:
+          target: torch.nn.Identity
+
+    cond_stage_config:
+      target: cap4d.mmdm.conditioning.cap4dcond.CAP4DConditioning
+      params:
+        image_size: 64
+        positional_channels: 42
+        positional_multiplier: 1.
+        super_resolution: 2
+        use_ray_directions: True
+        use_expr_deformation: True
+        use_crop_mask: True
