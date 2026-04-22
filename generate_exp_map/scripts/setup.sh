@@ -295,6 +295,15 @@ echo "===== Step 9: FLAME models ====="
 
 MICA_DATA="${P3DMM_DIR}/src/pixel3dmm/preprocessing/MICA/data"
 
+# Step 6b's MICA install already downloaded FLAME, but leaves files nested
+# (e.g. FLAME2020/FLAME2020/generic_model.pkl). Flatten so step 9 finds them.
+if [ -f "${MICA_DATA}/FLAME2023/FLAME2023/flame2023.pkl" ] && [ ! -f "${MICA_DATA}/FLAME2023/flame2023.pkl" ]; then
+    cp -r "${MICA_DATA}/FLAME2023/FLAME2023/"* "${MICA_DATA}/FLAME2023/"
+fi
+if [ -f "${MICA_DATA}/FLAME2020/FLAME2020/generic_model.pkl" ] && [ ! -f "${MICA_DATA}/FLAME2020/generic_model.pkl" ]; then
+    cp -r "${MICA_DATA}/FLAME2020/FLAME2020/"* "${MICA_DATA}/FLAME2020/"
+fi
+
 if [ -f "${MICA_DATA}/FLAME2023/flame2023.pkl" ] && [ -f "${MICA_DATA}/FLAME2020/generic_model.pkl" ]; then
     echo "SKIP: FLAME 2023 + 2020 models already present."
 else
