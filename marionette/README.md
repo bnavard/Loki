@@ -70,7 +70,7 @@ distribution cross-identity inference presents at test time.
 conda activate marionette
 
 # Recommended: through the experiment runner (loads base + overlays, sets output_dir)
-PYTHONPATH=. python experiments/warp_baseline/run.py --gpus 0 1 2 3
+PYTHONPATH=. python experiments/marionette_baseline/run.py --gpus 0 1 2 3
 
 # Ad-hoc: directly against the base config
 PYTHONPATH=. python marionette/train.py \

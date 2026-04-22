@@ -1,21 +1,21 @@
 """
-Entry script for the warp-conditioned baseline — a full training run against
-the canonical v3 recipe (`marionette/configs/base.yaml`).
+Entry script for the Marionette baseline — a full training run against the
+canonical recipe (`marionette/configs/base.yaml`).
 
 Usage (from repo root):
 
     # Single GPU
-    PYTHONPATH=. python experiments/warp_baseline/run.py
+    PYTHONPATH=. python experiments/marionette_baseline/run.py
 
     # Multi-GPU (DDP)
-    PYTHONPATH=. python experiments/warp_baseline/run.py --gpus 0 1 2 3
+    PYTHONPATH=. python experiments/marionette_baseline/run.py --gpus 0 1 2 3
 
     # Resume from a checkpoint
-    PYTHONPATH=. python experiments/warp_baseline/run.py \\
-        --resume outputs/warp_baseline/run_YYYYmmdd_HHMMSS/checkpoints/th-<step>.ckpt
+    PYTHONPATH=. python experiments/marionette_baseline/run.py \\
+        --resume outputs/marionette_baseline/run_YYYYmmdd_HHMMSS/checkpoints/th-<step>.ckpt
 
 Outputs:
-    outputs/warp_baseline/run_<timestamp>/
+    outputs/marionette_baseline/run_<timestamp>/
         config_resolved.yaml
         checkpoints/{th-<step>.ckpt, th-best-<step>-<val_loss>.ckpt}
         logs/ (TensorBoard)

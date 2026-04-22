@@ -1,7 +1,7 @@
-# Warp-conditioned baseline — uses marionette/configs/base.yaml unchanged.
+# Marionette baseline — uses marionette/configs/base.yaml unchanged.
 # This experiment IS the canonical v3 training recipe.
 
 base: marionette/configs/base.yaml
 
 # Only the experiment-specific settings live here.
-output_dir: outputs/warp_baseline
+output_dir: outputs/marionette_baseline

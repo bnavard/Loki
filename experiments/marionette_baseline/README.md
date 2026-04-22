@@ -5,10 +5,6 @@ Full training run against the canonical recipe
 overlays applied. Keep this experiment as the "point of truth" for what the
 model does out of the box.
 
-> Folder name (`warp_baseline`) is historical — the current recipe uses a
-> frozen reference UNet for identity (AnimateAnyone / ReferenceNet pattern),
-> not a backward warp. Rename pending.
-
 ## Recipe in one line
 
 Same-identity self-supervised video diffusion: 45-channel FLAME spatial
@@ -24,20 +20,20 @@ does not occupy a slot in the output.
 conda activate marionette
 
 # Single GPU
-PYTHONPATH=. python experiments/warp_baseline/run.py
+PYTHONPATH=. python experiments/marionette_baseline/run.py
 
 # Multi-GPU (DDP)
-PYTHONPATH=. python experiments/warp_baseline/run.py --gpus 0 1 2 3 4 5 6 7
+PYTHONPATH=. python experiments/marionette_baseline/run.py --gpus 0 1 2 3 4 5 6 7
 
 # Resume from a checkpoint
-PYTHONPATH=. python experiments/warp_baseline/run.py \
-    --resume outputs/warp_baseline/run_YYYYmmdd_HHMMSS/checkpoints/th-<step>.ckpt
+PYTHONPATH=. python experiments/marionette_baseline/run.py \
+    --resume outputs/marionette_baseline/run_YYYYmmdd_HHMMSS/checkpoints/th-<step>.ckpt
 ```
 
 ## Outputs
 
 ```
-outputs/warp_baseline/run_<timestamp>/
+outputs/marionette_baseline/run_<timestamp>/
 ├── config_resolved.yaml                           # snapshot at run start
 ├── checkpoints/
 │   ├── th-<step>.ckpt                             # every save_every_n_steps (periodic)
