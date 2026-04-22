@@ -1,0 +1,19 @@
+# Cross-identity evaluation — every usable YouTube identity in the val set
+# appears once as ref and once as driver (a derangement). Produces N panels,
+# one per identity.
+#
+# `checkpoint` must be populated before running (either here or via
+# `--checkpoint <path>` on the CLI).
+
+base: marionette/configs/base.yaml
+
+# Experiment-specific settings
+output_dir: outputs/marionette_eval/cross_identity
+checkpoint: null          # fill in or pass via --checkpoint
+
+seed: 42
+
+inference:
+  n_frames:     16
+  cfg_scale:    2.0
+  n_ddim_steps: 50

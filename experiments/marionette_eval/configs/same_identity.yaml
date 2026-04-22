@@ -1,0 +1,21 @@
+# Same-identity evaluation — every usable YouTube identity contributes
+# `samples_per_identity` reconstructions against its own motion. Ref frame and
+# driver window are drawn inside one randomly-chosen clip of that identity,
+# with the ref kept `min_ref_driver_gap` frames outside the target window.
+
+base: marionette/configs/base.yaml
+
+# Experiment-specific settings
+output_dir: outputs/marionette_eval/same_identity
+checkpoint: null          # fill in or pass via --checkpoint
+
+seed: 42
+
+inference:
+  n_frames:     16
+  cfg_scale:    2.0
+  n_ddim_steps: 50
+
+eval:
+  samples_per_identity: 2
+  min_ref_driver_gap:   16    # matches n_frames — ref never inside target window
