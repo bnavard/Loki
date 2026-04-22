@@ -1,4 +1,4 @@
-"""
+r"""
 Entry script for the audio ablation — trains the "audio off" arm of a
 controlled ablation against `marionette_baseline` (the audio-on arm).
 
@@ -17,7 +17,7 @@ Usage (from repo root):
     PYTHONPATH=. python experiments/ablate_audio/run.py --gpus 0 1 2 3
 
     # Resume from a checkpoint
-    PYTHONPATH=. python experiments/ablate_audio/run.py \\
+    PYTHONPATH=. python experiments/ablate_audio/run.py \
         --resume outputs/ablate_audio/audio_off/run_YYYYmmdd_HHMMSS/checkpoints/th-<step>.ckpt
 
 Outputs:
