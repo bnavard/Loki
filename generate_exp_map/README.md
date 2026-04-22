@@ -18,106 +18,96 @@ The final `fit.npz` at `data/flowface/{video_name}/fit.npz` contains per-frame F
 
 ## Setup
 
-### 1. Create the conda environment
+One script installs everything:
 
 ```bash
-conda create -n expmapgen python=3.9 -y
+cd <repo_root>
+bash generate_exp_map/scripts/setup.sh
+```
+
+The script is **idempotent** — completed steps are detected and skipped, so
+it's safe to re-run after a failure.
+
+### Before you run it
+
+| Requirement | Why | Notes |
+|---|---|---|
+| `conda` on `PATH` | creates the `expmapgen` env (Python 3.9) | Miniconda or Anaconda both fine. |
+| **CUDA 11.8 toolkit** with `nvcc` + headers | nvdiffrast compiles from source against CUDA 11.8 | The script searches `$CUDA_HOME_118`, `/usr/local/cuda-11.8`, `/opt/cuda-11.8`, and `$CONDA_PREFIX`. If none is valid it will prompt you interactively. A toolkit without `include/cuda_runtime.h` will be rejected — you need the full dev install, not just the driver. |
+| FLAME website account | FLAME 2020 + 2023 model downloads are credentialed | Register at <https://flame.is.tue.mpg.de/>. The script prompts for username (email) and password in step 9. |
+| `data/assets/flame/flame2023.pkl` and `flame2023_no_jaw.pkl` (if you want the chumpy fix) | step 9.5 rewrites these under NumPy 1.23 so downstream loaders don't hit `numpy._core` paths or chumpy breakage | Step skips any file it can't find and keeps going. A `.bak` is written the first time. |
+| `data/weights/l2cs/L2CSNet_gaze360.pkl` and `data/weights/rvm/rvm_mobilenetv3.pth` | Phase 2 gaze + background matting | Step 10 only warns if missing; setup still completes. Phase 2 will fail later without them. |
+| Outbound network | clones GitHub repos, pulls PyTorch / PyTorch3D / nvdiffrast / FLAME / gdown-hosted weights | Corporate proxies blocking `dl.fbaipublicfiles.com`, `drive.google.com`, or `download.is.tue.mpg.de` will break the run. |
+
+### What the script does
+
+1. `conda create -n expmapgen python=3.9`.
+2. PyTorch 2.0.1 + CUDA 11.8, PyTorch3D 0.7.4 (prebuilt wheel).
+3. **nvdiffrast** — installs GCC 11 via conda-forge, builds against CUDA 11.8
+   with `TORCH_CUDA_ARCH_LIST="7.0;7.5;8.0;8.6;8.9+PTX"` (the `+PTX` gives
+   forward compatibility on Hopper/H100+).
+4. Clones + patches pixel3dmm (`patches/pixel3dmm_fixes.patch`) and installs
+   it editable.
+5. Clones + patches facer, MICA, PIPNet; builds PIPNet's NMS extension;
+   downloads PIPNet + pixel3dmm checkpoints via `gdown`.
+6. Copies our optimized `pixel3dmm_{preprocessing,inference,segmentation}.py`
+   into `pixel3dmm/scripts/` and patches FaceBoxesV2 to use relative imports.
+7. Installs remaining deps (insightface, onnxruntime-gpu 1.16.3, face-alignment,
+   trimesh, decord, omegaconf, tyro, pytorch-lightning 2.0.0, …) and pins
+   `numpy==1.23` (chumpy + several MICA modules break on NumPy 2.x).
+8. Prompts for FLAME credentials, downloads FLAME 2023 + 2020 into MICA's
+   `data/` dir.
+9. Rewrites `data/assets/flame/flame2023*.pkl` with chumpy stripped and
+   numpy 1.x paths (see step 9.5 in the script).
+10. Creates `data/flame_tracking/{preprocessing,tracking,logs}` and
+    `data/flowface/`.
+
+### After it finishes
+
+```bash
 conda activate expmapgen
+cd <repo_root>
+bash generate_exp_map/scripts/run_multi_gpu.sh
 ```
 
-### 2. Install core packages
+No environment-variable exports are needed for the normal run scripts.
+If you invoke pixel3dmm's own tools directly, the legacy env vars are:
 
 ```bash
-# PyTorch 2.0.1 + CUDA 11.8
-pip install torch==2.0.1+cu118 torchvision==0.15.2+cu118 \
-    --index-url https://download.pytorch.org/whl/cu118
-
-# PyTorch3D 0.7.4 (prebuilt wheel for Python 3.9, CUDA 11.8, PyTorch 2.0.1)
-pip install --no-index --no-cache-dir pytorch3d==0.7.4 \
-    -f https://dl.fbaipublicfiles.com/pytorch3d/packaging/wheels/py39_cu118_pyt201/download.html
-
-# nvdiffrast (differentiable rasterizer, needed by pixel3dmm tracking)
-pip install --no-build-isolation git+https://github.com/NVlabs/nvdiffrast.git
-```
-
-### 3. Install pixel3dmm and dependencies
-
-```bash
-# Clone pixel3dmm
-git clone https://github.com/SimonGiebenhain/pixel3dmm.git /path/to/pixel3dmm
-
-# Apply our patches (bug fixes + compatibility)
-cd /path/to/pixel3dmm
-git apply <repo_root>/generate_exp_map/patches/pixel3dmm_fixes.patch
-
-# Install pixel3dmm in editable mode
-pip install -e .
-
-# Copy our optimized scripts into pixel3dmm
-cp <repo_root>/generate_exp_map/src/pixel3dmm_preprocessing.py scripts/
-cp <repo_root>/generate_exp_map/src/pixel3dmm_inference.py scripts/
-cp <repo_root>/generate_exp_map/src/pixel3dmm_segmentation.py scripts/
-```
-
-### 4. Install remaining dependencies
-
-```bash
-# Face detection and segmentation
-pip install insightface==0.7.3     # face detection (MICA preprocessing)
-pip install face-alignment          # face landmark detection (L2CS gaze tracking)
-pip install facer                   # face semantic segmentation (pixel3dmm preprocessing)
-
-# 3D and video
-pip install trimesh                 # mesh I/O (PLY loading)
-pip install decord                  # fast video decoding
-pip install omegaconf               # config management
-pip install tyro                    # CLI argument parsing
-
-# General
-pip install numpy==1.23.0 scipy opencv-python tqdm
-```
-
-### 5. Download pretrained weights
-
-```bash
-cd /path/to/pixel3dmm
-
-# FLAME 2023 model (requires registration at https://flame.is.tue.mpg.de/)
-bash download_flame2023.sh
-
-# pixel3dmm pretrained checkpoints (normals + UV prediction)
-# Follow pixel3dmm README for download instructions
-# Expected at: /path/to/pixel3dmm/pretrained_weights/{normals.ckpt, uv.ckpt}
-```
-
-Additional weights for Phase 2 (already in `data/weights/` if repo is set up):
-- `data/weights/l2cs/L2CSNet_gaze360.pkl` — gaze direction estimation ([L2CS-Net](https://github.com/Ahmednull/L2CS-Net))
-- `data/weights/rvm/rvm_mobilenetv3.pth` — background matting ([RobustVideoMatting](https://github.com/PeterL1n/RobustVideoMatting))
-
-### 6. Set environment variables
-
-```bash
-export PIXEL3DMM_CODE_BASE=/path/to/pixel3dmm
+export PIXEL3DMM_CODE_BASE=<repo_root>/generate_exp_map/pixel3dmm
 export PIXEL3DMM_PREPROCESSED_DATA=data/flame_tracking/preprocessing
 export PIXEL3DMM_TRACKING_OUTPUT=data/flame_tracking/tracking
 ```
 
-Add these to your `~/.bashrc` or activate script to persist across sessions.
+### Common failure modes
 
-### Version summary
+- **nvdiffrast build fails with "unsupported GNU version"** — the host GCC is
+  >11. The script installs conda-forge GCC 11 and points `CC`/`CXX` at it;
+  confirm `${CONDA_PREFIX}/bin/x86_64-conda-linux-gnu-gcc` exists after
+  step 4.
+- **nvdiffrast build can't find `cuda_runtime.h`** — the CUDA 11.8 path is
+  driver-only or a stub. Point `CUDA_HOME_118` at a full toolkit and re-run.
+- **`gdown` quota / "file too large to scan"** — Google Drive rate-limits
+  unauthenticated downloads. Re-run the script; it skips completed files.
+- **FLAME download returns a tiny HTML file** — the credentials were wrong;
+  the login page was saved instead of the zip. Delete the bad `.pkl`/`.zip`
+  under MICA `data/` and re-run.
+- **Step 9.5 errors loading a pkl** — usually means the pickle is already
+  the restored backup. Delete the `.bak` and re-run (or skip — the step is
+  optional if downstream loaders succeed as-is).
 
-| Package | Version | Purpose |
+### Key versions
+
+| Package | Version | Why pinned |
 |---|---|---|
-| Python | 3.9 | pixel3dmm compatibility |
-| PyTorch | 2.0.1+cu118 | GPU compute |
-| PyTorch3D | 0.7.4 | Differentiable mesh rendering |
-| nvdiffrast | latest | Differentiable rasterization (tracking) |
-| insightface | 0.7.3 | Face detection (MICA) |
-| face-alignment | latest | Face landmarks (gaze tracking) |
-| facer | latest | Face semantic segmentation |
-| trimesh | latest | Mesh I/O |
-| decord | 0.6.0 | Video decoding |
-| pixel3dmm | patched | 3D face tracking pipeline |
+| Python | 3.9 | pixel3dmm + facer + PIPNet compatibility |
+| PyTorch | 2.0.1+cu118 | matches the PyTorch3D wheel below |
+| PyTorch3D | 0.7.4 | prebuilt wheel for py39/cu118/pyt201 |
+| nvdiffrast | HEAD | built from source against CUDA 11.8 |
+| onnxruntime-gpu | 1.16.3 | last release supporting CUDA 11.8 + cuDNN 8 |
+| pytorch-lightning | 2.0.0 | MICA's Lightning-based tracking expects ≤2.0 |
+| numpy | 1.23 | chumpy and several MICA modules break on NumPy 2.x |
+| insightface | 0.7.3 | MICA preprocessing pin |
 
 ## Usage
 

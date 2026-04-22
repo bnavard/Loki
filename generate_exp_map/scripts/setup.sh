@@ -100,12 +100,34 @@ else
     fi
     echo "GCC: $(${CONDA_GCC} --version | head -1)"
 
-    CUDA_118="${CUDA_HOME_118:-/home/pouyan/cuda/cuda118}"
-    if [ ! -f "${CUDA_118}/bin/nvcc" ]; then
-        echo "ERROR: CUDA 11.8 not found at ${CUDA_118}/bin/nvcc"
-        echo "Set CUDA_HOME_118 to your CUDA 11.8 toolkit path."
-        exit 1
-    fi
+    # Locate a complete CUDA 11.8 toolkit (needs nvcc + headers + libs).
+    # Precedence: $CUDA_HOME_118 → common paths → interactive prompt.
+    validate_cuda118() {
+        local p="$1"
+        [ -n "$p" ] && [ -x "$p/bin/nvcc" ] && [ -f "$p/include/cuda_runtime.h" ] && \
+            "$p/bin/nvcc" --version 2>/dev/null | grep -q "release 11.8"
+    }
+
+    CUDA_118=""
+    for cand in "${CUDA_HOME_118:-}" /usr/local/cuda-11.8 /opt/cuda-11.8 "${CONDA_PREFIX}"; do
+        if validate_cuda118 "$cand"; then
+            CUDA_118="$cand"
+            break
+        fi
+    done
+
+    while [ -z "$CUDA_118" ]; do
+        echo ""
+        echo "CUDA 11.8 toolkit not found automatically."
+        echo "Need a directory containing bin/nvcc AND include/cuda_runtime.h (CUDA 11.8)."
+        read -p "Path to CUDA 11.8 toolkit (or 'q' to abort): " user_path
+        [ "$user_path" = "q" ] && { echo "Aborted."; exit 1; }
+        if validate_cuda118 "$user_path"; then
+            CUDA_118="$user_path"
+        else
+            echo "Invalid: missing nvcc, headers, or not CUDA 11.8. Try again."
+        fi
+    done
     echo "CUDA 11.8: ${CUDA_118}"
 
     # 8.9+PTX includes PTX for forward compat with SM 9.0+ (Hopper/H100/H200)
@@ -405,7 +427,7 @@ echo "===== Step 11: Output directories ====="
 mkdir -p "${REPO_ROOT}/data/flame_tracking/preprocessing"
 mkdir -p "${REPO_ROOT}/data/flame_tracking/tracking"
 mkdir -p "${REPO_ROOT}/data/flame_tracking/logs"
-mkdir -p "${REPO_ROOT}/data/flowface"
+mkdir -p "${REPO_ROOT}/data/flame_tracking/flowface"
 
 echo "OK"
 echo ""
