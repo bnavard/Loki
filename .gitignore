@@ -199,10 +199,7 @@ cython_debug/
 # Data folder: ignore every subdirectory except `assets/` and `weights/`.
 # Everything else under data/ (talkvid, flowface, derived, models, additional_data, ...)
 # is local / derived / large and should not be tracked.
-data/*
-!data/assets
-!data/weights
-!data/.gitkeep
+data
 
 # Outputs and checkpoints
 **/outputs
