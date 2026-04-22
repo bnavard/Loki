@@ -78,4 +78,4 @@ tensorboard==2.20.0
 tensorboardx==2.6.4
 
 # pytorch3d - install separately:
-#   pip install "git+https://github.com/facebookresearch/pytorch3d.git@stable"
+#   pip install --no-index --no-cache-dir pytorch3d -f https://dl.fbaipublicfiles.com/pytorch3d/packaging/wheels/py310_cu121_pyt240/download.html
