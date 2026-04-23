@@ -1,0 +1,22 @@
+# Condition ablation — "no FLAME" arm.
+#
+# Replaces the full 45-channel FLAME spatial conditioning (pos_enc + deform)
+# with the driver's face-cropped natural video (3ch, in [-1, 1]). Bypasses
+# the pytorch3d rasterizer entirely; the UNet's ConditioningEncoder drops
+# from 45 input channels to 3. See README for the motivation and the
+# spatial-mismatch caveat we expect this arm to surface.
+
+base: marionette/configs/base.yaml
+
+output_dir: outputs/condition_ablation/no_flame
+
+model:
+  params:
+    unet_config:
+      params:
+        condition_channels: 3
+
+    cond_stage_config:
+      target: experiments.condition_ablation.no_flame.conditioning.NaturalVideoConditioning
+      params:
+        image_size: 512

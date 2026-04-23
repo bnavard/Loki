@@ -1,0 +1,21 @@
+# Condition ablation — "no positional encoding" arm.
+#
+# Drops the 42-channel sinusoidal positional encoding of FLAME vertex
+# positions; keeps only the 3-channel per-vertex expression deformation map.
+# The UNet's ConditioningEncoder drops from 45 input channels to 3.
+
+base: marionette/configs/base.yaml
+
+output_dir: outputs/condition_ablation/no_posenc
+
+model:
+  params:
+    unet_config:
+      params:
+        condition_channels: 3
+
+    cond_stage_config:
+      target: experiments.condition_ablation.no_posenc.conditioning.DeformOnlyConditioning
+      params:
+        image_size: 512
+        std_expr_deformation: 0.0104

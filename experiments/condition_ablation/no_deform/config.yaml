@@ -1,0 +1,21 @@
+# Condition ablation — "no deformation" arm.
+#
+# Keeps the 42ch sinusoidal positional encoding of rasterized FLAME vertex
+# positions but REPLACES the 3ch per-vertex expression deformation map with
+# the 3ch natural driver video (face-cropped, normalized to [-1, 1]).
+# Total spatial_cond width stays at 45 — only the last three channels change
+# semantics, so the UNet's ConditioningEncoder is structurally identical to
+# the baseline.
+
+base: marionette/configs/base.yaml
+
+output_dir: outputs/condition_ablation/no_deform
+
+model:
+  params:
+    cond_stage_config:
+      target: experiments.condition_ablation.no_deform.conditioning.PosEncPlusVideoConditioning
+      params:
+        image_size: 512
+        positional_channels: 42
+        positional_multiplier: 1.0
