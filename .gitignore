@@ -229,5 +229,11 @@ scripts/download/clips_output/.
 # Tensorboard logs
 **/runs/
 
+# Cloned third-party baseline repos under the SOTA comparison suite.
+# Each `impl/` is a full working install of an upstream model (code +
+# weights + its own patched deps). Keep history clean; the baseline's
+# README pins the commit it was run against.
+experiments/sota_comparison/*/impl/
+
 # Misc
 .current_run_dir
