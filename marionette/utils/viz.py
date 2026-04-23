@@ -59,18 +59,41 @@ def slice_cond_rgb(
 
 
 def add_label(row_img: np.ndarray, label: str,
-              font_scale: float = 1.0, thickness: int = 2) -> np.ndarray:
-    """Prepend a 180-px black strip with the label on the left of a row image."""
-    H, W = row_img.shape[:2]
-    label_w = 180
-    canvas = np.zeros((H, label_w + W, 3), dtype=np.uint8)
-    canvas[:, label_w:] = row_img
+              font_scale: float = 1.0, thickness: int = 2,
+              label_w: int = 70) -> np.ndarray:
+    """Prepend a narrow black strip with the label drawn **vertically** on the
+    left of a row image. Text is rotated 90° counterclockwise so it reads
+    bottom-to-top along the strip — the standard matplotlib y-axis convention.
 
-    text_size = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, font_scale, thickness)[0]
+    Vertical orientation lets the strip stay narrow (default 70 px) without
+    clipping; horizontal labels at this font size were spilling past the old
+    180-px strip into the row content.
+
+    `label_w` must be the same across every row of a composite so vertical
+    concatenation still aligns; the default applies to both the PNG grid
+    and the audio-muxed mp4 rendered by the VisualizationCallback.
+    """
+    H, W = row_img.shape[:2]
+
+    # Draw text horizontally on a temp canvas sized `label_w` tall × H wide,
+    # then rotate CCW — the wide axis becomes the tall strip height, the
+    # tall axis becomes the narrow strip width. This keeps rendering crisp
+    # (no per-pixel text path) while giving us vertical text.
+    horiz = np.zeros((label_w, H, 3), dtype=np.uint8)
+    text_w, text_h = cv2.getTextSize(
+        label, cv2.FONT_HERSHEY_SIMPLEX, font_scale, thickness,
+    )[0]
+    tx = (H - text_w) // 2
+    ty = (label_w + text_h) // 2
     cv2.putText(
-        canvas, label, (10, (H + text_size[1]) // 2),
+        horiz, label, (tx, ty),
         cv2.FONT_HERSHEY_SIMPLEX, font_scale, (255, 255, 255), thickness, cv2.LINE_AA,
     )
+    vert_strip = cv2.rotate(horiz, cv2.ROTATE_90_COUNTERCLOCKWISE)   # (H, label_w, 3)
+
+    canvas = np.zeros((H, label_w + W, 3), dtype=np.uint8)
+    canvas[:, :label_w] = vert_strip
+    canvas[:,  label_w:] = row_img
     return canvas
 
 
