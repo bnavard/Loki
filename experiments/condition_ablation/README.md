@@ -66,6 +66,28 @@ the ConditioningEncoder's first conv is 3 input channels instead of 45
 the 45-channel cond tensor is the same width but its last 3 channels are
 driver-video pixels instead of rasterized deformation.
 
+### Load-bearing invariant: one ConditioningEncoder architecture for all arms
+
+The [`ConditioningEncoder`](../../marionette/model/conditioning_encoder.py)
+is the SD-style conv stack that downsamples `spatial_cond` from 512×512 to
+the UNet's 64×64 latent resolution and emits `model_channels=320` feature
+maps added to the first UNet feature map. **Its architecture must be
+identical across every arm in this folder** — the per-arm `conditioning.py`
+modules only decide *what tensor* gets fed in; they must never change the
+encoder itself. Concretely:
+
+- `cond_input_resolution: 512`, `cond_latent_resolution: 64`, and
+  `cond_stage_channels: [64, 128, 256, 320]` are inherited from base.yaml
+  and **are not overridden in any arm config**. Do not override them.
+- The **only** encoder parameter that differs across arms is
+  `condition_channels`, which sets the width of the stem `Conv3×3`'s
+  `in_channels`. The stem is ≤ 30k params out of a 1B+ model; the shape of
+  the per-pixel learning stack downstream is identical across arms.
+
+This keeps the ablation honest: the only variable a no_flame / no_posenc
+checkpoint sees vs. baseline is the *content* of `spatial_cond`, not the
+capacity of the module learning to consume it.
+
 ## Per-arm details
 
 ### audio_off — audio cross-attention off
