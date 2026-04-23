@@ -32,7 +32,7 @@ from torch.utils.data import DataLoader
 
 from ldm_base.ldm.util import instantiate_from_config
 from marionette.data.video_dataset import TalkingHeadDataset
-from marionette.utils import VisualizationCallback
+from marionette.utils import VisualizationCallback, install_log_tee
 
 
 def parse_args():
@@ -187,6 +187,13 @@ def run_training(
             time.sleep(0.5)
         run_dir = Path(marker.read_text().strip())
     run_output_dir = str(run_dir)
+
+    # Mirror terminal output into the run dir — rank 0 only, so multi-rank
+    # writes can't interleave. Installed AFTER run_dir is known (so we know
+    # where to write) but BEFORE model load, so the SD 2.1 weight-loading
+    # diagnostics and any warm-up messages are captured too.
+    if is_rank_zero():
+        install_log_tee(run_dir / "log.txt")
 
     model = load_model(cfg, init_path=cfg.get("init_path"))
     model.learning_rate = cfg.learning_rate

@@ -24,6 +24,7 @@ from marionette.utils.viz import (
     save_video_with_audio,
     make_grid_tensor,
 )
+from marionette.utils.log_tee import install_log_tee
 
 __all__ = [
     # audio
@@ -37,4 +38,6 @@ __all__ = [
     # viz
     "VisualizationCallback", "slice_cond_rgb", "add_label",
     "save_labeled_grid", "save_video_with_audio", "make_grid_tensor",
+    # log tee
+    "install_log_tee",
 ]
