@@ -10,14 +10,31 @@ window, and the model learns to reconstruct any target pose under any ref.
 
 Per-sample output:
     target_video : (T+1, H, W, 3)  slot 0 = ref, slots 1..T = target window
-                                    in [-1, 1].
+                                    in [-1, 1]. Slot 0 feeds the frozen
+                                    RefFeatureExtractor; slots 1..T are the
+                                    ε-MSE loss target for the gen UNet.
     audio        : (T, W_audio)    per-frame audio windows for the T gen
                                     slots only (no audio for the ref slot).
     hint:
         driver_verts  : (T, V, 3)  driver (= target) FLAME verts per gen slot,
                                     in pytorch3d NDC relative to the per-slot
-                                    face crop.
-        driver_deform : (T, V, 3)  per-vertex expression deformation.
+                                    face crop. Consumed by the default
+                                    FLAME-based conditioning to rasterize the
+                                    42ch positional encoding.
+        driver_deform : (T, V, 3)  per-vertex expression deformation, rasterized
+                                    alongside the vert-position prop to yield
+                                    the 3ch deform map in spatial_cond.
+        driver_video  : (T, H, W, 3) driver-frame pixels in [-1, 1], face-cropped
+                                    using the driver's own FLAME-derived head
+                                    bbox (identical recipe to slots 1..T of
+                                    target_video — in fact shares storage with
+                                    target_video[1:]). Not used by the default
+                                    SpatialConditioning (which reads only
+                                    driver_verts / driver_deform); it exists
+                                    so `experiments/condition_ablation/`
+                                    variants that swap FLAME for natural
+                                    driver-video pixels can read it without
+                                    any dataset flag.
 
 NDC = Normalized Device Coordinates — pytorch3d's convention: +x=left, +y=up,
 visible content in [-1, 1] per axis.
@@ -202,11 +219,17 @@ class TalkingHeadDataset(Dataset):
         offsets = np.stack(offsets_list[1:],  axis=0)   # (T, V, 3) gen only
         audio   = np.stack(audio_windows,     axis=0)   # (T, W_audio)
 
+        target_video = torch.from_numpy(imgs)                  # (T+1, H, W, 3)
         return {
-            "target_video": torch.from_numpy(imgs),
+            "target_video": target_video,
             "audio":        torch.from_numpy(audio),
             "hint": {
                 "driver_verts":  torch.from_numpy(verts),
                 "driver_deform": torch.from_numpy(offsets),
+                # Shares storage with `target_video[1:]` — zero memory overhead,
+                # single source of truth for the driver-slot pixels. Variants in
+                # `experiments/condition_ablation/` that condition on natural
+                # video read this key.
+                "driver_video":  target_video[1:],
             },
         }
