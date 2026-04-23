@@ -36,14 +36,26 @@ from .base import BenchmarkClip
 class EvalSample:
     """One inference job. Stable, JSON-serialisable.
 
-    `sample_id` is a zero-padded running index plus the underlying clip
-    identifiers, so output directories sort correctly under a lexicographic
-    glob and carry enough information to trace back to the source records.
+    `sample_id` is built from the clips' curated-manifest UIDs so the same
+    identity (and the same pair, under cross-identity) maps to the same
+    on-disk folder name across every baseline:
+        same_identity_reconstruction → "id_0457"
+        cross_identity               → "id_0457_id_0009"
     """
     sample_id:       str
     ref_clip:        BenchmarkClip
     driver_clip:     BenchmarkClip
     clip_duration_s: float   # how many seconds of the driver to use
+
+
+def _require_uid(c: BenchmarkClip) -> str:
+    if not c.uid:
+        raise ValueError(
+            f"BenchmarkClip {c.clip_id!r} has no uid — pairing requires clips "
+            f"loaded from the curated manifest. Build it first via "
+            f"`experiments/sota_comparison/dataset/build_manifest.py`."
+        )
+    return c.uid
 
 
 def same_identity_reconstruction(
@@ -68,15 +80,16 @@ def same_identity_reconstruction(
     take = min(n_samples, len(eligible))
     picks = rng.choice(len(eligible), size=take, replace=False)
 
-    return [
-        EvalSample(
-            sample_id       = f"{i:04d}_{eligible[int(idx)].clip_id}",
-            ref_clip        = eligible[int(idx)],
-            driver_clip     = eligible[int(idx)],
+    out: list[EvalSample] = []
+    for pick_idx in picks:
+        picked_clip = eligible[int(pick_idx)]
+        out.append(EvalSample(
+            sample_id       = _require_uid(picked_clip),    # e.g. "id_0457"
+            ref_clip        = picked_clip,
+            driver_clip     = picked_clip,
             clip_duration_s = clip_duration_s,
-        )
-        for i, idx in enumerate(picks)
-    ]
+        ))
+    return out
 
 
 def cross_identity(
@@ -97,23 +110,23 @@ def cross_identity(
          ref_id's eligible clips and one driver_clip from driver_id's.
       4. Emit up to `n_samples` samples (capped by the number of identities).
     """
-    by_id: dict[str, list[BenchmarkClip]] = {}
-    for c in clips:
-        if c.duration_s >= clip_duration_s:
-            by_id.setdefault(c.identity_id, []).append(c)
+    clips_by_identity: dict[str, list[BenchmarkClip]] = {}
+    for clip in clips:
+        if clip.duration_s >= clip_duration_s:
+            clips_by_identity.setdefault(clip.identity_id, []).append(clip)
 
-    ids = sorted(by_id.keys())
-    if len(ids) < 2:
+    identities = sorted(clips_by_identity.keys())
+    if len(identities) < 2:
         raise ValueError(
             f"Cross-identity needs ≥ 2 identities with clips ≥ "
-            f"{clip_duration_s}s; got {len(ids)}."
+            f"{clip_duration_s}s; got {len(identities)}."
         )
 
     rng = np.random.default_rng(seed)
 
     for _ in range(100):
-        perm = list(rng.permutation(len(ids)))
-        if all(perm[i] != i for i in range(len(ids))):
+        perm = list(rng.permutation(len(identities)))
+        if all(perm[i] != i for i in range(len(identities))):
             break
     else:
         raise RuntimeError(
@@ -122,13 +135,18 @@ def cross_identity(
         )
 
     samples: list[EvalSample] = []
-    for i in range(min(n_samples, len(ids))):
-        ref_id    = ids[i]
-        driver_id = ids[perm[i]]
-        ref_clip    = by_id[ref_id]   [int(rng.integers(0, len(by_id[ref_id])))]
-        driver_clip = by_id[driver_id][int(rng.integers(0, len(by_id[driver_id])))]
+    for i in range(min(n_samples, len(identities))):
+        ref_identity    = identities[i]
+        driver_identity = identities[perm[i]]
+        ref_clip    = clips_by_identity[ref_identity]   [
+            int(rng.integers(0, len(clips_by_identity[ref_identity])))
+        ]
+        driver_clip = clips_by_identity[driver_identity][
+            int(rng.integers(0, len(clips_by_identity[driver_identity])))
+        ]
         samples.append(EvalSample(
-            sample_id       = f"{i:04d}_ref-{ref_clip.clip_id}__drv-{driver_clip.clip_id}",
+            # e.g. "id_0457_id_0009" — ref's uid followed by driver's uid.
+            sample_id       = f"{_require_uid(ref_clip)}_{_require_uid(driver_clip)}",
             ref_clip        = ref_clip,
             driver_clip     = driver_clip,
             clip_duration_s = clip_duration_s,

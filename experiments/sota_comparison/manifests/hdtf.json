@@ -1,0 +1,2130 @@
+{
+  "dataset": "hdtf",
+  "n_total_identities": 212,
+  "n_identities": 212,
+  "n_samples_cap": 1000,
+  "seed": 42,
+  "selection_rule": "longest_clip_per_identity",
+  "clips": [
+    {
+      "clip_id": "WDA_AdamSchiff_000_972_1052",
+      "identity_id": "WDA_AdamSchiff",
+      "video_path": "data/benchmark/hdtf/clips/WDA_AdamSchiff_000_972_1052.mp4",
+      "n_frames": 81,
+      "fps": 25.0,
+      "width": 726,
+      "height": 726,
+      "uid": "id_0000"
+    },
+    {
+      "clip_id": "WDA_AdamSmith_000_972_1052",
+      "identity_id": "WDA_AdamSmith",
+      "video_path": "data/benchmark/hdtf/clips/WDA_AdamSmith_000_972_1052.mp4",
+      "n_frames": 81,
+      "fps": 25.0,
+      "width": 958,
+      "height": 958,
+      "uid": "id_0001"
+    },
+    {
+      "clip_id": "WDA_AlexandriaOcasioCortez_000_972_1052",
+      "identity_id": "WDA_AlexandriaOcasioCortez",
+      "video_path": "data/benchmark/hdtf/clips/WDA_AlexandriaOcasioCortez_000_972_1052.mp4",
+      "n_frames": 81,
+      "fps": 25.0,
+      "width": 590,
+      "height": 590,
+      "uid": "id_0002"
+    },
+    {
+      "clip_id": "WDA_AmyKlobuchar1_003_972_1052",
+      "identity_id": "WDA_AmyKlobuchar",
+      "video_path": "data/benchmark/hdtf/clips/WDA_AmyKlobuchar1_003_972_1052.mp4",
+      "n_frames": 81,
+      "fps": 25.0,
+      "width": 1000,
+      "height": 1000,
+      "uid": "id_0003"
+    },
+    {
+      "clip_id": "WDA_AndyKim_000_972_1052",
+      "identity_id": "WDA_AndyKim",
+      "video_path": "data/benchmark/hdtf/clips/WDA_AndyKim_000_972_1052.mp4",
+      "n_frames": 81,
+      "fps": 25.0,
+      "width": 822,
+      "height": 822,
+      "uid": "id_0004"
+    },
+    {
+      "clip_id": "WDA_AndyLevin_000_972_1052",
+      "identity_id": "WDA_AndyLevin",
+      "video_path": "data/benchmark/hdtf/clips/WDA_AndyLevin_000_972_1052.mp4",
+      "n_frames": 81,
+      "fps": 25.0,
+      "width": 818,
+      "height": 818,
+      "uid": "id_0005"
+    },
+    {
+      "clip_id": "WDA_AnnieKuster_000_972_1052",
+      "identity_id": "WDA_AnnieKuster",
+      "video_path": "data/benchmark/hdtf/clips/WDA_AnnieKuster_000_972_1052.mp4",
+      "n_frames": 81,
+      "fps": 25.0,
+      "width": 508,
+      "height": 508,
+      "uid": "id_0006"
+    },
+    {
+      "clip_id": "WDA_BarackObama_001_972_1052",
+      "identity_id": "WDA_BarackObama",
+      "video_path": "data/benchmark/hdtf/clips/WDA_BarackObama_001_972_1052.mp4",
+      "n_frames": 81,
+      "fps": 25.0,
+      "width": 1024,
+      "height": 1024,
+      "uid": "id_0007"
+    },
+    {
+      "clip_id": "WDA_BarbaraLee1_000_972_1052",
+      "identity_id": "WDA_BarbaraLee",
+      "video_path": "data/benchmark/hdtf/clips/WDA_BarbaraLee1_000_972_1052.mp4",
+      "n_frames": 81,
+      "fps": 25.0,
+      "width": 652,
+      "height": 652,
+      "uid": "id_0008"
+    },
+    {
+      "clip_id": "WDA_BenCardin1_000_972_1052",
+      "identity_id": "WDA_BenCardin",
+      "video_path": "data/benchmark/hdtf/clips/WDA_BenCardin1_000_972_1052.mp4",
+      "n_frames": 81,
+      "fps": 25.0,
+      "width": 738,
+      "height": 738,
+      "uid": "id_0009"
+    },
+    {
+      "clip_id": "WDA_BenRayLujn_000_972_1052",
+      "identity_id": "WDA_BenRayLujn",
+      "video_path": "data/benchmark/hdtf/clips/WDA_BenRayLujn_000_972_1052.mp4",
+      "n_frames": 81,
+      "fps": 25.0,
+      "width": 698,
+      "height": 698,
+      "uid": "id_0010"
+    },
+    {
+      "clip_id": "WDA_BennieThompson1_000_972_1052",
+      "identity_id": "WDA_BennieThompson",
+      "video_path": "data/benchmark/hdtf/clips/WDA_BennieThompson1_000_972_1052.mp4",
+      "n_frames": 81,
+      "fps": 25.0,
+      "width": 944,
+      "height": 944,
+      "uid": "id_0011"
+    },
+    {
+      "clip_id": "WDA_BernieSanders_000_972_1052",
+      "identity_id": "WDA_BernieSanders",
+      "video_path": "data/benchmark/hdtf/clips/WDA_BernieSanders_000_972_1052.mp4",
+      "n_frames": 81,
+      "fps": 25.0,
+      "width": 974,
+      "height": 974,
+      "uid": "id_0012"
+    },
+    {
+      "clip_id": "WDA_BettyMcCollum_000_972_1052",
+      "identity_id": "WDA_BettyMcCollum",
+      "video_path": "data/benchmark/hdtf/clips/WDA_BettyMcCollum_000_972_1052.mp4",
+      "n_frames": 81,
+      "fps": 25.0,
+      "width": 798,
+      "height": 798,
+      "uid": "id_0013"
+    },
+    {
+      "clip_id": "WDA_BillPascrell_000_972_1052",
+      "identity_id": "WDA_BillPascrell",
+      "video_path": "data/benchmark/hdtf/clips/WDA_BillPascrell_000_972_1052.mp4",
+      "n_frames": 81,
+      "fps": 25.0,
+      "width": 520,
+      "height": 520,
+      "uid": "id_0014"
+    },
+    {
+      "clip_id": "WDA_BillRichardson_000_972_1052",
+      "identity_id": "WDA_BillRichardson",
+      "video_path": "data/benchmark/hdtf/clips/WDA_BillRichardson_000_972_1052.mp4",
+      "n_frames": 81,
+      "fps": 25.0,
+      "width": 518,
+      "height": 518,
+      "uid": "id_0015"
+    },
+    {
+      "clip_id": "WDA_BobCasey1_000_81_161",
+      "identity_id": "WDA_BobCasey",
+      "video_path": "data/benchmark/hdtf/clips/WDA_BobCasey1_000_81_161.mp4",
+      "n_frames": 81,
+      "fps": 25.0,
+      "width": 650,
+      "height": 650,
+      "uid": "id_0016"
+    },
+    {
+      "clip_id": "WDA_BobMenendez_000_972_1052",
+      "identity_id": "WDA_BobMenendez",
+      "video_path": "data/benchmark/hdtf/clips/WDA_BobMenendez_000_972_1052.mp4",
+      "n_frames": 81,
+      "fps": 25.0,
+      "width": 746,
+      "height": 746,
+      "uid": "id_0017"
+    },
+    {
+      "clip_id": "WDA_BobbyScott_000_972_1052",
+      "identity_id": "WDA_BobbyScott",
+      "video_path": "data/benchmark/hdtf/clips/WDA_BobbyScott_000_972_1052.mp4",
+      "n_frames": 81,
+      "fps": 25.0,
+      "width": 428,
+      "height": 428,
+      "uid": "id_0018"
+    },
+    {
+      "clip_id": "WDA_BradSchneider_000_972_1052",
+      "identity_id": "WDA_BradSchneider",
+      "video_path": "data/benchmark/hdtf/clips/WDA_BradSchneider_000_972_1052.mp4",
+      "n_frames": 81,
+      "fps": 25.0,
+      "width": 820,
+      "height": 820,
+      "uid": "id_0019"
+    },
+    {
+      "clip_id": "WDA_BrendaLawrence_000_972_1052",
+      "identity_id": "WDA_BrendaLawrence",
+      "video_path": "data/benchmark/hdtf/clips/WDA_BrendaLawrence_000_972_1052.mp4",
+      "n_frames": 81,
+      "fps": 25.0,
+      "width": 740,
+      "height": 740,
+      "uid": "id_0020"
+    },
+    {
+      "clip_id": "WDA_BrianSchatz2_000_972_1052",
+      "identity_id": "WDA_BrianSchatz",
+      "video_path": "data/benchmark/hdtf/clips/WDA_BrianSchatz2_000_972_1052.mp4",
+      "n_frames": 81,
+      "fps": 25.0,
+      "width": 926,
+      "height": 926,
+      "uid": "id_0021"
+    },
+    {
+      "clip_id": "WDA_ByronDorgan1_000_972_1052",
+      "identity_id": "WDA_ByronDorgan",
+      "video_path": "data/benchmark/hdtf/clips/WDA_ByronDorgan1_000_972_1052.mp4",
+      "n_frames": 81,
+      "fps": 25.0,
+      "width": 716,
+      "height": 716,
+      "uid": "id_0022"
+    },
+    {
+      "clip_id": "WDA_CarolynMaloney1_000_972_1052",
+      "identity_id": "WDA_CarolynMaloney",
+      "video_path": "data/benchmark/hdtf/clips/WDA_CarolynMaloney1_000_972_1052.mp4",
+      "n_frames": 81,
+      "fps": 25.0,
+      "width": 864,
+      "height": 864,
+      "uid": "id_0023"
+    },
+    {
+      "clip_id": "WDA_CatherineCortezMasto_000_972_1052",
+      "identity_id": "WDA_CatherineCortezMasto",
+      "video_path": "data/benchmark/hdtf/clips/WDA_CatherineCortezMasto_000_972_1052.mp4",
+      "n_frames": 81,
+      "fps": 25.0,
+      "width": 770,
+      "height": 770,
+      "uid": "id_0024"
+    },
+    {
+      "clip_id": "WDA_CedricRichmond_000_972_1052",
+      "identity_id": "WDA_CedricRichmond",
+      "video_path": "data/benchmark/hdtf/clips/WDA_CedricRichmond_000_972_1052.mp4",
+      "n_frames": 81,
+      "fps": 25.0,
+      "width": 780,
+      "height": 780,
+      "uid": "id_0025"
+    },
+    {
+      "clip_id": "WDA_ChrisCoons_000_972_1052",
+      "identity_id": "WDA_ChrisCoons",
+      "video_path": "data/benchmark/hdtf/clips/WDA_ChrisCoons_000_972_1052.mp4",
+      "n_frames": 81,
+      "fps": 25.0,
+      "width": 484,
+      "height": 484,
+      "uid": "id_0026"
+    },
+    {
+      "clip_id": "WDA_ChrisMurphy1_000_972_1052",
+      "identity_id": "WDA_ChrisMurphy",
+      "video_path": "data/benchmark/hdtf/clips/WDA_ChrisMurphy1_000_972_1052.mp4",
+      "n_frames": 81,
+      "fps": 25.0,
+      "width": 868,
+      "height": 868,
+      "uid": "id_0027"
+    },
+    {
+      "clip_id": "WDA_ChrisVanHollen1_000_972_1052",
+      "identity_id": "WDA_ChrisVanHollen",
+      "video_path": "data/benchmark/hdtf/clips/WDA_ChrisVanHollen1_000_972_1052.mp4",
+      "n_frames": 81,
+      "fps": 25.0,
+      "width": 684,
+      "height": 684,
+      "uid": "id_0028"
+    },
+    {
+      "clip_id": "WDA_ChuckSchumer1_000_972_1052",
+      "identity_id": "WDA_ChuckSchumer",
+      "video_path": "data/benchmark/hdtf/clips/WDA_ChuckSchumer1_000_972_1052.mp4",
+      "n_frames": 81,
+      "fps": 25.0,
+      "width": 828,
+      "height": 828,
+      "uid": "id_0029"
+    },
+    {
+      "clip_id": "WDA_ColinAllred_000_972_1052",
+      "identity_id": "WDA_ColinAllred",
+      "video_path": "data/benchmark/hdtf/clips/WDA_ColinAllred_000_972_1052.mp4",
+      "n_frames": 81,
+      "fps": 25.0,
+      "width": 522,
+      "height": 522,
+      "uid": "id_0030"
+    },
+    {
+      "clip_id": "WDA_DanKildee_000_972_1052",
+      "identity_id": "WDA_DanKildee",
+      "video_path": "data/benchmark/hdtf/clips/WDA_DanKildee_000_972_1052.mp4",
+      "n_frames": 81,
+      "fps": 25.0,
+      "width": 240,
+      "height": 240,
+      "uid": "id_0031"
+    },
+    {
+      "clip_id": "WDA_DavidCicilline_000_972_1052",
+      "identity_id": "WDA_DavidCicilline",
+      "video_path": "data/benchmark/hdtf/clips/WDA_DavidCicilline_000_972_1052.mp4",
+      "n_frames": 81,
+      "fps": 25.0,
+      "width": 726,
+      "height": 726,
+      "uid": "id_0032"
+    },
+    {
+      "clip_id": "WDA_DebHaaland_000_972_1052",
+      "identity_id": "WDA_DebHaaland",
+      "video_path": "data/benchmark/hdtf/clips/WDA_DebHaaland_000_972_1052.mp4",
+      "n_frames": 81,
+      "fps": 25.0,
+      "width": 770,
+      "height": 770,
+      "uid": "id_0033"
+    },
+    {
+      "clip_id": "WDA_DebbieDingell1_000_972_1052",
+      "identity_id": "WDA_DebbieDingell",
+      "video_path": "data/benchmark/hdtf/clips/WDA_DebbieDingell1_000_972_1052.mp4",
+      "n_frames": 81,
+      "fps": 25.0,
+      "width": 516,
+      "height": 516,
+      "uid": "id_0034"
+    },
+    {
+      "clip_id": "WDA_DebbieStabenow1_000_972_1052",
+      "identity_id": "WDA_DebbieStabenow",
+      "video_path": "data/benchmark/hdtf/clips/WDA_DebbieStabenow1_000_972_1052.mp4",
+      "n_frames": 81,
+      "fps": 25.0,
+      "width": 566,
+      "height": 566,
+      "uid": "id_0035"
+    },
+    {
+      "clip_id": "WDA_DebbieWassermanSchultz_000_972_1052",
+      "identity_id": "WDA_DebbieWassermanSchultz",
+      "video_path": "data/benchmark/hdtf/clips/WDA_DebbieWassermanSchultz_000_972_1052.mp4",
+      "n_frames": 81,
+      "fps": 25.0,
+      "width": 378,
+      "height": 378,
+      "uid": "id_0036"
+    },
+    {
+      "clip_id": "WDA_DianaDeGette1_000_972_1052",
+      "identity_id": "WDA_DianaDeGette",
+      "video_path": "data/benchmark/hdtf/clips/WDA_DianaDeGette1_000_972_1052.mp4",
+      "n_frames": 81,
+      "fps": 25.0,
+      "width": 652,
+      "height": 652,
+      "uid": "id_0037"
+    },
+    {
+      "clip_id": "WDA_DianneFeinstein_000_972_1052",
+      "identity_id": "WDA_DianneFeinstein",
+      "video_path": "data/benchmark/hdtf/clips/WDA_DianneFeinstein_000_972_1052.mp4",
+      "n_frames": 81,
+      "fps": 25.0,
+      "width": 504,
+      "height": 504,
+      "uid": "id_0038"
+    },
+    {
+      "clip_id": "WDA_DickDurbin_000_972_1052",
+      "identity_id": "WDA_DickDurbin",
+      "video_path": "data/benchmark/hdtf/clips/WDA_DickDurbin_000_972_1052.mp4",
+      "n_frames": 81,
+      "fps": 25.0,
+      "width": 816,
+      "height": 816,
+      "uid": "id_0039"
+    },
+    {
+      "clip_id": "WDA_DonaldMcEachin_000_972_1052",
+      "identity_id": "WDA_DonaldMcEachin",
+      "video_path": "data/benchmark/hdtf/clips/WDA_DonaldMcEachin_000_972_1052.mp4",
+      "n_frames": 81,
+      "fps": 25.0,
+      "width": 756,
+      "height": 756,
+      "uid": "id_0040"
+    },
+    {
+      "clip_id": "WDA_DonnaShalala1_000_972_1052",
+      "identity_id": "WDA_DonnaShalala",
+      "video_path": "data/benchmark/hdtf/clips/WDA_DonnaShalala1_000_972_1052.mp4",
+      "n_frames": 81,
+      "fps": 25.0,
+      "width": 564,
+      "height": 564,
+      "uid": "id_0041"
+    },
+    {
+      "clip_id": "WDA_DougJones_000_972_1052",
+      "identity_id": "WDA_DougJones",
+      "video_path": "data/benchmark/hdtf/clips/WDA_DougJones_000_972_1052.mp4",
+      "n_frames": 81,
+      "fps": 25.0,
+      "width": 702,
+      "height": 702,
+      "uid": "id_0042"
+    },
+    {
+      "clip_id": "WDA_EdMarkey1_000_972_1052",
+      "identity_id": "WDA_EdMarkey",
+      "video_path": "data/benchmark/hdtf/clips/WDA_EdMarkey1_000_972_1052.mp4",
+      "n_frames": 81,
+      "fps": 25.0,
+      "width": 750,
+      "height": 750,
+      "uid": "id_0043"
+    },
+    {
+      "clip_id": "WDA_ElijahCummings_000_972_1052",
+      "identity_id": "WDA_ElijahCummings",
+      "video_path": "data/benchmark/hdtf/clips/WDA_ElijahCummings_000_972_1052.mp4",
+      "n_frames": 81,
+      "fps": 25.0,
+      "width": 772,
+      "height": 772,
+      "uid": "id_0044"
+    },
+    {
+      "clip_id": "WDA_EliotEngel_000_972_1052",
+      "identity_id": "WDA_EliotEngel",
+      "video_path": "data/benchmark/hdtf/clips/WDA_EliotEngel_000_972_1052.mp4",
+      "n_frames": 81,
+      "fps": 25.0,
+      "width": 584,
+      "height": 584,
+      "uid": "id_0045"
+    },
+    {
+      "clip_id": "WDA_EmanuelCleaver_000_972_1052",
+      "identity_id": "WDA_EmanuelCleaver",
+      "video_path": "data/benchmark/hdtf/clips/WDA_EmanuelCleaver_000_972_1052.mp4",
+      "n_frames": 81,
+      "fps": 25.0,
+      "width": 472,
+      "height": 472,
+      "uid": "id_0046"
+    },
+    {
+      "clip_id": "WDA_EricSwalwell_000_972_1052",
+      "identity_id": "WDA_EricSwalwell",
+      "video_path": "data/benchmark/hdtf/clips/WDA_EricSwalwell_000_972_1052.mp4",
+      "n_frames": 81,
+      "fps": 25.0,
+      "width": 844,
+      "height": 844,
+      "uid": "id_0047"
+    },
+    {
+      "clip_id": "WDA_FrankPallone1_000_972_1052",
+      "identity_id": "WDA_FrankPallone",
+      "video_path": "data/benchmark/hdtf/clips/WDA_FrankPallone1_000_972_1052.mp4",
+      "n_frames": 81,
+      "fps": 25.0,
+      "width": 590,
+      "height": 590,
+      "uid": "id_0048"
+    },
+    {
+      "clip_id": "WDA_GerryConnolly_000_972_1052",
+      "identity_id": "WDA_GerryConnolly",
+      "video_path": "data/benchmark/hdtf/clips/WDA_GerryConnolly_000_972_1052.mp4",
+      "n_frames": 81,
+      "fps": 25.0,
+      "width": 574,
+      "height": 574,
+      "uid": "id_0049"
+    },
+    {
+      "clip_id": "WDA_HakeemJeffries_000_972_1052",
+      "identity_id": "WDA_HakeemJeffries",
+      "video_path": "data/benchmark/hdtf/clips/WDA_HakeemJeffries_000_972_1052.mp4",
+      "n_frames": 81,
+      "fps": 25.0,
+      "width": 442,
+      "height": 442,
+      "uid": "id_0050"
+    },
+    {
+      "clip_id": "WDA_HaleyStevens_000_972_1052",
+      "identity_id": "WDA_HaleyStevens",
+      "video_path": "data/benchmark/hdtf/clips/WDA_HaleyStevens_000_972_1052.mp4",
+      "n_frames": 81,
+      "fps": 25.0,
+      "width": 570,
+      "height": 570,
+      "uid": "id_0051"
+    },
+    {
+      "clip_id": "WDA_HenryWaxman_000_972_1052",
+      "identity_id": "WDA_HenryWaxman",
+      "video_path": "data/benchmark/hdtf/clips/WDA_HenryWaxman_000_972_1052.mp4",
+      "n_frames": 81,
+      "fps": 25.0,
+      "width": 1026,
+      "height": 1026,
+      "uid": "id_0052"
+    },
+    {
+      "clip_id": "WDA_HillaryClinton_000_972_1052",
+      "identity_id": "WDA_HillaryClinton",
+      "video_path": "data/benchmark/hdtf/clips/WDA_HillaryClinton_000_972_1052.mp4",
+      "n_frames": 81,
+      "fps": 25.0,
+      "width": 790,
+      "height": 790,
+      "uid": "id_0053"
+    },
+    {
+      "clip_id": "WDA_JackReed1_000_972_1052",
+      "identity_id": "WDA_JackReed",
+      "video_path": "data/benchmark/hdtf/clips/WDA_JackReed1_000_972_1052.mp4",
+      "n_frames": 81,
+      "fps": 25.0,
+      "width": 550,
+      "height": 550,
+      "uid": "id_0054"
+    },
+    {
+      "clip_id": "WDA_JackyRosen1_000_9963_10043",
+      "identity_id": "WDA_JackyRosen",
+      "video_path": "data/benchmark/hdtf/clips/WDA_JackyRosen1_000_9963_10043.mp4",
+      "n_frames": 81,
+      "fps": 25.0,
+      "width": 674,
+      "height": 674,
+      "uid": "id_0055"
+    },
+    {
+      "clip_id": "WDA_JamesClyburn_000_972_1052",
+      "identity_id": "WDA_JamesClyburn",
+      "video_path": "data/benchmark/hdtf/clips/WDA_JamesClyburn_000_972_1052.mp4",
+      "n_frames": 81,
+      "fps": 25.0,
+      "width": 452,
+      "height": 452,
+      "uid": "id_0056"
+    },
+    {
+      "clip_id": "WDA_JanSchakowsky1_000_972_1052",
+      "identity_id": "WDA_JanSchakowsky",
+      "video_path": "data/benchmark/hdtf/clips/WDA_JanSchakowsky1_000_972_1052.mp4",
+      "n_frames": 81,
+      "fps": 25.0,
+      "width": 594,
+      "height": 594,
+      "uid": "id_0057"
+    },
+    {
+      "clip_id": "WDA_JeanneShaheen1_000_972_1052",
+      "identity_id": "WDA_JeanneShaheen",
+      "video_path": "data/benchmark/hdtf/clips/WDA_JeanneShaheen1_000_972_1052.mp4",
+      "n_frames": 81,
+      "fps": 25.0,
+      "width": 454,
+      "height": 454,
+      "uid": "id_0058"
+    },
+    {
+      "clip_id": "WDA_JeffMerkley1_000_972_1052",
+      "identity_id": "WDA_JeffMerkley",
+      "video_path": "data/benchmark/hdtf/clips/WDA_JeffMerkley1_000_972_1052.mp4",
+      "n_frames": 81,
+      "fps": 25.0,
+      "width": 704,
+      "height": 704,
+      "uid": "id_0059"
+    },
+    {
+      "clip_id": "WDA_JerryNadler_000_972_1052",
+      "identity_id": "WDA_JerryNadler",
+      "video_path": "data/benchmark/hdtf/clips/WDA_JerryNadler_000_972_1052.mp4",
+      "n_frames": 81,
+      "fps": 25.0,
+      "width": 434,
+      "height": 434,
+      "uid": "id_0060"
+    },
+    {
+      "clip_id": "WDA_JimmyGomez_000_972_1052",
+      "identity_id": "WDA_JimmyGomez",
+      "video_path": "data/benchmark/hdtf/clips/WDA_JimmyGomez_000_972_1052.mp4",
+      "n_frames": 81,
+      "fps": 25.0,
+      "width": 426,
+      "height": 426,
+      "uid": "id_0061"
+    },
+    {
+      "clip_id": "WDA_JoaquinCastro_000_972_1052",
+      "identity_id": "WDA_JoaquinCastro",
+      "video_path": "data/benchmark/hdtf/clips/WDA_JoaquinCastro_000_972_1052.mp4",
+      "n_frames": 81,
+      "fps": 25.0,
+      "width": 558,
+      "height": 558,
+      "uid": "id_0062"
+    },
+    {
+      "clip_id": "WDA_JoeCrowley1_003_81_161",
+      "identity_id": "WDA_JoeCrowley",
+      "video_path": "data/benchmark/hdtf/clips/WDA_JoeCrowley1_003_81_161.mp4",
+      "n_frames": 81,
+      "fps": 25.0,
+      "width": 766,
+      "height": 766,
+      "uid": "id_0063"
+    },
+    {
+      "clip_id": "WDA_JoeDonnelly_000_972_1052",
+      "identity_id": "WDA_JoeDonnelly",
+      "video_path": "data/benchmark/hdtf/clips/WDA_JoeDonnelly_000_972_1052.mp4",
+      "n_frames": 81,
+      "fps": 25.0,
+      "width": 754,
+      "height": 754,
+      "uid": "id_0064"
+    },
+    {
+      "clip_id": "WDA_JoeKennedy_000_972_1052",
+      "identity_id": "WDA_JoeKennedy",
+      "video_path": "data/benchmark/hdtf/clips/WDA_JoeKennedy_000_972_1052.mp4",
+      "n_frames": 81,
+      "fps": 25.0,
+      "width": 574,
+      "height": 574,
+      "uid": "id_0065"
+    },
+    {
+      "clip_id": "WDA_JoeManchin_000_972_1052",
+      "identity_id": "WDA_JoeManchin",
+      "video_path": "data/benchmark/hdtf/clips/WDA_JoeManchin_000_972_1052.mp4",
+      "n_frames": 81,
+      "fps": 25.0,
+      "width": 830,
+      "height": 830,
+      "uid": "id_0066"
+    },
+    {
+      "clip_id": "WDA_JoeNeguse_002_972_1052",
+      "identity_id": "WDA_JoeNeguse",
+      "video_path": "data/benchmark/hdtf/clips/WDA_JoeNeguse_002_972_1052.mp4",
+      "n_frames": 81,
+      "fps": 25.0,
+      "width": 836,
+      "height": 836,
+      "uid": "id_0067"
+    },
+    {
+      "clip_id": "WDA_JohnLewis0_000_972_1052",
+      "identity_id": "WDA_JohnLewis",
+      "video_path": "data/benchmark/hdtf/clips/WDA_JohnLewis0_000_972_1052.mp4",
+      "n_frames": 81,
+      "fps": 25.0,
+      "width": 498,
+      "height": 498,
+      "uid": "id_0068"
+    },
+    {
+      "clip_id": "WDA_JohnSarbanes1_000_972_1052",
+      "identity_id": "WDA_JohnSarbanes",
+      "video_path": "data/benchmark/hdtf/clips/WDA_JohnSarbanes1_000_972_1052.mp4",
+      "n_frames": 81,
+      "fps": 25.0,
+      "width": 636,
+      "height": 636,
+      "uid": "id_0069"
+    },
+    {
+      "clip_id": "WDA_JohnYarmuth_000_972_1052",
+      "identity_id": "WDA_JohnYarmuth",
+      "video_path": "data/benchmark/hdtf/clips/WDA_JohnYarmuth_000_972_1052.mp4",
+      "n_frames": 81,
+      "fps": 25.0,
+      "width": 388,
+      "height": 388,
+      "uid": "id_0070"
+    },
+    {
+      "clip_id": "WDA_JonTester1_000_972_1052",
+      "identity_id": "WDA_JonTester",
+      "video_path": "data/benchmark/hdtf/clips/WDA_JonTester1_000_972_1052.mp4",
+      "n_frames": 81,
+      "fps": 25.0,
+      "width": 892,
+      "height": 892,
+      "uid": "id_0071"
+    },
+    {
+      "clip_id": "WDA_KarenBass_000_972_1052",
+      "identity_id": "WDA_KarenBass",
+      "video_path": "data/benchmark/hdtf/clips/WDA_KarenBass_000_972_1052.mp4",
+      "n_frames": 81,
+      "fps": 25.0,
+      "width": 840,
+      "height": 840,
+      "uid": "id_0072"
+    },
+    {
+      "clip_id": "WDA_KatherineClark_000_972_1052",
+      "identity_id": "WDA_KatherineClark",
+      "video_path": "data/benchmark/hdtf/clips/WDA_KatherineClark_000_972_1052.mp4",
+      "n_frames": 81,
+      "fps": 25.0,
+      "width": 850,
+      "height": 850,
+      "uid": "id_0073"
+    },
+    {
+      "clip_id": "WDA_KathyCastor_000_972_1052",
+      "identity_id": "WDA_KathyCastor",
+      "video_path": "data/benchmark/hdtf/clips/WDA_KathyCastor_000_972_1052.mp4",
+      "n_frames": 81,
+      "fps": 25.0,
+      "width": 622,
+      "height": 622,
+      "uid": "id_0074"
+    },
+    {
+      "clip_id": "WDA_KatieHill_000_972_1052",
+      "identity_id": "WDA_KatieHill",
+      "video_path": "data/benchmark/hdtf/clips/WDA_KatieHill_000_972_1052.mp4",
+      "n_frames": 81,
+      "fps": 25.0,
+      "width": 548,
+      "height": 548,
+      "uid": "id_0075"
+    },
+    {
+      "clip_id": "WDA_KimSchrier_000_972_1052",
+      "identity_id": "WDA_KimSchrier",
+      "video_path": "data/benchmark/hdtf/clips/WDA_KimSchrier_000_972_1052.mp4",
+      "n_frames": 81,
+      "fps": 25.0,
+      "width": 806,
+      "height": 806,
+      "uid": "id_0076"
+    },
+    {
+      "clip_id": "WDA_KirstenGillibrand_000_972_1052",
+      "identity_id": "WDA_KirstenGillibrand",
+      "video_path": "data/benchmark/hdtf/clips/WDA_KirstenGillibrand_000_972_1052.mp4",
+      "n_frames": 81,
+      "fps": 25.0,
+      "width": 438,
+      "height": 438,
+      "uid": "id_0077"
+    },
+    {
+      "clip_id": "WDA_LaurenUnderwood_000_972_1052",
+      "identity_id": "WDA_LaurenUnderwood",
+      "video_path": "data/benchmark/hdtf/clips/WDA_LaurenUnderwood_000_972_1052.mp4",
+      "n_frames": 81,
+      "fps": 25.0,
+      "width": 942,
+      "height": 942,
+      "uid": "id_0078"
+    },
+    {
+      "clip_id": "WDA_LisaBluntRochester_000_972_1052",
+      "identity_id": "WDA_LisaBluntRochester",
+      "video_path": "data/benchmark/hdtf/clips/WDA_LisaBluntRochester_000_972_1052.mp4",
+      "n_frames": 81,
+      "fps": 25.0,
+      "width": 772,
+      "height": 772,
+      "uid": "id_0079"
+    },
+    {
+      "clip_id": "WDA_LloydDoggett1_000_972_1052",
+      "identity_id": "WDA_LloydDoggett",
+      "video_path": "data/benchmark/hdtf/clips/WDA_LloydDoggett1_000_972_1052.mp4",
+      "n_frames": 81,
+      "fps": 25.0,
+      "width": 778,
+      "height": 778,
+      "uid": "id_0080"
+    },
+    {
+      "clip_id": "WDA_LucilleRoybal_Allard_000_972_1052",
+      "identity_id": "WDA_LucilleRoybal_Allard",
+      "video_path": "data/benchmark/hdtf/clips/WDA_LucilleRoybal_Allard_000_972_1052.mp4",
+      "n_frames": 81,
+      "fps": 25.0,
+      "width": 806,
+      "height": 806,
+      "uid": "id_0081"
+    },
+    {
+      "clip_id": "WDA_LucyMcBath_000_972_1052",
+      "identity_id": "WDA_LucyMcBath",
+      "video_path": "data/benchmark/hdtf/clips/WDA_LucyMcBath_000_972_1052.mp4",
+      "n_frames": 81,
+      "fps": 25.0,
+      "width": 728,
+      "height": 728,
+      "uid": "id_0082"
+    },
+    {
+      "clip_id": "WDA_MaggieHassan_000_972_1052",
+      "identity_id": "WDA_MaggieHassan",
+      "video_path": "data/benchmark/hdtf/clips/WDA_MaggieHassan_000_972_1052.mp4",
+      "n_frames": 81,
+      "fps": 25.0,
+      "width": 776,
+      "height": 776,
+      "uid": "id_0083"
+    },
+    {
+      "clip_id": "WDA_MarciaFudge_000_972_1052",
+      "identity_id": "WDA_MarciaFudge",
+      "video_path": "data/benchmark/hdtf/clips/WDA_MarciaFudge_000_972_1052.mp4",
+      "n_frames": 81,
+      "fps": 25.0,
+      "width": 800,
+      "height": 800,
+      "uid": "id_0084"
+    },
+    {
+      "clip_id": "WDA_MarkWarner2_000_81_161",
+      "identity_id": "WDA_MarkWarner",
+      "video_path": "data/benchmark/hdtf/clips/WDA_MarkWarner2_000_81_161.mp4",
+      "n_frames": 81,
+      "fps": 25.0,
+      "width": 550,
+      "height": 550,
+      "uid": "id_0085"
+    },
+    {
+      "clip_id": "WDA_MartinHeinrich_000_972_1052",
+      "identity_id": "WDA_MartinHeinrich",
+      "video_path": "data/benchmark/hdtf/clips/WDA_MartinHeinrich_000_972_1052.mp4",
+      "n_frames": 81,
+      "fps": 25.0,
+      "width": 856,
+      "height": 856,
+      "uid": "id_0086"
+    },
+    {
+      "clip_id": "WDA_MattCartwright_000_972_1052",
+      "identity_id": "WDA_MattCartwright",
+      "video_path": "data/benchmark/hdtf/clips/WDA_MattCartwright_000_972_1052.mp4",
+      "n_frames": 81,
+      "fps": 25.0,
+      "width": 480,
+      "height": 480,
+      "uid": "id_0087"
+    },
+    {
+      "clip_id": "WDA_MazieHirono0_000_972_1052",
+      "identity_id": "WDA_MazieHirono",
+      "video_path": "data/benchmark/hdtf/clips/WDA_MazieHirono0_000_972_1052.mp4",
+      "n_frames": 81,
+      "fps": 25.0,
+      "width": 492,
+      "height": 492,
+      "uid": "id_0088"
+    },
+    {
+      "clip_id": "WDA_MichaelBennet_000_972_1052",
+      "identity_id": "WDA_MichaelBennet",
+      "video_path": "data/benchmark/hdtf/clips/WDA_MichaelBennet_000_972_1052.mp4",
+      "n_frames": 81,
+      "fps": 25.0,
+      "width": 462,
+      "height": 462,
+      "uid": "id_0089"
+    },
+    {
+      "clip_id": "WDA_MichelleLujanGrisham_000_972_1052",
+      "identity_id": "WDA_MichelleLujanGrisham",
+      "video_path": "data/benchmark/hdtf/clips/WDA_MichelleLujanGrisham_000_972_1052.mp4",
+      "n_frames": 81,
+      "fps": 25.0,
+      "width": 676,
+      "height": 676,
+      "uid": "id_0090"
+    },
+    {
+      "clip_id": "WDA_MichelleObama_000_972_1052",
+      "identity_id": "WDA_MichelleObama",
+      "video_path": "data/benchmark/hdtf/clips/WDA_MichelleObama_000_972_1052.mp4",
+      "n_frames": 81,
+      "fps": 25.0,
+      "width": 1016,
+      "height": 1016,
+      "uid": "id_0091"
+    },
+    {
+      "clip_id": "WDA_MikeDoyle_000_972_1052",
+      "identity_id": "WDA_MikeDoyle",
+      "video_path": "data/benchmark/hdtf/clips/WDA_MikeDoyle_000_972_1052.mp4",
+      "n_frames": 81,
+      "fps": 25.0,
+      "width": 602,
+      "height": 602,
+      "uid": "id_0092"
+    },
+    {
+      "clip_id": "WDA_MikeThompson0_000_972_1052",
+      "identity_id": "WDA_MikeThompson",
+      "video_path": "data/benchmark/hdtf/clips/WDA_MikeThompson0_000_972_1052.mp4",
+      "n_frames": 81,
+      "fps": 25.0,
+      "width": 490,
+      "height": 490,
+      "uid": "id_0093"
+    },
+    {
+      "clip_id": "WDA_NancyPelosi3_000_972_1052",
+      "identity_id": "WDA_NancyPelosi",
+      "video_path": "data/benchmark/hdtf/clips/WDA_NancyPelosi3_000_972_1052.mp4",
+      "n_frames": 81,
+      "fps": 25.0,
+      "width": 982,
+      "height": 982,
+      "uid": "id_0094"
+    },
+    {
+      "clip_id": "WDA_NitaLowey_000_972_1052",
+      "identity_id": "WDA_NitaLowey",
+      "video_path": "data/benchmark/hdtf/clips/WDA_NitaLowey_000_972_1052.mp4",
+      "n_frames": 81,
+      "fps": 25.0,
+      "width": 726,
+      "height": 726,
+      "uid": "id_0095"
+    },
+    {
+      "clip_id": "WDA_NydiaVelzquez_000_972_1052",
+      "identity_id": "WDA_NydiaVelzquez",
+      "video_path": "data/benchmark/hdtf/clips/WDA_NydiaVelzquez_000_972_1052.mp4",
+      "n_frames": 81,
+      "fps": 25.0,
+      "width": 680,
+      "height": 680,
+      "uid": "id_0096"
+    },
+    {
+      "clip_id": "WDA_PatrickLeahy1_000_9801_9881",
+      "identity_id": "WDA_PatrickLeahy",
+      "video_path": "data/benchmark/hdtf/clips/WDA_PatrickLeahy1_000_9801_9881.mp4",
+      "n_frames": 81,
+      "fps": 25.0,
+      "width": 896,
+      "height": 896,
+      "uid": "id_0097"
+    },
+    {
+      "clip_id": "WDA_PattyMurray1_000_972_1052",
+      "identity_id": "WDA_PattyMurray",
+      "video_path": "data/benchmark/hdtf/clips/WDA_PattyMurray1_000_972_1052.mp4",
+      "n_frames": 81,
+      "fps": 25.0,
+      "width": 850,
+      "height": 850,
+      "uid": "id_0098"
+    },
+    {
+      "clip_id": "WDA_PeterDeFazio_000_972_1052",
+      "identity_id": "WDA_PeterDeFazio",
+      "video_path": "data/benchmark/hdtf/clips/WDA_PeterDeFazio_000_972_1052.mp4",
+      "n_frames": 81,
+      "fps": 25.0,
+      "width": 782,
+      "height": 782,
+      "uid": "id_0099"
+    },
+    {
+      "clip_id": "WDA_RaulRuiz_000_972_1052",
+      "identity_id": "WDA_RaulRuiz",
+      "video_path": "data/benchmark/hdtf/clips/WDA_RaulRuiz_000_972_1052.mp4",
+      "n_frames": 81,
+      "fps": 25.0,
+      "width": 518,
+      "height": 518,
+      "uid": "id_0100"
+    },
+    {
+      "clip_id": "WDA_RichardBlumenthal_000_972_1052",
+      "identity_id": "WDA_RichardBlumenthal",
+      "video_path": "data/benchmark/hdtf/clips/WDA_RichardBlumenthal_000_972_1052.mp4",
+      "n_frames": 81,
+      "fps": 25.0,
+      "width": 780,
+      "height": 780,
+      "uid": "id_0101"
+    },
+    {
+      "clip_id": "WDA_RichardNeal1_000_972_1052",
+      "identity_id": "WDA_RichardNeal",
+      "video_path": "data/benchmark/hdtf/clips/WDA_RichardNeal1_000_972_1052.mp4",
+      "n_frames": 81,
+      "fps": 25.0,
+      "width": 726,
+      "height": 726,
+      "uid": "id_0102"
+    },
+    {
+      "clip_id": "WDA_RobinKelly_000_972_1052",
+      "identity_id": "WDA_RobinKelly",
+      "video_path": "data/benchmark/hdtf/clips/WDA_RobinKelly_000_972_1052.mp4",
+      "n_frames": 81,
+      "fps": 25.0,
+      "width": 616,
+      "height": 616,
+      "uid": "id_0103"
+    },
+    {
+      "clip_id": "WDA_RonWyden1_000_972_1052",
+      "identity_id": "WDA_RonWyden",
+      "video_path": "data/benchmark/hdtf/clips/WDA_RonWyden1_000_972_1052.mp4",
+      "n_frames": 81,
+      "fps": 25.0,
+      "width": 644,
+      "height": 644,
+      "uid": "id_0104"
+    },
+    {
+      "clip_id": "WDA_ScottPeters1_000_972_1052",
+      "identity_id": "WDA_ScottPeters",
+      "video_path": "data/benchmark/hdtf/clips/WDA_ScottPeters1_000_972_1052.mp4",
+      "n_frames": 81,
+      "fps": 25.0,
+      "width": 808,
+      "height": 808,
+      "uid": "id_0105"
+    },
+    {
+      "clip_id": "WDA_SeanCasten_000_972_1052",
+      "identity_id": "WDA_SeanCasten",
+      "video_path": "data/benchmark/hdtf/clips/WDA_SeanCasten_000_972_1052.mp4",
+      "n_frames": 81,
+      "fps": 25.0,
+      "width": 654,
+      "height": 654,
+      "uid": "id_0106"
+    },
+    {
+      "clip_id": "WDA_SeanPatrickMaloney_000_972_1052",
+      "identity_id": "WDA_SeanPatrickMaloney",
+      "video_path": "data/benchmark/hdtf/clips/WDA_SeanPatrickMaloney_000_972_1052.mp4",
+      "n_frames": 81,
+      "fps": 25.0,
+      "width": 880,
+      "height": 880,
+      "uid": "id_0107"
+    },
+    {
+      "clip_id": "WDA_SheldonWhitehouse1_000_972_1052",
+      "identity_id": "WDA_SheldonWhitehouse",
+      "video_path": "data/benchmark/hdtf/clips/WDA_SheldonWhitehouse1_000_972_1052.mp4",
+      "n_frames": 81,
+      "fps": 25.0,
+      "width": 760,
+      "height": 760,
+      "uid": "id_0108"
+    },
+    {
+      "clip_id": "WDA_SherrodBrown1_000_972_1052",
+      "identity_id": "WDA_SherrodBrown",
+      "video_path": "data/benchmark/hdtf/clips/WDA_SherrodBrown1_000_972_1052.mp4",
+      "n_frames": 81,
+      "fps": 25.0,
+      "width": 956,
+      "height": 956,
+      "uid": "id_0109"
+    },
+    {
+      "clip_id": "WDA_StenyHoyer_000_972_1052",
+      "identity_id": "WDA_StenyHoyer",
+      "video_path": "data/benchmark/hdtf/clips/WDA_StenyHoyer_000_972_1052.mp4",
+      "n_frames": 81,
+      "fps": 25.0,
+      "width": 494,
+      "height": 494,
+      "uid": "id_0110"
+    },
+    {
+      "clip_id": "WDA_StephanieMurphy_000_972_1052",
+      "identity_id": "WDA_StephanieMurphy",
+      "video_path": "data/benchmark/hdtf/clips/WDA_StephanieMurphy_000_972_1052.mp4",
+      "n_frames": 81,
+      "fps": 25.0,
+      "width": 574,
+      "height": 574,
+      "uid": "id_0111"
+    },
+    {
+      "clip_id": "WDA_SuzanDelBene_000_972_1052",
+      "identity_id": "WDA_SuzanDelBene",
+      "video_path": "data/benchmark/hdtf/clips/WDA_SuzanDelBene_000_972_1052.mp4",
+      "n_frames": 81,
+      "fps": 25.0,
+      "width": 502,
+      "height": 502,
+      "uid": "id_0112"
+    },
+    {
+      "clip_id": "WDA_TammyBaldwin1_000_972_1052",
+      "identity_id": "WDA_TammyBaldwin",
+      "video_path": "data/benchmark/hdtf/clips/WDA_TammyBaldwin1_000_972_1052.mp4",
+      "n_frames": 81,
+      "fps": 25.0,
+      "width": 790,
+      "height": 790,
+      "uid": "id_0113"
+    },
+    {
+      "clip_id": "WDA_TammyDuckworth_000_972_1052",
+      "identity_id": "WDA_TammyDuckworth",
+      "video_path": "data/benchmark/hdtf/clips/WDA_TammyDuckworth_000_972_1052.mp4",
+      "n_frames": 81,
+      "fps": 25.0,
+      "width": 684,
+      "height": 684,
+      "uid": "id_0114"
+    },
+    {
+      "clip_id": "WDA_TedDeutch_000_972_1052",
+      "identity_id": "WDA_TedDeutch",
+      "video_path": "data/benchmark/hdtf/clips/WDA_TedDeutch_000_972_1052.mp4",
+      "n_frames": 81,
+      "fps": 25.0,
+      "width": 746,
+      "height": 746,
+      "uid": "id_0115"
+    },
+    {
+      "clip_id": "WDA_TedLieu_000_972_1052",
+      "identity_id": "WDA_TedLieu",
+      "video_path": "data/benchmark/hdtf/clips/WDA_TedLieu_000_972_1052.mp4",
+      "n_frames": 81,
+      "fps": 25.0,
+      "width": 772,
+      "height": 772,
+      "uid": "id_0116"
+    },
+    {
+      "clip_id": "WDA_TerriSewell_000_972_1052",
+      "identity_id": "WDA_TerriSewell",
+      "video_path": "data/benchmark/hdtf/clips/WDA_TerriSewell_000_972_1052.mp4",
+      "n_frames": 81,
+      "fps": 25.0,
+      "width": 522,
+      "height": 522,
+      "uid": "id_0117"
+    },
+    {
+      "clip_id": "WDA_TimWalz_000_972_1052",
+      "identity_id": "WDA_TimWalz",
+      "video_path": "data/benchmark/hdtf/clips/WDA_TimWalz_000_972_1052.mp4",
+      "n_frames": 81,
+      "fps": 25.0,
+      "width": 626,
+      "height": 626,
+      "uid": "id_0118"
+    },
+    {
+      "clip_id": "WDA_TinaSmith_000_972_1052",
+      "identity_id": "WDA_TinaSmith",
+      "video_path": "data/benchmark/hdtf/clips/WDA_TinaSmith_000_972_1052.mp4",
+      "n_frames": 81,
+      "fps": 25.0,
+      "width": 586,
+      "height": 586,
+      "uid": "id_0119"
+    },
+    {
+      "clip_id": "WDA_TomCarper_000_972_1052",
+      "identity_id": "WDA_TomCarper",
+      "video_path": "data/benchmark/hdtf/clips/WDA_TomCarper_000_972_1052.mp4",
+      "n_frames": 81,
+      "fps": 25.0,
+      "width": 712,
+      "height": 712,
+      "uid": "id_0120"
+    },
+    {
+      "clip_id": "WDA_TomPerez_000_972_1052",
+      "identity_id": "WDA_TomPerez",
+      "video_path": "data/benchmark/hdtf/clips/WDA_TomPerez_000_972_1052.mp4",
+      "n_frames": 81,
+      "fps": 25.0,
+      "width": 1044,
+      "height": 1044,
+      "uid": "id_0121"
+    },
+    {
+      "clip_id": "WDA_TomUdall_000_972_1052",
+      "identity_id": "WDA_TomUdall",
+      "video_path": "data/benchmark/hdtf/clips/WDA_TomUdall_000_972_1052.mp4",
+      "n_frames": 81,
+      "fps": 25.0,
+      "width": 888,
+      "height": 888,
+      "uid": "id_0122"
+    },
+    {
+      "clip_id": "WDA_VeronicaEscobar1_000_972_1052",
+      "identity_id": "WDA_VeronicaEscobar",
+      "video_path": "data/benchmark/hdtf/clips/WDA_VeronicaEscobar1_000_972_1052.mp4",
+      "n_frames": 81,
+      "fps": 25.0,
+      "width": 772,
+      "height": 772,
+      "uid": "id_0123"
+    },
+    {
+      "clip_id": "WDA_WhipJimClyburn_000_972_1052",
+      "identity_id": "WDA_WhipJimClyburn",
+      "video_path": "data/benchmark/hdtf/clips/WDA_WhipJimClyburn_000_972_1052.mp4",
+      "n_frames": 81,
+      "fps": 25.0,
+      "width": 790,
+      "height": 790,
+      "uid": "id_0124"
+    },
+    {
+      "clip_id": "WDA_XavierBecerra_002_972_1052",
+      "identity_id": "WDA_XavierBecerra",
+      "video_path": "data/benchmark/hdtf/clips/WDA_XavierBecerra_002_972_1052.mp4",
+      "n_frames": 81,
+      "fps": 25.0,
+      "width": 706,
+      "height": 706,
+      "uid": "id_0125"
+    },
+    {
+      "clip_id": "WDA_ZoeLofgren_000_972_1052",
+      "identity_id": "WDA_ZoeLofgren",
+      "video_path": "data/benchmark/hdtf/clips/WDA_ZoeLofgren_000_972_1052.mp4",
+      "n_frames": 81,
+      "fps": 25.0,
+      "width": 590,
+      "height": 590,
+      "uid": "id_0126"
+    },
+    {
+      "clip_id": "WRA_AdamKinzinger2_002_81_161",
+      "identity_id": "WRA_AdamKinzinger",
+      "video_path": "data/benchmark/hdtf/clips/WRA_AdamKinzinger2_002_81_161.mp4",
+      "n_frames": 81,
+      "fps": 25.0,
+      "width": 464,
+      "height": 464,
+      "uid": "id_0127"
+    },
+    {
+      "clip_id": "WRA_AllenWest_000_972_1052",
+      "identity_id": "WRA_AllenWest",
+      "video_path": "data/benchmark/hdtf/clips/WRA_AllenWest_000_972_1052.mp4",
+      "n_frames": 81,
+      "fps": 25.0,
+      "width": 656,
+      "height": 656,
+      "uid": "id_0128"
+    },
+    {
+      "clip_id": "WRA_AnnMarieBuerkle_000_81_161",
+      "identity_id": "WRA_AnnMarieBuerkle",
+      "video_path": "data/benchmark/hdtf/clips/WRA_AnnMarieBuerkle_000_81_161.mp4",
+      "n_frames": 81,
+      "fps": 25.0,
+      "width": 406,
+      "height": 406,
+      "uid": "id_0129"
+    },
+    {
+      "clip_id": "WRA_AnnWagner_000_972_1052",
+      "identity_id": "WRA_AnnWagner",
+      "video_path": "data/benchmark/hdtf/clips/WRA_AnnWagner_000_972_1052.mp4",
+      "n_frames": 81,
+      "fps": 25.0,
+      "width": 726,
+      "height": 726,
+      "uid": "id_0130"
+    },
+    {
+      "clip_id": "WRA_AustinScott2_000_972_1052",
+      "identity_id": "WRA_AustinScott",
+      "video_path": "data/benchmark/hdtf/clips/WRA_AustinScott2_000_972_1052.mp4",
+      "n_frames": 81,
+      "fps": 25.0,
+      "width": 598,
+      "height": 598,
+      "uid": "id_0131"
+    },
+    {
+      "clip_id": "WRA_BillCassidy0_000_81_161",
+      "identity_id": "WRA_BillCassidy",
+      "video_path": "data/benchmark/hdtf/clips/WRA_BillCassidy0_000_81_161.mp4",
+      "n_frames": 81,
+      "fps": 25.0,
+      "width": 584,
+      "height": 584,
+      "uid": "id_0132"
+    },
+    {
+      "clip_id": "WRA_BobCorker_000_972_1052",
+      "identity_id": "WRA_BobCorker",
+      "video_path": "data/benchmark/hdtf/clips/WRA_BobCorker_000_972_1052.mp4",
+      "n_frames": 81,
+      "fps": 25.0,
+      "width": 466,
+      "height": 466,
+      "uid": "id_0133"
+    },
+    {
+      "clip_id": "WRA_BobGoodlatte0_003_891_971",
+      "identity_id": "WRA_BobGoodlatte",
+      "video_path": "data/benchmark/hdtf/clips/WRA_BobGoodlatte0_003_891_971.mp4",
+      "n_frames": 81,
+      "fps": 25.0,
+      "width": 474,
+      "height": 474,
+      "uid": "id_0134"
+    },
+    {
+      "clip_id": "WRA_BobbySchilling_002_891_971",
+      "identity_id": "WRA_BobbySchilling",
+      "video_path": "data/benchmark/hdtf/clips/WRA_BobbySchilling_002_891_971.mp4",
+      "n_frames": 81,
+      "fps": 25.0,
+      "width": 914,
+      "height": 914,
+      "uid": "id_0135"
+    },
+    {
+      "clip_id": "WRA_CandiceMiller0_000_972_1052",
+      "identity_id": "WRA_CandiceMiller",
+      "video_path": "data/benchmark/hdtf/clips/WRA_CandiceMiller0_000_972_1052.mp4",
+      "n_frames": 81,
+      "fps": 25.0,
+      "width": 430,
+      "height": 430,
+      "uid": "id_0136"
+    },
+    {
+      "clip_id": "WRA_CarlyFiorina_000_972_1052",
+      "identity_id": "WRA_CarlyFiorina",
+      "video_path": "data/benchmark/hdtf/clips/WRA_CarlyFiorina_000_972_1052.mp4",
+      "n_frames": 81,
+      "fps": 25.0,
+      "width": 472,
+      "height": 472,
+      "uid": "id_0137"
+    },
+    {
+      "clip_id": "WRA_CathyMcMorrisRodgers2_000_972_1052",
+      "identity_id": "WRA_CathyMcMorrisRodgers",
+      "video_path": "data/benchmark/hdtf/clips/WRA_CathyMcMorrisRodgers2_000_972_1052.mp4",
+      "n_frames": 81,
+      "fps": 25.0,
+      "width": 592,
+      "height": 592,
+      "uid": "id_0138"
+    },
+    {
+      "clip_id": "WRA_ChuckGrassley_000_972_1052",
+      "identity_id": "WRA_ChuckGrassley",
+      "video_path": "data/benchmark/hdtf/clips/WRA_ChuckGrassley_000_972_1052.mp4",
+      "n_frames": 81,
+      "fps": 25.0,
+      "width": 688,
+      "height": 688,
+      "uid": "id_0139"
+    },
+    {
+      "clip_id": "WRA_CoryGardner_000_972_1052",
+      "identity_id": "WRA_CoryGardner",
+      "video_path": "data/benchmark/hdtf/clips/WRA_CoryGardner_000_972_1052.mp4",
+      "n_frames": 81,
+      "fps": 25.0,
+      "width": 506,
+      "height": 506,
+      "uid": "id_0140"
+    },
+    {
+      "clip_id": "WRA_DanNewhouse_000_972_1052",
+      "identity_id": "WRA_DanNewhouse",
+      "video_path": "data/benchmark/hdtf/clips/WRA_DanNewhouse_000_972_1052.mp4",
+      "n_frames": 81,
+      "fps": 25.0,
+      "width": 728,
+      "height": 728,
+      "uid": "id_0141"
+    },
+    {
+      "clip_id": "WRA_DanSullivan_000_972_1052",
+      "identity_id": "WRA_DanSullivan",
+      "video_path": "data/benchmark/hdtf/clips/WRA_DanSullivan_000_972_1052.mp4",
+      "n_frames": 81,
+      "fps": 25.0,
+      "width": 420,
+      "height": 420,
+      "uid": "id_0142"
+    },
+    {
+      "clip_id": "WRA_DaveCamp_002_81_161",
+      "identity_id": "WRA_DaveCamp",
+      "video_path": "data/benchmark/hdtf/clips/WRA_DaveCamp_002_81_161.mp4",
+      "n_frames": 81,
+      "fps": 25.0,
+      "width": 702,
+      "height": 702,
+      "uid": "id_0143"
+    },
+    {
+      "clip_id": "WRA_DavidVitter_000_972_1052",
+      "identity_id": "WRA_DavidVitter",
+      "video_path": "data/benchmark/hdtf/clips/WRA_DavidVitter_000_972_1052.mp4",
+      "n_frames": 81,
+      "fps": 25.0,
+      "width": 624,
+      "height": 624,
+      "uid": "id_0144"
+    },
+    {
+      "clip_id": "WRA_DeanHeller_000_81_161",
+      "identity_id": "WRA_DeanHeller",
+      "video_path": "data/benchmark/hdtf/clips/WRA_DeanHeller_000_81_161.mp4",
+      "n_frames": 81,
+      "fps": 25.0,
+      "width": 488,
+      "height": 488,
+      "uid": "id_0145"
+    },
+    {
+      "clip_id": "WRA_DebFischer2_000_972_1052",
+      "identity_id": "WRA_DebFischer",
+      "video_path": "data/benchmark/hdtf/clips/WRA_DebFischer2_000_972_1052.mp4",
+      "n_frames": 81,
+      "fps": 25.0,
+      "width": 610,
+      "height": 610,
+      "uid": "id_0146"
+    },
+    {
+      "clip_id": "WRA_DianeBlack1_000_81_161",
+      "identity_id": "WRA_DianeBlack",
+      "video_path": "data/benchmark/hdtf/clips/WRA_DianeBlack1_000_81_161.mp4",
+      "n_frames": 81,
+      "fps": 25.0,
+      "width": 778,
+      "height": 778,
+      "uid": "id_0147"
+    },
+    {
+      "clip_id": "WRA_DuncanHunter_000_81_161",
+      "identity_id": "WRA_DuncanHunter",
+      "video_path": "data/benchmark/hdtf/clips/WRA_DuncanHunter_000_81_161.mp4",
+      "n_frames": 81,
+      "fps": 25.0,
+      "width": 850,
+      "height": 850,
+      "uid": "id_0148"
+    },
+    {
+      "clip_id": "WRA_EricCantor_000_972_1052",
+      "identity_id": "WRA_EricCantor",
+      "video_path": "data/benchmark/hdtf/clips/WRA_EricCantor_000_972_1052.mp4",
+      "n_frames": 81,
+      "fps": 25.0,
+      "width": 896,
+      "height": 896,
+      "uid": "id_0149"
+    },
+    {
+      "clip_id": "WRA_ErikPaulsen_003_81_161",
+      "identity_id": "WRA_ErikPaulsen",
+      "video_path": "data/benchmark/hdtf/clips/WRA_ErikPaulsen_003_81_161.mp4",
+      "n_frames": 81,
+      "fps": 25.0,
+      "width": 666,
+      "height": 666,
+      "uid": "id_0150"
+    },
+    {
+      "clip_id": "WRA_FredUpton_000_972_1052",
+      "identity_id": "WRA_FredUpton",
+      "video_path": "data/benchmark/hdtf/clips/WRA_FredUpton_000_972_1052.mp4",
+      "n_frames": 81,
+      "fps": 25.0,
+      "width": 506,
+      "height": 506,
+      "uid": "id_0151"
+    },
+    {
+      "clip_id": "WRA_GeoffDavis_000_81_161",
+      "identity_id": "WRA_GeoffDavis",
+      "video_path": "data/benchmark/hdtf/clips/WRA_GeoffDavis_000_81_161.mp4",
+      "n_frames": 81,
+      "fps": 25.0,
+      "width": 526,
+      "height": 526,
+      "uid": "id_0152"
+    },
+    {
+      "clip_id": "WRA_GeorgeLeMieux_001_891_971",
+      "identity_id": "WRA_GeorgeLeMieux",
+      "video_path": "data/benchmark/hdtf/clips/WRA_GeorgeLeMieux_001_891_971.mp4",
+      "n_frames": 81,
+      "fps": 25.0,
+      "width": 452,
+      "height": 452,
+      "uid": "id_0153"
+    },
+    {
+      "clip_id": "WRA_GregWalden_000_81_161",
+      "identity_id": "WRA_GregWalden",
+      "video_path": "data/benchmark/hdtf/clips/WRA_GregWalden_000_81_161.mp4",
+      "n_frames": 81,
+      "fps": 25.0,
+      "width": 406,
+      "height": 406,
+      "uid": "id_0154"
+    },
+    {
+      "clip_id": "WRA_JaimeHerreraBeutler0_000_81_161",
+      "identity_id": "WRA_JaimeHerreraBeutler",
+      "video_path": "data/benchmark/hdtf/clips/WRA_JaimeHerreraBeutler0_000_81_161.mp4",
+      "n_frames": 81,
+      "fps": 25.0,
+      "width": 742,
+      "height": 742,
+      "uid": "id_0155"
+    },
+    {
+      "clip_id": "WRA_JebHensarling2_003_972_1052",
+      "identity_id": "WRA_JebHensarling",
+      "video_path": "data/benchmark/hdtf/clips/WRA_JebHensarling2_003_972_1052.mp4",
+      "n_frames": 81,
+      "fps": 25.0,
+      "width": 450,
+      "height": 450,
+      "uid": "id_0156"
+    },
+    {
+      "clip_id": "WRA_JeffFlake_002_972_1052",
+      "identity_id": "WRA_JeffFlake",
+      "video_path": "data/benchmark/hdtf/clips/WRA_JeffFlake_002_972_1052.mp4",
+      "n_frames": 81,
+      "fps": 25.0,
+      "width": 840,
+      "height": 840,
+      "uid": "id_0157"
+    },
+    {
+      "clip_id": "WRA_JimInhofe_000_972_1052",
+      "identity_id": "WRA_JimInhofe",
+      "video_path": "data/benchmark/hdtf/clips/WRA_JimInhofe_000_972_1052.mp4",
+      "n_frames": 81,
+      "fps": 25.0,
+      "width": 792,
+      "height": 792,
+      "uid": "id_0158"
+    },
+    {
+      "clip_id": "WRA_JimRisch_000_972_1052",
+      "identity_id": "WRA_JimRisch",
+      "video_path": "data/benchmark/hdtf/clips/WRA_JimRisch_000_972_1052.mp4",
+      "n_frames": 81,
+      "fps": 25.0,
+      "width": 718,
+      "height": 718,
+      "uid": "id_0159"
+    },
+    {
+      "clip_id": "WRA_JoeHeck1_000_81_161",
+      "identity_id": "WRA_JoeHeck",
+      "video_path": "data/benchmark/hdtf/clips/WRA_JoeHeck1_000_81_161.mp4",
+      "n_frames": 81,
+      "fps": 25.0,
+      "width": 516,
+      "height": 516,
+      "uid": "id_0160"
+    },
+    {
+      "clip_id": "WRA_JoePitts_000_972_1052",
+      "identity_id": "WRA_JoePitts",
+      "video_path": "data/benchmark/hdtf/clips/WRA_JoePitts_000_972_1052.mp4",
+      "n_frames": 81,
+      "fps": 25.0,
+      "width": 418,
+      "height": 418,
+      "uid": "id_0161"
+    },
+    {
+      "clip_id": "WRA_JohnBarrasso1_000_972_1052",
+      "identity_id": "WRA_JohnBarrasso",
+      "video_path": "data/benchmark/hdtf/clips/WRA_JohnBarrasso1_000_972_1052.mp4",
+      "n_frames": 81,
+      "fps": 25.0,
+      "width": 828,
+      "height": 828,
+      "uid": "id_0162"
+    },
+    {
+      "clip_id": "WRA_JohnBoehner1_000_972_1052",
+      "identity_id": "WRA_JohnBoehner",
+      "video_path": "data/benchmark/hdtf/clips/WRA_JohnBoehner1_000_972_1052.mp4",
+      "n_frames": 81,
+      "fps": 25.0,
+      "width": 734,
+      "height": 734,
+      "uid": "id_0163"
+    },
+    {
+      "clip_id": "WRA_JohnBoozman_000_972_1052",
+      "identity_id": "WRA_JohnBoozman",
+      "video_path": "data/benchmark/hdtf/clips/WRA_JohnBoozman_000_972_1052.mp4",
+      "n_frames": 81,
+      "fps": 25.0,
+      "width": 694,
+      "height": 694,
+      "uid": "id_0164"
+    },
+    {
+      "clip_id": "WRA_JohnHoeven_000_972_1052",
+      "identity_id": "WRA_JohnHoeven",
+      "video_path": "data/benchmark/hdtf/clips/WRA_JohnHoeven_000_972_1052.mp4",
+      "n_frames": 81,
+      "fps": 25.0,
+      "width": 620,
+      "height": 620,
+      "uid": "id_0165"
+    },
+    {
+      "clip_id": "WRA_JohnKasich3_000_891_971",
+      "identity_id": "WRA_JohnKasich",
+      "video_path": "data/benchmark/hdtf/clips/WRA_JohnKasich3_000_891_971.mp4",
+      "n_frames": 81,
+      "fps": 25.0,
+      "width": 746,
+      "height": 746,
+      "uid": "id_0166"
+    },
+    {
+      "clip_id": "WRA_JohnThune_000_972_1052",
+      "identity_id": "WRA_JohnThune",
+      "video_path": "data/benchmark/hdtf/clips/WRA_JohnThune_000_972_1052.mp4",
+      "n_frames": 81,
+      "fps": 25.0,
+      "width": 536,
+      "height": 536,
+      "uid": "id_0167"
+    },
+    {
+      "clip_id": "WRA_JohnnyIsakson_001_972_1052",
+      "identity_id": "WRA_JohnnyIsakson",
+      "video_path": "data/benchmark/hdtf/clips/WRA_JohnnyIsakson_001_972_1052.mp4",
+      "n_frames": 81,
+      "fps": 25.0,
+      "width": 456,
+      "height": 456,
+      "uid": "id_0168"
+    },
+    {
+      "clip_id": "WRA_JonKyl_000_81_161",
+      "identity_id": "WRA_JonKyl",
+      "video_path": "data/benchmark/hdtf/clips/WRA_JonKyl_000_81_161.mp4",
+      "n_frames": 81,
+      "fps": 25.0,
+      "width": 834,
+      "height": 834,
+      "uid": "id_0169"
+    },
+    {
+      "clip_id": "WRA_JoniErnst1_000_972_1052",
+      "identity_id": "WRA_JoniErnst",
+      "video_path": "data/benchmark/hdtf/clips/WRA_JoniErnst1_000_972_1052.mp4",
+      "n_frames": 81,
+      "fps": 25.0,
+      "width": 596,
+      "height": 596,
+      "uid": "id_0170"
+    },
+    {
+      "clip_id": "WRA_JuddGregg_002_81_161",
+      "identity_id": "WRA_JuddGregg",
+      "video_path": "data/benchmark/hdtf/clips/WRA_JuddGregg_002_81_161.mp4",
+      "n_frames": 81,
+      "fps": 25.0,
+      "width": 778,
+      "height": 778,
+      "uid": "id_0171"
+    },
+    {
+      "clip_id": "WRA_KayBaileyHutchison_000_972_1052",
+      "identity_id": "WRA_KayBaileyHutchison",
+      "video_path": "data/benchmark/hdtf/clips/WRA_KayBaileyHutchison_000_972_1052.mp4",
+      "n_frames": 81,
+      "fps": 25.0,
+      "width": 736,
+      "height": 736,
+      "uid": "id_0172"
+    },
+    {
+      "clip_id": "WRA_KellyAyotte_000_972_1052",
+      "identity_id": "WRA_KellyAyotte",
+      "video_path": "data/benchmark/hdtf/clips/WRA_KellyAyotte_000_972_1052.mp4",
+      "n_frames": 81,
+      "fps": 25.0,
+      "width": 614,
+      "height": 614,
+      "uid": "id_0173"
+    },
+    {
+      "clip_id": "WRA_KevinBrady_000_972_1052",
+      "identity_id": "WRA_KevinBrady",
+      "video_path": "data/benchmark/hdtf/clips/WRA_KevinBrady_000_972_1052.mp4",
+      "n_frames": 81,
+      "fps": 25.0,
+      "width": 518,
+      "height": 518,
+      "uid": "id_0174"
+    },
+    {
+      "clip_id": "WRA_KevinMcCarthy0_001_972_1052",
+      "identity_id": "WRA_KevinMcCarthy",
+      "video_path": "data/benchmark/hdtf/clips/WRA_KevinMcCarthy0_001_972_1052.mp4",
+      "n_frames": 81,
+      "fps": 25.0,
+      "width": 432,
+      "height": 432,
+      "uid": "id_0175"
+    },
+    {
+      "clip_id": "WRA_KristiNoem2_001_972_1052",
+      "identity_id": "WRA_KristiNoem",
+      "video_path": "data/benchmark/hdtf/clips/WRA_KristiNoem2_001_972_1052.mp4",
+      "n_frames": 81,
+      "fps": 25.0,
+      "width": 756,
+      "height": 756,
+      "uid": "id_0176"
+    },
+    {
+      "clip_id": "WRA_LamarAlexander_000_972_1052",
+      "identity_id": "WRA_LamarAlexander",
+      "video_path": "data/benchmark/hdtf/clips/WRA_LamarAlexander_000_972_1052.mp4",
+      "n_frames": 81,
+      "fps": 25.0,
+      "width": 624,
+      "height": 624,
+      "uid": "id_0177"
+    },
+    {
+      "clip_id": "WRA_LisaMurkowski0_000_972_1052",
+      "identity_id": "WRA_LisaMurkowski",
+      "video_path": "data/benchmark/hdtf/clips/WRA_LisaMurkowski0_000_972_1052.mp4",
+      "n_frames": 81,
+      "fps": 25.0,
+      "width": 524,
+      "height": 524,
+      "uid": "id_0178"
+    },
+    {
+      "clip_id": "WRA_LynnJenkins_001_891_971",
+      "identity_id": "WRA_LynnJenkins",
+      "video_path": "data/benchmark/hdtf/clips/WRA_LynnJenkins_001_891_971.mp4",
+      "n_frames": 81,
+      "fps": 25.0,
+      "width": 450,
+      "height": 450,
+      "uid": "id_0179"
+    },
+    {
+      "clip_id": "WRA_MarcoRubio_000_81_161",
+      "identity_id": "WRA_MarcoRubio",
+      "video_path": "data/benchmark/hdtf/clips/WRA_MarcoRubio_000_81_161.mp4",
+      "n_frames": 81,
+      "fps": 25.0,
+      "width": 692,
+      "height": 692,
+      "uid": "id_0180"
+    },
+    {
+      "clip_id": "WRA_MarkwayneMullin_001_81_161",
+      "identity_id": "WRA_MarkwayneMullin",
+      "video_path": "data/benchmark/hdtf/clips/WRA_MarkwayneMullin_001_81_161.mp4",
+      "n_frames": 81,
+      "fps": 25.0,
+      "width": 636,
+      "height": 636,
+      "uid": "id_0181"
+    },
+    {
+      "clip_id": "WRA_MarshaBlackburn0_000_972_1052",
+      "identity_id": "WRA_MarshaBlackburn",
+      "video_path": "data/benchmark/hdtf/clips/WRA_MarshaBlackburn0_000_972_1052.mp4",
+      "n_frames": 81,
+      "fps": 25.0,
+      "width": 604,
+      "height": 604,
+      "uid": "id_0182"
+    },
+    {
+      "clip_id": "WRA_MichaelSteele_001_81_161",
+      "identity_id": "WRA_MichaelSteele",
+      "video_path": "data/benchmark/hdtf/clips/WRA_MichaelSteele_001_81_161.mp4",
+      "n_frames": 81,
+      "fps": 25.0,
+      "width": 878,
+      "height": 878,
+      "uid": "id_0183"
+    },
+    {
+      "clip_id": "WRA_MikeCrapo_000_972_1052",
+      "identity_id": "WRA_MikeCrapo",
+      "video_path": "data/benchmark/hdtf/clips/WRA_MikeCrapo_000_972_1052.mp4",
+      "n_frames": 81,
+      "fps": 25.0,
+      "width": 780,
+      "height": 780,
+      "uid": "id_0184"
+    },
+    {
+      "clip_id": "WRA_MikeEnzi_000_972_1052",
+      "identity_id": "WRA_MikeEnzi",
+      "video_path": "data/benchmark/hdtf/clips/WRA_MikeEnzi_000_972_1052.mp4",
+      "n_frames": 81,
+      "fps": 25.0,
+      "width": 750,
+      "height": 750,
+      "uid": "id_0185"
+    },
+    {
+      "clip_id": "WRA_MikeJohanns_000_81_161",
+      "identity_id": "WRA_MikeJohanns",
+      "video_path": "data/benchmark/hdtf/clips/WRA_MikeJohanns_000_81_161.mp4",
+      "n_frames": 81,
+      "fps": 25.0,
+      "width": 550,
+      "height": 550,
+      "uid": "id_0186"
+    },
+    {
+      "clip_id": "WRA_MitchDaniels1_000_972_1052",
+      "identity_id": "WRA_MitchDaniels",
+      "video_path": "data/benchmark/hdtf/clips/WRA_MitchDaniels1_000_972_1052.mp4",
+      "n_frames": 81,
+      "fps": 25.0,
+      "width": 924,
+      "height": 924,
+      "uid": "id_0187"
+    },
+    {
+      "clip_id": "WRA_MittRomney_000_81_161",
+      "identity_id": "WRA_MittRomney",
+      "video_path": "data/benchmark/hdtf/clips/WRA_MittRomney_000_81_161.mp4",
+      "n_frames": 81,
+      "fps": 25.0,
+      "width": 964,
+      "height": 964,
+      "uid": "id_0188"
+    },
+    {
+      "clip_id": "WRA_NanHayworth_000_972_1052",
+      "identity_id": "WRA_NanHayworth",
+      "video_path": "data/benchmark/hdtf/clips/WRA_NanHayworth_000_972_1052.mp4",
+      "n_frames": 81,
+      "fps": 25.0,
+      "width": 532,
+      "height": 532,
+      "uid": "id_0189"
+    },
+    {
+      "clip_id": "WRA_OlympiaSnowe_000_81_161",
+      "identity_id": "WRA_OlympiaSnowe",
+      "video_path": "data/benchmark/hdtf/clips/WRA_OlympiaSnowe_000_81_161.mp4",
+      "n_frames": 81,
+      "fps": 25.0,
+      "width": 622,
+      "height": 622,
+      "uid": "id_0190"
+    },
+    {
+      "clip_id": "WRA_PatRoberts_000_81_161",
+      "identity_id": "WRA_PatRoberts",
+      "video_path": "data/benchmark/hdtf/clips/WRA_PatRoberts_000_81_161.mp4",
+      "n_frames": 81,
+      "fps": 25.0,
+      "width": 600,
+      "height": 600,
+      "uid": "id_0191"
+    },
+    {
+      "clip_id": "WRA_PaulRyan1_001_81_161",
+      "identity_id": "WRA_PaulRyan",
+      "video_path": "data/benchmark/hdtf/clips/WRA_PaulRyan1_001_81_161.mp4",
+      "n_frames": 81,
+      "fps": 25.0,
+      "width": 664,
+      "height": 664,
+      "uid": "id_0192"
+    },
+    {
+      "clip_id": "WRA_PeteHoekstra_001_81_161",
+      "identity_id": "WRA_PeteHoekstra",
+      "video_path": "data/benchmark/hdtf/clips/WRA_PeteHoekstra_001_81_161.mp4",
+      "n_frames": 81,
+      "fps": 25.0,
+      "width": 626,
+      "height": 626,
+      "uid": "id_0193"
+    },
+    {
+      "clip_id": "WRA_PeterRoskam1_001_972_1052",
+      "identity_id": "WRA_PeterRoskam",
+      "video_path": "data/benchmark/hdtf/clips/WRA_PeterRoskam1_001_972_1052.mp4",
+      "n_frames": 81,
+      "fps": 25.0,
+      "width": 792,
+      "height": 792,
+      "uid": "id_0194"
+    },
+    {
+      "clip_id": "WRA_RandPaul2_001_972_1052",
+      "identity_id": "WRA_RandPaul",
+      "video_path": "data/benchmark/hdtf/clips/WRA_RandPaul2_001_972_1052.mp4",
+      "n_frames": 81,
+      "fps": 25.0,
+      "width": 828,
+      "height": 828,
+      "uid": "id_0195"
+    },
+    {
+      "clip_id": "WRA_ReincePriebus_000_81_161",
+      "identity_id": "WRA_ReincePriebus",
+      "video_path": "data/benchmark/hdtf/clips/WRA_ReincePriebus_000_81_161.mp4",
+      "n_frames": 81,
+      "fps": 25.0,
+      "width": 460,
+      "height": 460,
+      "uid": "id_0196"
+    },
+    {
+      "clip_id": "WRA_ReneeEllmers_000_972_1052",
+      "identity_id": "WRA_ReneeEllmers",
+      "video_path": "data/benchmark/hdtf/clips/WRA_ReneeEllmers_000_972_1052.mp4",
+      "n_frames": 81,
+      "fps": 25.0,
+      "width": 468,
+      "height": 468,
+      "uid": "id_0197"
+    },
+    {
+      "clip_id": "WRA_RichardShelby_000_972_1052",
+      "identity_id": "WRA_RichardShelby",
+      "video_path": "data/benchmark/hdtf/clips/WRA_RichardShelby_000_972_1052.mp4",
+      "n_frames": 81,
+      "fps": 25.0,
+      "width": 348,
+      "height": 348,
+      "uid": "id_0198"
+    },
+    {
+      "clip_id": "WRA_RobPortman_000_972_1052",
+      "identity_id": "WRA_RobPortman",
+      "video_path": "data/benchmark/hdtf/clips/WRA_RobPortman_000_972_1052.mp4",
+      "n_frames": 81,
+      "fps": 25.0,
+      "width": 454,
+      "height": 454,
+      "uid": "id_0199"
+    },
+    {
+      "clip_id": "WRA_RogerWicker2_000_972_1052",
+      "identity_id": "WRA_RogerWicker",
+      "video_path": "data/benchmark/hdtf/clips/WRA_RogerWicker2_000_972_1052.mp4",
+      "n_frames": 81,
+      "fps": 25.0,
+      "width": 556,
+      "height": 556,
+      "uid": "id_0200"
+    },
+    {
+      "clip_id": "WRA_RoyBlunt_000_972_1052",
+      "identity_id": "WRA_RoyBlunt",
+      "video_path": "data/benchmark/hdtf/clips/WRA_RoyBlunt_000_972_1052.mp4",
+      "n_frames": 81,
+      "fps": 25.0,
+      "width": 458,
+      "height": 458,
+      "uid": "id_0201"
+    },
+    {
+      "clip_id": "WRA_SamBrownback_000_972_1052",
+      "identity_id": "WRA_SamBrownback",
+      "video_path": "data/benchmark/hdtf/clips/WRA_SamBrownback_000_972_1052.mp4",
+      "n_frames": 81,
+      "fps": 25.0,
+      "width": 572,
+      "height": 572,
+      "uid": "id_0202"
+    },
+    {
+      "clip_id": "WRA_SaxbyChambliss_000_972_1052",
+      "identity_id": "WRA_SaxbyChambliss",
+      "video_path": "data/benchmark/hdtf/clips/WRA_SaxbyChambliss_000_972_1052.mp4",
+      "n_frames": 81,
+      "fps": 25.0,
+      "width": 968,
+      "height": 968,
+      "uid": "id_0203"
+    },
+    {
+      "clip_id": "WRA_ShelleyMooreCapito1_001_972_1052",
+      "identity_id": "WRA_ShelleyMooreCapito",
+      "video_path": "data/benchmark/hdtf/clips/WRA_ShelleyMooreCapito1_001_972_1052.mp4",
+      "n_frames": 81,
+      "fps": 25.0,
+      "width": 520,
+      "height": 520,
+      "uid": "id_0204"
+    },
+    {
+      "clip_id": "WRA_SteveDaines_000_972_1052",
+      "identity_id": "WRA_SteveDaines",
+      "video_path": "data/benchmark/hdtf/clips/WRA_SteveDaines_000_972_1052.mp4",
+      "n_frames": 81,
+      "fps": 25.0,
+      "width": 378,
+      "height": 378,
+      "uid": "id_0205"
+    },
+    {
+      "clip_id": "WRA_SteveScalise1_000_81_161",
+      "identity_id": "WRA_SteveScalise",
+      "video_path": "data/benchmark/hdtf/clips/WRA_SteveScalise1_000_81_161.mp4",
+      "n_frames": 81,
+      "fps": 25.0,
+      "width": 858,
+      "height": 858,
+      "uid": "id_0206"
+    },
+    {
+      "clip_id": "WRA_TimScott_000_972_1052",
+      "identity_id": "WRA_TimScott",
+      "video_path": "data/benchmark/hdtf/clips/WRA_TimScott_000_972_1052.mp4",
+      "n_frames": 81,
+      "fps": 25.0,
+      "width": 768,
+      "height": 768,
+      "uid": "id_0207"
+    },
+    {
+      "clip_id": "WRA_ToddYoung_000_972_1052",
+      "identity_id": "WRA_ToddYoung",
+      "video_path": "data/benchmark/hdtf/clips/WRA_ToddYoung_000_972_1052.mp4",
+      "n_frames": 81,
+      "fps": 25.0,
+      "width": 964,
+      "height": 964,
+      "uid": "id_0208"
+    },
+    {
+      "clip_id": "WRA_TomCotton_000_972_1052",
+      "identity_id": "WRA_TomCotton",
+      "video_path": "data/benchmark/hdtf/clips/WRA_TomCotton_000_972_1052.mp4",
+      "n_frames": 81,
+      "fps": 25.0,
+      "width": 676,
+      "height": 676,
+      "uid": "id_0209"
+    },
+    {
+      "clip_id": "WRA_TomPrice_000_81_161",
+      "identity_id": "WRA_TomPrice",
+      "video_path": "data/benchmark/hdtf/clips/WRA_TomPrice_000_81_161.mp4",
+      "n_frames": 81,
+      "fps": 25.0,
+      "width": 486,
+      "height": 486,
+      "uid": "id_0210"
+    },
+    {
+      "clip_id": "WRA_VickyHartzler_000_972_1052",
+      "identity_id": "WRA_VickyHartzler",
+      "video_path": "data/benchmark/hdtf/clips/WRA_VickyHartzler_000_972_1052.mp4",
+      "n_frames": 81,
+      "fps": 25.0,
+      "width": 676,
+      "height": 676,
+      "uid": "id_0211"
+    }
+  ]
+}

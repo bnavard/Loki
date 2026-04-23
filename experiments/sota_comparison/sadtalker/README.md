@@ -57,9 +57,20 @@ latter only if you use `--enhancer gfpgan`). ~2 GB total.
 
 ## 4. Run
 
+**Prerequisite — curated manifest.** The runner reads
+`experiments/sota_comparison/manifests/<dataset>.json`, a one-clip-per-
+identity pool with stable `id_XXXX` UIDs. Build it once per dataset (committed
+to git, frozen after that):
+
+```bash
+conda activate marionette
+PYTHONPATH=. python experiments/sota_comparison/dataset/build_manifest.py \
+    --dataset hdtf
+```
+
 The runner lives outside the `sadtalker` env — it orchestrates, builds the
-pair list, and hops into the `sadtalker` env per sample via `conda run`. So
-you run it from the `marionette` env:
+pair list from the manifest, and hops into the `sadtalker` env per sample
+via `conda run`. So you run it from the `marionette` env:
 
 ```bash
 conda activate marionette
@@ -115,9 +126,14 @@ outputs/sota_comparison/sadtalker/hdtf/<protocol>/run_<timestamp>/
     └── panel.mp4
 ```
 
-The `samples/<sample_id>/panel.mp4` path mirrors `marionette_eval/`'s layout
-so downstream metric sweeps can glob `outputs/**/samples/**/panel.mp4` and
-treat every baseline uniformly.
+`<sample_id>` is UID-based:
+- `same_identity_reconstruction` → `id_0457`
+- `cross_identity` → `id_0457_id_0009` (ref uid, driver uid)
+
+Because UIDs come from the frozen benchmark manifest, `id_0457/panel.mp4`
+refers to the same physical person in every baseline's output tree — a
+single `outputs/**/samples/id_0457/panel.mp4` glob compares SadTalker,
+LivePortrait, Marionette, etc. 1-to-1 on the same identity.
 
 ## 6. Knobs exposed on the CLI
 

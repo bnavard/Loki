@@ -28,7 +28,7 @@ import subprocess
 from abc import ABC, abstractmethod
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Iterator
+from typing import Iterator, Optional
 
 
 @dataclass(frozen=True)
@@ -38,6 +38,13 @@ class BenchmarkClip:
     `clip_id` must be unique within a dataset and stable across probe runs
     (composed from the on-disk path, not a random UUID). It is the key the
     pairing logic uses to join ref/driver selections back to their records.
+
+    `uid` is the curated-manifest identifier (`id_0457` style, 4-zero-padded)
+    assigned by `benchmark_manifest.build_benchmark_manifest` and consumed by
+    `pairing.build_samples` to name `EvalSample.sample_id`. It is `None` on
+    records loaded from the raw ffprobe cache and populated on records
+    loaded from the curated manifest; downstream pairing / runner code
+    requires it to be non-None (raises otherwise).
     """
     clip_id:     str
     identity_id: str
@@ -46,6 +53,7 @@ class BenchmarkClip:
     fps:         float
     width:       int
     height:      int
+    uid:         Optional[str] = None
 
     @property
     def duration_s(self) -> float:
@@ -66,6 +74,7 @@ class BenchmarkClip:
             fps         = float(d["fps"]),
             width       = int(d["width"]),
             height      = int(d["height"]),
+            uid         = d.get("uid"),
         )
 
 

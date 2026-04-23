@@ -45,9 +45,9 @@ from pathlib import Path
 import numpy as np
 from tqdm import tqdm
 
-from experiments.sota_comparison.dataset.hdtf    import HDTFDataset
-from experiments.sota_comparison.dataset.pairing import build_samples
-from experiments.sota_comparison.sadtalker.adapter import SadTalkerArgs, run_one
+from experiments.sota_comparison.dataset.benchmark_manifest import load_by_dataset
+from experiments.sota_comparison.dataset.pairing             import build_samples
+from experiments.sota_comparison.sadtalker.adapter           import SadTalkerArgs, run_one
 
 
 HERE          = Path(__file__).resolve().parent
@@ -96,9 +96,6 @@ def parse_args():
     return p.parse_args()
 
 
-_DATASET_REGISTRY = {"hdtf": HDTFDataset}
-
-
 def main():
     args = parse_args()
 
@@ -119,10 +116,12 @@ def main():
     scratch = out / "scratch"
     scratch.mkdir(exist_ok=True)
 
-    # Build the pair list.
-    ds    = _DATASET_REGISTRY[args.dataset]()
-    clips = ds.load()
-    print(f"[sadtalker] {ds.name} manifest: {len(clips)} clips")
+    # Load the curated benchmark manifest — one clip per identity with stable
+    # `id_XXXX` UIDs, built by `dataset/build_manifest.py` and committed to
+    # git under `experiments/sota_comparison/manifests/<dataset>.json`.
+    clips, manifest_meta = load_by_dataset(args.dataset)
+    print(f"[sadtalker] {args.dataset} manifest: {len(clips)} identities "
+          f"(cap={manifest_meta['n_samples_cap']}, seed={manifest_meta['seed']})")
 
     samples = build_samples(
         protocol        = args.protocol,

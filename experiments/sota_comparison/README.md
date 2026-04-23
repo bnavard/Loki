@@ -8,15 +8,28 @@ protocol)` triple.
 ## Design
 
 - **`dataset/`** — dataset-agnostic manifest + protocol layer.
-  - `base.py`: `BenchmarkClip` dataclass, `BenchmarkVideoDataset` ABC with
-    a manifest cache (ffprobe once, JSON to `data/derived/<name>_manifest.json`).
+  - `base.py`: `BenchmarkClip` dataclass (includes a curated-manifest `uid`
+    field), `BenchmarkVideoDataset` ABC with a low-level probe cache
+    (ffprobe once, JSON to `data/derived/<name>_manifest.json`).
   - `hdtf.py`, `celebvhq.py`, `voxceleb2.py`, `talkvid.py` *(added as each
     baseline needs them)*: walk dataset-specific on-disk layouts, emit
     `(clip_id, identity_id, video_path)` triples.
+  - `benchmark_manifest.py`: builds a **curated manifest** — one clip per
+    identity, capped at `--n_samples_cap`, tagged with stable `id_XXXX` UIDs.
+    Produced once per dataset (`build_manifest.py`), written to
+    `experiments/sota_comparison/manifests/<dataset>.json`, committed to git
+    and frozen. Every baseline consumes this file so `id_0457` refers to
+    the same physical person across every run.
+  - `build_manifest.py`: CLI for the above.
   - `pairing.py`: builds deterministic `EvalSample` lists under one of two
-    protocols — `same_identity_reconstruction` or `cross_identity`. All
-    randomness funnels through one seeded `np.random.default_rng(seed)` so
-    a given `(protocol, seed, manifest)` tuple reproduces the same list.
+    protocols — `same_identity_reconstruction` or `cross_identity`.
+    `sample_id` is derived from the UIDs:
+    - same-identity → `"id_0457"`
+    - cross-identity → `"id_0457_id_0009"` (ref uid, driver uid)
+    so the output folder names are identity-meaningful and align across
+    baselines. All randomness funnels through one seeded
+    `np.random.default_rng(seed)` so a given `(protocol, seed, manifest)`
+    tuple reproduces the same list.
 - **`<baseline>/`** — one folder per upstream model. Each holds:
   - `README.md`: commit pin, env setup, paper protocol notes, CLI knobs.
   - `env.yml` / `requirements.txt`: the conda env that actually runs on
@@ -42,6 +55,13 @@ outputs/sota_comparison/<baseline>/<dataset>/<protocol>/run_<timestamp>/
 └── samples/<sample_id>/
     └── panel.mp4
 ```
+
+`<sample_id>` is the UID-based folder name — `id_0457` for same-identity,
+`id_0457_id_0009` for cross-identity. Because the UIDs come from a frozen
+benchmark manifest, **the same `<sample_id>` folder across two baselines'
+output trees refers to the same physical identity (or identity pair)**, so
+downstream metric sweeps can glob `outputs/**/samples/id_0457/panel.mp4`
+and diff results 1-to-1.
 
 Mirrors `experiments/marionette_eval/`'s layout so downstream metric sweeps
 can glob `outputs/**/samples/**/panel.mp4` uniformly across baselines and
@@ -79,18 +99,38 @@ dataset-mirror constraints (documented per baseline).
 | VoxCeleb2 | `data/benchmark/voxceleb2/clips/<speaker>/<video>/<utt>.mp4` | Hierarchical | Top-level folder (`id00012`, …) | Audio partly in `.7z` archives under `audio/aac/` — unpack before use. *Adapter pending.* |
 | TalkVid (ours) | `data/talkvid/talkvid/` | Flat, our own preprocessing | Prefix before first `_` | *Adapter pending — belongs here so any baseline can be evaluated on our data with zero wrapper change.* |
 
+## Building the benchmark manifest
+
+Each baseline reads a curated manifest at
+`experiments/sota_comparison/manifests/<dataset>.json`. The manifest holds
+one clip per identity (longest-clip rule), capped at `--n_samples_cap`
+(default 1000), each entry tagged with a stable `id_XXXX` UID. Build it
+once per dataset and commit the JSON — UIDs are then frozen forever.
+
+```bash
+conda activate marionette
+PYTHONPATH=. python experiments/sota_comparison/dataset/build_manifest.py \
+    --dataset hdtf
+```
+
+Re-running the CLI refuses to overwrite an existing manifest unless
+`--rebuild` is passed. This is intentional — a published paper's UIDs
+should not silently shift.
+
 ## Running a baseline
 
 See the baseline's own README for env setup. The orchestrator launches from
 the `marionette` env — the baseline's env only hosts its inference
-subprocess, hopped into via `conda run -n <env>`.
+subprocess, hopped into via `conda run -n <env>`. `--n_samples` caps the
+pair list (independent of the manifest's identity count), so short debug
+runs don't need to regenerate the manifest.
 
 ```bash
 conda activate marionette
 PYTHONPATH=. python experiments/sota_comparison/<baseline>/run_inference.py \
     --dataset         hdtf \
     --protocol        same_identity_reconstruction \
-    --n_samples       346 \
+    --n_samples       50 \
     --clip_duration_s 3.0 \
     --seed            42
 ```
