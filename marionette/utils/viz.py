@@ -283,14 +283,25 @@ class VisualizationCallback(Callback):
         if trainer.global_step % self.vis_every_n_steps != 0:
             return
 
-        # DDP safety: viz runs rank-0 only but takes minutes. Without barriers
-        # the other ranks advance into the next step's allreduce and NCCL times
-        # out. Brackets around the rank-0 work keep everyone aligned.
+        # DDP: every rank participates in viz in parallel, each handling its
+        # own disjoint slice of `n_vis_samples`. The pre-barrier syncs entry
+        # (everyone starts sampling together); the post-barrier syncs exit
+        # (fast ranks wait for slow ones before returning to training so no
+        # rank races ahead into the next step's all-reduce and blows NCCL).
+        #
+        # The try/except around `_generate_samples` is LOAD-BEARING for DDP:
+        # if one rank crashed during viz without reaching the post-barrier,
+        # every other rank would hang forever. Catch everything, print, and
+        # still hit the barrier.
         if trainer.world_size > 1:
             torch.distributed.barrier()
 
-        if trainer.global_rank == 0:
+        try:
             self._generate_samples(trainer, pl_module)
+        except Exception as e:
+            import traceback
+            print(f"  [rank {trainer.global_rank}] visualization failed: {e}")
+            traceback.print_exc()
 
         if trainer.world_size > 1:
             torch.distributed.barrier()
@@ -311,17 +322,36 @@ class VisualizationCallback(Callback):
 
         cfg_scale = self.cfg.inference.get("cfg_scale", 2.0)
 
-        n_skip = self._vis_call_count * self.n_vis_samples
+        # Per-call starting position inside the val set: skip past the
+        # samples that previous fires of this callback already consumed.
+        n_skip_call = self._vis_call_count * self.n_vis_samples
         self._vis_call_count += 1
 
+        # Shard this fire's `n_vis_samples` across ranks. First `rem` ranks
+        # get one extra so integer division can't drop samples. Ranks whose
+        # share is 0 (when n_vis_samples < world_size, e.g. n_vis_samples=1
+        # on 4 GPUs) short-circuit without touching the val DataLoader and
+        # fall through to the post-barrier in the caller.
+        world_size = max(trainer.world_size, 1)
+        rank       = trainer.global_rank
+        base, rem  = divmod(self.n_vis_samples, world_size)
+        counts     = [base + (1 if r < rem else 0) for r in range(world_size)]
+        my_count   = counts[rank]
+        my_start   = sum(counts[:rank])                 # absolute offset in this fire
+        n_skip     = n_skip_call + my_start             # skip to MY first sample
+
+        if my_count == 0:
+            model.train()
+            return
+
         n_generated = 0
-        n_skipped = 0
+        n_skipped   = 0
         for batch in self.val_loader:
+            if n_generated >= my_count:
+                break
             if n_skipped < n_skip:
                 n_skipped += batch[model.first_stage_key].shape[0]
                 continue
-            if n_generated >= self.n_vis_samples:
-                break
 
             batch = _to_device(batch, device)
 
@@ -331,8 +361,9 @@ class VisualizationCallback(Callback):
 
             b = gen_z.shape[0]
             for i in range(b):
-                if n_generated >= self.n_vis_samples:
+                if n_generated >= my_count:
                     break
+                abs_idx = my_start + n_generated    # global index into this fire's samples
 
                 ctrl_i   = {k: (v[[i]] if v is not None else None) for k, v in ctrl.items()}
                 uncond_i = {k: (v[[i]] if v is not None else None) for k, v in c_uncond.items()}
@@ -378,7 +409,7 @@ class VisualizationCallback(Callback):
 
                     save_labeled_grid(
                         rows_data, labels,
-                        step_dir / f"sample_{n_generated:02d}.png", title=title,
+                        step_dir / f"sample_{abs_idx:02d}.png", title=title,
                     )
 
                     # Only mux audio into the viz mp4 if the model actually
@@ -393,22 +424,27 @@ class VisualizationCallback(Callback):
                         audio_np = None
                     save_video_with_audio(
                         rows_data, labels, audio_np,
-                        step_dir / f"sample_{n_generated:02d}.mp4",
+                        step_dir / f"sample_{abs_idx:02d}.mp4",
                         fps=fps, title=title,
                     )
 
-                    if trainer.logger:
+                    # TB event files are not safe to write concurrently from
+                    # multiple ranks, so only rank 0 logs to TB. PNG/mp4 on
+                    # disk is the full set across all ranks.
+                    if trainer.global_rank == 0 and trainer.logger is not None:
                         grid = make_grid_tensor(rows_data)
                         trainer.logger.experiment.add_image(
-                            f"vis/sample_{n_generated}", grid, global_step=step,
+                            f"vis/sample_{abs_idx}", grid, global_step=step,
                         )
                 except Exception as e:
                     import traceback
-                    print(f"  Visualization failed for sample {n_generated}: {e}")
+                    print(f"  [rank {trainer.global_rank}] visualization failed "
+                          f"for sample {abs_idx}: {e}")
                     traceback.print_exc()
 
                 n_generated += 1
 
         model.train()
         if trainer.global_rank == 0:
-            print(f"  Saved {n_generated} visualization(s) to {step_dir}")
+            print(f"  Saved {self.n_vis_samples} visualization(s) "
+                  f"(sharded across {world_size} rank(s)) to {step_dir}")
