@@ -1,4 +1,4 @@
-"""
+r"""
 SadTalker evaluation runner.
 
 Builds a deterministic list of `EvalSample`s from the chosen dataset +
@@ -18,20 +18,20 @@ Usage (from repo root):
     # Same-identity reconstruction (matches SadTalker's paper protocol, except
     # clip_duration_s is 3.0 instead of 8.0 because our HDTF mirror is
     # pre-chunked into 3.24-s segments — see README).
-    PYTHONPATH=. python experiments/sota_comparison/sadtalker/run_inference.py \\
-        --dataset hdtf \\
-        --protocol same_identity_reconstruction \\
-        --n_samples 346 \\
-        --clip_duration_s 3.0 \\
+    PYTHONPATH=. python experiments/sota_comparison/sadtalker/run_inference.py \
+        --dataset hdtf \
+        --protocol same_identity_reconstruction \
+        --n_samples 346 \
+        --clip_duration_s 3.0 \
         --seed 42
 
     # Cross-identity voice transfer (speaker A's face driven by speaker B's
     # audio — complements the paper protocol).
-    PYTHONPATH=. python experiments/sota_comparison/sadtalker/run_inference.py \\
-        --dataset hdtf \\
-        --protocol cross_identity \\
-        --n_samples 200 \\
-        --clip_duration_s 3.0 \\
+    PYTHONPATH=. python experiments/sota_comparison/sadtalker/run_inference.py \
+        --dataset hdtf \
+        --protocol cross_identity \
+        --n_samples 200 \
+        --clip_duration_s 3.0 \
         --seed 42
 """
 from __future__ import annotations
