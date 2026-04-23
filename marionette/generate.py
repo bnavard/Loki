@@ -39,7 +39,6 @@ from omegaconf import OmegaConf
 
 from ldm_base.ldm.util import instantiate_from_config
 from marionette.flame.flame import CAP4DFlameSkinner
-from marionette.conditioning.conditioning import SpatialConditioning
 from marionette.retargeting import (
     prepare_reference, retarget_driver_verts, prepare_driver_frames,
 )
@@ -119,9 +118,10 @@ def main():
 
     n_frames = args.n_frames
 
-    cond_module = SpatialConditioning(
-        **OmegaConf.to_container(cfg.model.params.cond_stage_config.params),
-    ).to(device).eval()
+    # Dispatch on the config's `target` so ablation arms (e.g. under
+    # experiments/condition_ablation/) load their own cond_stage module
+    # without any change here.
+    cond_module = instantiate_from_config(cfg.model.params.cond_stage_config).to(device).eval()
     flame_skinner = CAP4DFlameSkinner(add_mouth=True, n_shape_params=150, n_expr_params=65)
     head_vert_ids = np.genfromtxt(HEAD_VERT_PATH).astype(int)
 
@@ -143,9 +143,19 @@ def main():
         ref_fit, driver_fit, crop_box, n_frames, flame_skinner,
     )
 
+    # Driver's face-cropped video — used for viz and as the natural-video
+    # conditioning signal read by `experiments/condition_ablation/` variants.
+    # Compute once in uint8 for viz, then normalize to [-1, 1] for conditioning.
+    driver_frames = prepare_driver_frames(
+        driver_fit, video_root / f"{args.driver_clip}.mp4",
+        n_frames, resolution, flame_skinner, head_vert_ids,
+    )
+    driver_video_norm = (driver_frames.astype(np.float32) / 127.5) - 1.0
+
     hint = {
         "driver_verts":  torch.from_numpy(verts_np).unsqueeze(0).to(device),
         "driver_deform": torch.from_numpy(offsets_np).unsqueeze(0).to(device),
+        "driver_video":  torch.from_numpy(driver_video_norm).unsqueeze(0).to(device),
     }
 
     ref_tensor = torch.from_numpy(ref_img_norm).permute(2, 0, 1).unsqueeze(0).to(device)
@@ -191,10 +201,6 @@ def main():
         ref_rgb_u8.transpose(2, 0, 1)[None], (n_frames, 3, resolution, resolution),
     ).copy()
 
-    driver_frames = prepare_driver_frames(
-        driver_fit, video_root / f"{args.driver_clip}.mp4",
-        n_frames, resolution, flame_skinner, head_vert_ids,
-    )
     driver_row = driver_frames.transpose(0, 3, 1, 2).copy()
 
     spatial_cond_t = c_cond["spatial_cond"][0]                       # (T, H, W, 45)
