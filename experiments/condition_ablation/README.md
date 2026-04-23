@@ -36,7 +36,7 @@ contribution is read off separately via `audio_off` vs `marionette_baseline`.
 | **audio_off** | off | full 45ch (pos_enc + deform) — unchanged from baseline | 45 | [`run_audio_off.py`](run_audio_off.py) |
 | **no_flame**  | off | full 45ch replaced by driver's 3ch face-cropped video | 3  | [`run_no_flame.py`](run_no_flame.py) |
 | **no_posenc** | off | 42ch pos_enc dropped; 3ch deform kept | 3  | [`run_no_posenc.py`](run_no_posenc.py) |
-| **no_deform** | off | 3ch deform replaced by driver's 3ch face-cropped video; 42ch pos_enc kept | 45 | [`run_no_deform.py`](run_no_deform.py) |
+| **no_deform** | off | 3ch deform dropped; only the 42ch pos_enc is fed. No substitute channel — identity reaches the model via the ref UNet, not via the cond tensor. | 42 | [`run_no_deform.py`](run_no_deform.py) |
 
 The audio-on counterpart is the existing `marionette_baseline` checkpoint.
 No separate "audio_on" config lives here — duplicating it would invite drift.
@@ -50,7 +50,9 @@ No separate "audio_on" config lives here — duplicating it would invite drift.
 - `no_posenc` vs `audio_off` → **pos_enc contribution** (both audio-off;
   only the 42ch positional encoding is dropped).
 - `no_deform` vs `audio_off` → **aligned deformation contribution** (both
-  audio-off; only the 3ch deform channels are swapped for driver video).
+  audio-off; only the 3ch deform channels are dropped, no substitute).
+  Identity reaches both arms through the ref UNet, so the cond tensor
+  doesn't need to carry identity information.
 
 Each arm's conditioning implementation is a single standalone module under
 its arm subfolder (`<arm>/conditioning.py`), imported via the arm's config
@@ -81,10 +83,10 @@ audio encoder is not instantiated and every transformer block skips its
 cross-attention pass); they then vary the FLAME pathway as follows. For
 no_flame / no_posenc: the ConditioningEncoder's first conv is 3 input
 channels instead of 45 (smaller first layer; everything downstream is
-identical). For no_deform: the 45-channel cond tensor is the same width
-but its last 3 channels are driver-video pixels instead of rasterized
-deformation. For audio_off: the FLAME pathway is untouched — the arm
-only differs from `marionette_baseline` in audio.
+identical). For no_deform: the 3ch deform channels are dropped without
+substitution, so `condition_channels` is 42 and the stem conv is slightly
+narrower. For audio_off: the FLAME pathway is untouched — the arm only
+differs from `marionette_baseline` in audio.
 
 ### Load-bearing invariant: one ConditioningEncoder architecture for all arms
 
@@ -159,20 +161,29 @@ in the frame the face should be, which way it is facing, or how large it
 is. Without pos_enc the conditioning signal is a blobby expression-only
 map floating in an otherwise structureless 512×512 canvas.
 
-### no_deform — pos_enc + driver video (replacing the deform map)
+### no_deform — pos_enc only (deform map dropped, no substitute)
 
-`spatial_cond` = `[pos_enc_42ch, driver_video_3ch]` concatenated along the
-channel axis, total 45 channels (UNet unchanged). The positional encoding
-still carries head pose + geometry, aligned to the reference's crop. The
-driver video provides motion information, but in the driver's own pixel
-space (not aligned to the reference). See
+`spatial_cond` = 42-channel sinusoidal pos_enc of rasterized FLAME vertex
+positions. The 3ch per-vertex expression deformation is dropped entirely;
+nothing is substituted in its place. `condition_channels` = 42. See
 [`no_deform/conditioning.py`](no_deform/conditioning.py).
 
-Hypothesis: between `no_flame` (nothing FLAME) and the baseline (everything
-FLAME), this arm isolates the value of **aligned expression deformation**
-specifically. If it approaches baseline quality, the deform channels are
-mostly informational redundancy on top of pos_enc. If it drops noticeably,
-the aligned deformation map is doing real work.
+Why no substitute channel: identity is already carried by the frozen
+reference UNet (K/V feature injection into every self-attention block),
+so the cond tensor doesn't need to encode identity. Pasting driver-video
+pixels into the freed 3 channels — as an earlier iteration of this arm
+did — would conflate *two* variables (the deform ablation AND the
+spatial-misalignment confound, since driver video lives in driver-crop
+space). The `no_flame` arm covers the natural-video-as-conditioning
+comparison cleanly on its own; this arm now just answers "how much does
+the deform map contribute on top of pos_enc?".
+
+Hypothesis: between `no_flame` (no FLAME at all) and the baseline
+(full FLAME), this arm isolates the value of the **aligned expression
+deformation** specifically. If it approaches baseline quality, the deform
+channels are mostly informational redundancy on top of pos_enc + the ref
+UNet's identity features. If it drops noticeably, the aligned deformation
+map is doing real work for expression fidelity.
 
 ## Launch
 

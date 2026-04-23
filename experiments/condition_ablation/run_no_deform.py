@@ -1,7 +1,8 @@
 r"""
-Entry script for the "no deformation" arm of the conditioning ablation suite
-— keeps the 42ch sinusoidal pos_enc of FLAME vertex positions but replaces
-the 3ch per-vertex expression deformation with the 3ch natural driver video.
+Entry script for the "no deformation" arm of the conditioning ablation
+suite — keeps the 42ch sinusoidal pos_enc of FLAME vertex positions and
+drops the 3ch per-vertex expression deformation map entirely (no substitute
+channel is added; identity still flows through the ref UNet).
 
 See `experiments/condition_ablation/README.md` for the full matrix.
 

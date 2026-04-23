@@ -2,19 +2,26 @@
 Conditioning module for the `no_deform` arm of condition_ablation.
 
 Keeps the 42ch sinusoidal positional encoding of rasterized FLAME vertex
-positions but **replaces** the 3ch per-vertex expression deformation with
-the 3ch natural driver video. Total output width remains 45 channels, so
-the ConditioningEncoder's first conv is unchanged vs. the baseline — the
-only difference is *what* occupies the last three channels.
+positions and REMOVES the 3ch per-vertex expression deformation map
+entirely — no replacement channel. The UNet's ConditioningEncoder drops
+from 45 input channels to 42.
 
-Purpose: isolate the value of the deformation map. The pos_enc alone gives
-the model head pose + mesh geometry (coarse motion), but the deformation map
-is what encodes per-vertex expression offsets (mouth-shape micro-motion,
-blink, etc.). Replacing it with driver pixels lets the model see the driver's
-face but in the DRIVER's spatial frame — spatially misaligned with the
-reference identity whose face is being denoised. If the model can still hit
-baseline quality, pos_enc is doing the heavy lifting; if quality drops, the
-aligned deformation channel matters.
+Purpose: isolate the value of the expression deformation map. Identity is
+already injected independently through the frozen reference UNet (K/V
+feature injection into every self-attention block), so the conditioning
+tensor does not need to carry identity information. Head pose and mesh
+geometry are carried by the 42ch pos_enc; the deform map is the only
+signal in the baseline's 45ch cond that encodes per-vertex expression
+offsets. If this arm approaches baseline quality, the deform map is
+informationally redundant on top of pos_enc + the ref UNet's identity
+features. If this arm drops noticeably, the deform map is doing real work
+for expression fidelity.
+
+No natural driver video is substituted in place of the deform channels —
+that experiment was considered and dropped because pasting driver-space
+pixels in as conditioning conflates two variables (the deform ablation
+and the spatial-misalignment confound). The `no_flame` arm covers the
+"natural video as conditioning" comparison cleanly.
 """
 from __future__ import annotations
 
@@ -26,35 +33,43 @@ from marionette.conditioning.conditioning import PositionalEncoding
 from marionette.conditioning.mesh2img import PropRenderer
 
 
-class PosEncPlusVideoConditioning(nn.Module):
-    """Emit `spatial_cond = [pos_enc_42ch, driver_video_3ch]` concatenated
-    along the channel axis. Shape `(B, T, H, W, 45)`.
+class PosEncOnlyConditioning(nn.Module):
+    """Emit `spatial_cond` = 42-channel sinusoidal pos_enc of rasterized
+    FLAME vertex positions. Shape `(B, T, H, W, 42)`.
 
-    Consumes `hint["driver_verts"]` (for pos_enc rasterization) and
-    `hint["driver_video"]` (the replacement for the deform channels).
-    Ignores `driver_deform`.
+    Consumes `hint["driver_verts"]` (for pos_enc rasterization) and ignores
+    `driver_deform` and `driver_video`.
     """
 
-    N_CHANNELS = 45
+    N_CHANNELS = 42
 
-    # Viz contract: channels [42:45] are the driver video (which replaces the
-    # deform map). Showing those makes the "what was substituted" story
-    # obvious in the training viz.
-    VIZ_SLICE: tuple[int, int] = (42, 45)
-    VIZ_LABEL: str = "Driver Video"
+    # Viz contract: the 42 pos_enc channels are laid out as
+    # [0:14] = x (sin×7, cos×7), [14:28] = y, [28:42] = z. Slice [21:24]
+    # picks y's cos at the three lowest frequencies — a clean horizontal-
+    # stripe signature on the rasterized mesh region that communicates "the
+    # conditioning is a positional encoding of the face mesh" without
+    # pretending to be a natural-image preview.
+    VIZ_SLICE: tuple[int, int] = (21, 24)
+    VIZ_LABEL: str = "Pos Enc"
 
     def __init__(
         self,
         image_size: int = 512,
         positional_channels: int = 42,
         positional_multiplier: float = 1.0,
+        **_unused,
     ) -> None:
+        # Absorb baseline params (std_expr_deformation) inherited through
+        # YAML merge — they don't apply to a pos-enc-only rasterization.
         super().__init__()
         self.image_size = image_size
         self.positional_multiplier = positional_multiplier
 
         assert positional_channels % 3 == 0
         self.pos_encoding = PositionalEncoding(positional_channels // 3)
+        # Eager construction — DDP broadcasts buffers at wrap time; lazy
+        # registration leaves non-rank-0 ranks without the renderer's
+        # buffers and silently hangs the first collective.
         self.renderer = PropRenderer()
 
     @property
@@ -65,7 +80,6 @@ class PosEncPlusVideoConditioning(nn.Module):
         device = self.pos_encoding.freqs.device
         with torch.no_grad():
             driver_verts = batch["driver_verts"].to(device)
-            driver_video = batch["driver_video"].to(device)
             B, T = driver_verts.shape[:2]
 
             verts_flat = einops.rearrange(driver_verts, "b t n v -> (b t) n v")
@@ -78,12 +92,8 @@ class PosEncPlusVideoConditioning(nn.Module):
             )
             pos_enc_feat = self.pos_encoding(pos_enc_input * self.positional_multiplier)
             pos_enc_feat = pos_enc_feat * mask
-            pos_enc_feat = einops.rearrange(
+
+            spatial_cond = einops.rearrange(
                 pos_enc_feat, "(b t) h w c -> b t h w c", b=B,
             )
-
-            # driver_video is already (B, T, H, W, 3), in [-1, 1], aligned to
-            # the driver's own face crop. It is NOT masked to the FLAME mesh
-            # — the whole frame is valid conditioning signal.
-            spatial_cond = torch.cat([pos_enc_feat, driver_video], dim=-1)
         return {"spatial_cond": spatial_cond}

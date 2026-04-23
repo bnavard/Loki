@@ -1,11 +1,12 @@
 # Condition ablation — "no deformation" arm.
 #
 # Keeps the 42ch sinusoidal positional encoding of rasterized FLAME vertex
-# positions but REPLACES the 3ch per-vertex expression deformation map with
-# the 3ch natural driver video (face-cropped, normalized to [-1, 1]).
-# Total spatial_cond width stays at 45 — only the last three channels change
-# semantics, so the UNet's ConditioningEncoder is structurally identical to
-# the baseline.
+# positions and DROPS the 3ch per-vertex expression deformation map
+# entirely — no substitute channel is added. The UNet's ConditioningEncoder
+# drops from 45 input channels to 42. Identity information still reaches
+# the model via the frozen reference UNet (K/V feature injection into every
+# self-attention block), so the conditioning tensor doesn't need to carry
+# identity.
 #
 # Audio cross-attention is DISABLED across every condition_ablation arm so
 # the conditioning-pathway comparisons are not confounded by the audio
@@ -22,8 +23,12 @@ output_dir: outputs/condition_ablation/no_deform
 
 model:
   params:
+    unet_config:
+      params:
+        condition_channels: 42
+
     cond_stage_config:
-      target: experiments.condition_ablation.no_deform.conditioning.PosEncPlusVideoConditioning
+      target: experiments.condition_ablation.no_deform.conditioning.PosEncOnlyConditioning
       params:
         image_size: 512
         positional_channels: 42
