@@ -1,7 +1,7 @@
 """Visualization utilities for Marionette.
 
 Hosts:
-  - Pure image helpers (`slice_cond_rgb`, `add_label`, `add_red_border`,
+  - Pure image helpers (`slice_cond_rgb`, `add_label`,
     `save_labeled_grid`, `save_video_with_audio`, `make_grid_tensor`) used by
     both live-training viz and offline inspection.
   - `VisualizationCallback`, the Lightning callback that periodically runs
@@ -74,14 +74,6 @@ def add_label(row_img: np.ndarray, label: str,
     return canvas
 
 
-def add_red_border(frame_bgr: np.ndarray, border_width: int = 4) -> np.ndarray:
-    """Draw a red border around a BGR frame (in-place). Used to mark the ref frame."""
-    h, w = frame_bgr.shape[:2]
-    cv2.rectangle(frame_bgr, (0, 0), (w - 1, h - 1),
-                  color=(0, 0, 255), thickness=border_width)
-    return frame_bgr
-
-
 def save_labeled_grid(
     rows_data: List[np.ndarray],
     labels: List[str],
@@ -94,7 +86,6 @@ def save_labeled_grid(
         rows_data: list of (T, 3, H, W) uint8 arrays, one per row.
         labels:    row labels, same length.
         title:     optional title bar drawn at the top.
-    The "Generated" row gets a red border on its frame 0 (reference slot).
     """
     T = rows_data[0].shape[0]
     n_show = min(T, 8)
@@ -106,8 +97,6 @@ def save_labeled_grid(
         for t_idx in indices:
             frame = imgs[t_idx].transpose(1, 2, 0).copy()
             frame_bgr = frame[..., ::-1].copy()
-            if "Generated" in label and t_idx == 0:
-                add_red_border(frame_bgr)
             frames.append(frame_bgr)
         strip = np.concatenate(frames, axis=1)
         labeled_rows.append(add_label(strip, label))
@@ -151,8 +140,6 @@ def save_video_with_audio(
         for imgs, label in zip(rows_data, labels):
             frame_rgb = imgs[t].transpose(1, 2, 0).copy()
             frame_bgr = frame_rgb[..., ::-1].copy()
-            if "Generated" in label and t == 0:
-                add_red_border(frame_bgr)
             rows.append(add_label(frame_bgr, label, font_scale=0.7, thickness=1))
         composite = np.concatenate(rows, axis=0)
 
@@ -342,8 +329,17 @@ class VisualizationCallback(Callback):
                     gt_imgs = model.decode_first_stage(gen_z[i:i+1]).squeeze(0)
                     gt_imgs = ((gt_imgs.clamp(-1, 1) + 1) / 2 * 255).byte().cpu().numpy()
 
+                    # Row 3 of the panel previews a 3-channel slice of
+                    # spatial_cond — which channels and what to call the row
+                    # are declared by the active cond_stage module, so viz is
+                    # ablation-agnostic.
+                    cond_stage = model.cond_stage_model
+                    ch_start, ch_end = cond_stage.VIZ_SLICE
                     spatial_cond_i = ctrl_i["spatial_cond"][0]
-                    deform_vis = slice_cond_rgb(spatial_cond_i, 42, resolution)
+                    cond_vis = slice_cond_rgb(
+                        spatial_cond_i, ch_start, resolution,
+                        n_channels=ch_end - ch_start,
+                    )
 
                     # Static reference row: decode the ref latent from control
                     # and broadcast across T for grid alignment.
@@ -353,8 +349,8 @@ class VisualizationCallback(Callback):
                     T_gen   = gen_z.shape[1]
                     ref_row = np.broadcast_to(ref_u8[None], (T_gen, *ref_u8.shape)).copy()
 
-                    rows_data = [ref_row, gt_imgs, deform_vis, gen_imgs]
-                    labels = ["Reference", "Ground Truth", "Driver Deform", "Generated"]
+                    rows_data = [ref_row, gt_imgs, cond_vis, gen_imgs]
+                    labels = ["Reference", "Ground Truth", cond_stage.VIZ_LABEL, "Generated"]
                     title = f"Same-Identity Reconstruction | Step {step}"
 
                     save_labeled_grid(

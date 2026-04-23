@@ -42,6 +42,11 @@ class NaturalVideoConditioning(nn.Module):
 
     N_CHANNELS = 3
 
+    # Viz contract (see SpatialConditioning for the pattern): spatial_cond is
+    # the driver video itself, so the whole 3-channel tensor is the preview.
+    VIZ_SLICE: tuple[int, int] = (0, 3)
+    VIZ_LABEL: str = "Driver Video"
+
     def __init__(self, image_size: int = 512, **_unused) -> None:
         # `**_unused` absorbs params that the baseline SpatialConditioning
         # takes (positional_channels, positional_multiplier, …) so YAML merges

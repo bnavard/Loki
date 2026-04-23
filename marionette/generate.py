@@ -195,7 +195,7 @@ def main():
         bgr = img.transpose(1, 2, 0)[..., [2, 1, 0]]
         cv2.imwrite(str(frame_dir / f"{i:05d}.png"), bgr)
 
-    # 4-row panel: Reference (static) | Driver Video | Driver Expression | Generated
+    # 4-row panel: Reference (static) | Driver Video | <cond preview> | Generated
     ref_rgb_u8 = ((ref_img_norm + 1) / 2 * 255).clip(0, 255).astype(np.uint8)
     ref_row = np.broadcast_to(
         ref_rgb_u8.transpose(2, 0, 1)[None], (n_frames, 3, resolution, resolution),
@@ -203,11 +203,17 @@ def main():
 
     driver_row = driver_frames.transpose(0, 3, 1, 2).copy()
 
-    spatial_cond_t = c_cond["spatial_cond"][0]                       # (T, H, W, 45)
-    expr_row = slice_cond_rgb(spatial_cond_t, 42, resolution)
+    # Row 3 preview is owned by the active cond_stage module (VIZ_SLICE +
+    # VIZ_LABEL class attrs) so this panel stays correct across baseline and
+    # condition_ablation arms without branching on target.
+    ch_start, ch_end = cond_module.VIZ_SLICE
+    spatial_cond_t = c_cond["spatial_cond"][0]
+    cond_row = slice_cond_rgb(
+        spatial_cond_t, ch_start, resolution, n_channels=ch_end - ch_start,
+    )
 
-    rows_data = [ref_row, driver_row, expr_row, imgs]
-    labels    = ["Reference", "Driver Video", "Driver Expression", "Generated"]
+    rows_data = [ref_row, driver_row, cond_row, imgs]
+    labels    = ["Reference", "Driver Video", cond_module.VIZ_LABEL, "Generated"]
     title = (f"{'Cross' if is_cross_id else 'Same'}-Identity | "
              f"ref={args.ref_clip[:32]} → drv={args.driver_clip[:32]}")
 

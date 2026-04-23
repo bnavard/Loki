@@ -222,7 +222,7 @@ class Evaluator:
         imgs = self.model.decode_first_stage(latents.unsqueeze(0)).squeeze(0)
         imgs = ((imgs.clamp(-1, 1) + 1) / 2 * 255).byte().cpu().numpy()   # (T, 3, H, W)
 
-        # 4-row panel: Reference (static) | Driver Video | Driver Expression | Generated
+        # 4-row panel: Reference (static) | Driver Video | <cond preview> | Generated
         ref_rgb_u8 = ((ref_img_norm + 1) / 2 * 255).clip(0, 255).astype(np.uint8)
         ref_row = np.broadcast_to(
             ref_rgb_u8.transpose(2, 0, 1)[None],
@@ -231,10 +231,16 @@ class Evaluator:
 
         driver_row = driver_frames.transpose(0, 3, 1, 2).copy()
 
-        expr_row = slice_cond_rgb(c_cond["spatial_cond"][0], 42, self.resolution)
+        # Row 3 preview is owned by the active cond_stage module so this
+        # works for baseline and every condition_ablation arm.
+        ch_start, ch_end = self.cond_module.VIZ_SLICE
+        cond_row = slice_cond_rgb(
+            c_cond["spatial_cond"][0], ch_start, self.resolution,
+            n_channels=ch_end - ch_start,
+        )
 
-        rows   = [ref_row, driver_row, expr_row, imgs]
-        labels = ["Reference", "Driver Video", "Driver Expression", "Generated"]
+        rows   = [ref_row, driver_row, cond_row, imgs]
+        labels = ["Reference", "Driver Video", self.cond_module.VIZ_LABEL, "Generated"]
 
         save_labeled_grid(rows, labels, out_dir / "panel.png", title=title)
         save_video_with_audio(

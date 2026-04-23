@@ -20,7 +20,6 @@ from marionette.utils.viz import (
     VisualizationCallback,
     slice_cond_rgb,
     add_label,
-    add_red_border,
     save_labeled_grid,
     save_video_with_audio,
     make_grid_tensor,
@@ -36,6 +35,6 @@ __all__ = [
     # verts
     "CROP_MARGIN", "verts_to_pytorch3d", "get_square_bbox", "get_bbox_from_verts",
     # viz
-    "VisualizationCallback", "slice_cond_rgb", "add_label", "add_red_border",
+    "VisualizationCallback", "slice_cond_rgb", "add_label",
     "save_labeled_grid", "save_video_with_audio", "make_grid_tensor",
 ]

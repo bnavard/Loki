@@ -65,6 +65,13 @@ class SpatialConditioning(nn.Module):
 
     N_CHANNELS = 45
 
+    # Viz contract: the 4-row panel in VisualizationCallback / generate.py /
+    # the marionette_eval evaluator slices this range out of `spatial_cond`
+    # and labels it with VIZ_LABEL. Each cond_stage module owns its own slice
+    # + label so viz code never needs to know which arm is active.
+    VIZ_SLICE: tuple[int, int] = (42, 45)     # deform channels
+    VIZ_LABEL: str = "Driver Deform"
+
     def __init__(
         self,
         image_size: int = 512,

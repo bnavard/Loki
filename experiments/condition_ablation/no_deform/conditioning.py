@@ -37,6 +37,12 @@ class PosEncPlusVideoConditioning(nn.Module):
 
     N_CHANNELS = 45
 
+    # Viz contract: channels [42:45] are the driver video (which replaces the
+    # deform map). Showing those makes the "what was substituted" story
+    # obvious in the training viz.
+    VIZ_SLICE: tuple[int, int] = (42, 45)
+    VIZ_LABEL: str = "Driver Video"
+
     def __init__(
         self,
         image_size: int = 512,

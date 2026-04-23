@@ -32,6 +32,11 @@ class DeformOnlyConditioning(nn.Module):
 
     N_CHANNELS = 3
 
+    # Viz contract: spatial_cond is the rasterized deform map. Whole tensor
+    # is the preview.
+    VIZ_SLICE: tuple[int, int] = (0, 3)
+    VIZ_LABEL: str = "Driver Deform"
+
     def __init__(
         self,
         image_size: int = 512,
