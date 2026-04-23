@@ -25,15 +25,32 @@ and all other hyperparameters are inherited unchanged from
 
 ## Arms
 
-| Arm | What varies vs. baseline | `condition_channels` | Entry |
-|---|---|---|---|
-| **audio_off** | wav2vec2 cross-attention disabled; FLAME conditioning unchanged. | 45 | [`run_audio_off.py`](run_audio_off.py) |
-| **no_flame** | Full 45ch FLAME `spatial_cond` replaced by driver's 3ch face-cropped video. Pos_enc + deform are both dropped. | 3 | [`run_no_flame.py`](run_no_flame.py) |
-| **no_posenc** | 42ch positional encoding of vert positions dropped. Keep only 3ch deform. | 3 | [`run_no_posenc.py`](run_no_posenc.py) |
-| **no_deform** | 3ch deform replaced by driver's 3ch face-cropped video. Pos_enc kept. | 45 | [`run_no_deform.py`](run_no_deform.py) |
+All four arms in this folder share **audio cross-attention OFF** so the
+conditioning-pathway comparisons are not confounded by the audio variable.
+`audio_off` is the within-suite reference point — the other three arms are
+compared against it, not against `marionette_baseline`. The audio
+contribution is read off separately via `audio_off` vs `marionette_baseline`.
 
-The audio-on arm is already trained — it's the existing `marionette_baseline`
-checkpoint. No separate "audio_on" config is duplicated here to avoid drift.
+| Arm | Audio | FLAME conditioning | `condition_channels` | Entry |
+|---|---|---|---|---|
+| **audio_off** | off | full 45ch (pos_enc + deform) — unchanged from baseline | 45 | [`run_audio_off.py`](run_audio_off.py) |
+| **no_flame**  | off | full 45ch replaced by driver's 3ch face-cropped video | 3  | [`run_no_flame.py`](run_no_flame.py) |
+| **no_posenc** | off | 42ch pos_enc dropped; 3ch deform kept | 3  | [`run_no_posenc.py`](run_no_posenc.py) |
+| **no_deform** | off | 3ch deform replaced by driver's 3ch face-cropped video; 42ch pos_enc kept | 45 | [`run_no_deform.py`](run_no_deform.py) |
+
+The audio-on counterpart is the existing `marionette_baseline` checkpoint.
+No separate "audio_on" config lives here — duplicating it would invite drift.
+
+### Intended comparisons
+
+- `audio_off` vs `marionette_baseline` → **audio contribution** (only the
+  audio pathway differs; FLAME conditioning is identical).
+- `no_flame` vs `audio_off` → **aligned FLAME vs raw driver pixels** (both
+  audio-off; the entire FLAME conditioning is replaced by driver video).
+- `no_posenc` vs `audio_off` → **pos_enc contribution** (both audio-off;
+  only the 42ch positional encoding is dropped).
+- `no_deform` vs `audio_off` → **aligned deformation contribution** (both
+  audio-off; only the 3ch deform channels are swapped for driver video).
 
 Each arm's conditioning implementation is a single standalone module under
 its arm subfolder (`<arm>/conditioning.py`), imported via the arm's config
@@ -59,12 +76,15 @@ is untouched — arms swap the cond_stage class, they don't mutate it.
   `torch.backends.cudnn.enabled = False`.
 
 What **differs** per arm is exactly one of the conditioning pathways, by
-design. For audio_off: the audio encoder is not instantiated and every
-transformer block skips its cross-attention pass. For no_flame / no_posenc:
-the ConditioningEncoder's first conv is 3 input channels instead of 45
-(smaller first layer; everything downstream is identical). For no_deform:
-the 45-channel cond tensor is the same width but its last 3 channels are
-driver-video pixels instead of rasterized deformation.
+design. Every arm in this folder has audio cross-attention disabled (the
+audio encoder is not instantiated and every transformer block skips its
+cross-attention pass); they then vary the FLAME pathway as follows. For
+no_flame / no_posenc: the ConditioningEncoder's first conv is 3 input
+channels instead of 45 (smaller first layer; everything downstream is
+identical). For no_deform: the 45-channel cond tensor is the same width
+but its last 3 channels are driver-video pixels instead of rasterized
+deformation. For audio_off: the FLAME pathway is untouched — the arm
+only differs from `marionette_baseline` in audio.
 
 ### Load-bearing invariant: one ConditioningEncoder architecture for all arms
 
