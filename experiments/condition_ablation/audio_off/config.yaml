@@ -1,9 +1,9 @@
-# Audio ablation — "audio off" arm.
+# Condition ablation — "audio off" arm.
 #
 # Identical to marionette_baseline in every respect except:
 #   - audio cross-attention disabled via the audio/off overlay
 #     (audio_encoder_config: null, use_audio_context: false)
-#   - output_dir routes under outputs/ablate_audio/
+#   - output_dir routes under outputs/condition_ablation/
 #
 # The audio-on counterpart is the existing `marionette_baseline` run. Because
 # both inherit from `marionette/configs/base.yaml` and keep `seed: 42`,
@@ -19,4 +19,4 @@ base: marionette/configs/base.yaml
 overlays:
   - marionette/configs/overlays/audio/off.yaml
 
-output_dir: outputs/ablate_audio/audio_off
+output_dir: outputs/condition_ablation/audio_off

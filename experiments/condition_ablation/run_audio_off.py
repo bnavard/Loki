@@ -1,27 +1,26 @@
 r"""
-Entry script for the audio ablation — trains the "audio off" arm of a
-controlled ablation against `marionette_baseline` (the audio-on arm).
+Entry script for the "audio off" arm of the conditioning ablation suite —
+trains a twin of `marionette_baseline` with the wav2vec2 cross-attention
+pathway disabled.
 
-Both arms are launched fresh from the same base config, the same seed, and
-the same SD 2.1 init. The only independent variable is whether the audio
-cross-attention pathway is active. After training, compare lip-sync metrics
-(LSE-D / LSE-C) between the two checkpoints on matching validation pairs
-to quantify the contribution of audio conditioning.
+See `experiments/condition_ablation/README.md` for the full matrix. The
+audio-on counterpart is the existing `marionette_baseline` checkpoint;
+nothing new to launch for that arm.
 
 Usage (from repo root):
 
     # Single GPU
-    PYTHONPATH=. python experiments/ablate_audio/run.py
+    PYTHONPATH=. python experiments/condition_ablation/run_audio_off.py
 
     # Multi-GPU (DDP)
-    PYTHONPATH=. python experiments/ablate_audio/run.py --gpus 0 1 2 3
+    PYTHONPATH=. python experiments/condition_ablation/run_audio_off.py --gpus 0 1 2 3
 
     # Resume from a checkpoint
-    PYTHONPATH=. python experiments/ablate_audio/run.py \
-        --resume outputs/ablate_audio/audio_off/run_YYYYmmdd_HHMMSS/checkpoints/th-<step>.ckpt
+    PYTHONPATH=. python experiments/condition_ablation/run_audio_off.py \
+        --resume outputs/condition_ablation/audio_off/run_YYYYmmdd_HHMMSS/checkpoints/th-<step>.ckpt
 
 Outputs:
-    outputs/ablate_audio/audio_off/run_<timestamp>/
+    outputs/condition_ablation/audio_off/run_<timestamp>/
         config_resolved.yaml
         checkpoints/{th-<step>.ckpt, th-best-<step>-<val_loss>.ckpt}
         logs/ (TensorBoard)
@@ -37,7 +36,7 @@ from marionette.train import run_training
 
 
 HERE = Path(__file__).resolve().parent
-CONFIG_PATH = HERE / "configs" / "audio_off.yaml"
+CONFIG_PATH = HERE / "audio_off" / "config.yaml"
 
 
 def parse_args():

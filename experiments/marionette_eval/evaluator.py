@@ -23,10 +23,9 @@ from pathlib import Path
 
 import numpy as np
 import torch
-from omegaconf import DictConfig, OmegaConf
+from omegaconf import DictConfig
 
 from ldm_base.ldm.util import instantiate_from_config
-from marionette.conditioning.conditioning import SpatialConditioning
 from marionette.flame.flame import CAP4DFlameSkinner
 from marionette.retargeting import (
     prepare_driver_frames, prepare_reference, retarget_driver_verts,
@@ -131,8 +130,10 @@ class Evaluator:
         # entirely later), this code keeps working unchanged.
         self.has_audio = self.model.audio_encoder is not None
 
-        self.cond_module = SpatialConditioning(
-            **OmegaConf.to_container(cfg.model.params.cond_stage_config.params),
+        # Dispatch on the config's `target` so condition-ablation arms load
+        # their own cond_stage module without any change here.
+        self.cond_module = instantiate_from_config(
+            cfg.model.params.cond_stage_config,
         ).to(device).eval()
 
         self.flame_skinner = CAP4DFlameSkinner(
@@ -172,9 +173,19 @@ class Evaluator:
             driver_start=driver_start_idx,
         )
 
+        # Driver's face-cropped video — used by the 4-row viz panel AND as the
+        # natural-video conditioning signal read by condition_ablation arms.
+        driver_frames = prepare_driver_frames(
+            drv_fit, self.paths.video_root / f"{driver_clip}.mp4",
+            n_frames, self.resolution, self.flame_skinner, self.head_vert_ids,
+            driver_start=driver_start_idx,
+        )
+        driver_video_norm = (driver_frames.astype(np.float32) / 127.5) - 1.0
+
         hint = {
             "driver_verts":  torch.from_numpy(verts_np).unsqueeze(0).to(device),
             "driver_deform": torch.from_numpy(offsets_np).unsqueeze(0).to(device),
+            "driver_video":  torch.from_numpy(driver_video_norm).unsqueeze(0).to(device),
         }
         c_cond = self.cond_module(hint)
 
@@ -218,11 +229,6 @@ class Evaluator:
             (n_frames, 3, self.resolution, self.resolution),
         ).copy()
 
-        driver_frames = prepare_driver_frames(
-            drv_fit, self.paths.video_root / f"{driver_clip}.mp4",
-            n_frames, self.resolution, self.flame_skinner, self.head_vert_ids,
-            driver_start=driver_start_idx,
-        )
         driver_row = driver_frames.transpose(0, 3, 1, 2).copy()
 
         expr_row = slice_cond_rgb(c_cond["spatial_cond"][0], 42, self.resolution)
