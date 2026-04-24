@@ -84,6 +84,7 @@ identity mismatch.
 | Baseline | Paper | Trained on | Paper eval | Input modality | Res / FPS | Wrapper | Commit pin |
 |---|---|---|---|---|---|---|---|
 | [SadTalker](sadtalker/README.md) | [CVPR 2023](https://arxiv.org/abs/2211.12194) | VoxCeleb | HDTF, first 8 s of 346 videos, same-identity | source image + driven audio | 512×512 / 25 fps | [sadtalker/](sadtalker/) | see `sadtalker/COMMIT_PIN.txt` after first clone |
+| [HunyuanPortrait](hunyuan_portrait/README.md) | [CVPR 2025](https://arxiv.org/abs/2503.18860) | multi-source portraits + SVD init | (various — see paper; we run on HDTF + TalkVid) | source image + driver video (motion-only; **no audio**) | 512×512 / driver's fps | [hunyuan_portrait/](hunyuan_portrait/) | see `hunyuan_portrait/COMMIT_PIN.txt` after first clone |
 
 Add rows as new baselines are wrapped. The **Paper eval** column is the
 source of truth for how we replicate each baseline's published numbers —
@@ -119,11 +120,21 @@ should not silently shift.
 
 ## Running a baseline
 
-See the baseline's own README for env setup. The orchestrator launches from
-the `marionette` env — the baseline's env only hosts its inference
-subprocess, hopped into via `conda run -n <env>`. `--n_samples` caps the
-pair list (independent of the manifest's identity count), so short debug
-runs don't need to regenerate the manifest.
+Each baseline ships a one-shot setup script that creates the conda env,
+installs pip deps, clones upstream, and downloads model weights:
+
+```bash
+bash experiments/sota_comparison/<baseline>/setup_env.sh
+```
+
+Idempotent (per-file sentinels on the big downloads) — safe to re-run after
+any transient failure. See the baseline's own README for the manual
+step-by-step if you need to debug.
+
+The orchestrator launches from the `marionette` env — the baseline's env
+only hosts its inference subprocess, hopped into via `conda run -n <env>`.
+`--n_samples` caps the pair list (independent of the manifest's identity
+count), so short debug runs don't need to regenerate the manifest.
 
 ```bash
 conda activate marionette

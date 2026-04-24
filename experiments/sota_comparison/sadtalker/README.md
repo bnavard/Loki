@@ -16,6 +16,17 @@ apples-to-apples comparison.
 | Env          | `sadtalker` — Python 3.8 + torch 2.1.0+cu121 (deviates from upstream; see below) |
 | Pinned commit | `<fill in on first clone — see "1. Clone the baseline" below>` |
 
+## 0. One-shot setup (recommended)
+
+Everything below (env, pip deps, clone, weights) in one idempotent script:
+
+```bash
+bash experiments/sota_comparison/sadtalker/setup_env.sh
+```
+
+Safe to re-run — completed steps are detected and skipped. Manual walkthrough
+below if you need to debug a specific step.
+
 ## 1. Clone the baseline
 
 The upstream repo is not committed into this repo — it's gitignored under

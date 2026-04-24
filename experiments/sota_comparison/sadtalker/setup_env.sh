@@ -40,10 +40,34 @@ echo "  upstream   : ${UPSTREAM_URL}"
 echo "============================================================"
 echo ""
 
-# Sanity-check that conda is on PATH before doing anything else.
-if ! command -v conda >/dev/null 2>&1; then
-    echo "ERROR: conda not on PATH. Install Miniconda/Anaconda first, or run"
-    echo "       \`source ~/miniconda3/etc/profile.d/conda.sh\` in your shell."
+# Locate conda. We first try `conda` on PATH (the clean case), then fall
+# back to common install prefixes so the script still works in shells where
+# conda was installed system-wide but never `conda init`-ed.
+find_conda_base() {
+    if command -v conda >/dev/null 2>&1; then
+        conda info --base
+        return 0
+    fi
+    local candidates=(
+        /opt/miniforge3  /opt/miniconda3  /opt/anaconda3
+        "${HOME}/miniforge3"  "${HOME}/miniconda3"  "${HOME}/anaconda3"
+    )
+    for c in "${candidates[@]}"; do
+        if [[ -f "${c}/etc/profile.d/conda.sh" ]]; then
+            echo "${c}"
+            return 0
+        fi
+    done
+    return 1
+}
+
+CONDA_BASE="$(find_conda_base || true)"
+if [[ -z "${CONDA_BASE}" ]]; then
+    echo "ERROR: conda not found. Checked PATH and:"
+    echo "         /opt/miniforge3  /opt/miniconda3  /opt/anaconda3"
+    echo "         \$HOME/miniforge3  \$HOME/miniconda3  \$HOME/anaconda3"
+    echo "Install Miniforge/Miniconda, or source its profile in your shell:"
+    echo "  source /path/to/conda/etc/profile.d/conda.sh"
     exit 1
 fi
 
@@ -51,7 +75,7 @@ fi
 # Step 1: conda env
 # =============================================================================
 echo "===== Step 1: conda env ====="
-source "$(conda info --base)/etc/profile.d/conda.sh"
+source "${CONDA_BASE}/etc/profile.d/conda.sh"
 
 if conda env list | awk 'NR>2 {print $1}' | grep -Fxq "${ENV_NAME}"; then
     echo "SKIP: env '${ENV_NAME}' already exists."
