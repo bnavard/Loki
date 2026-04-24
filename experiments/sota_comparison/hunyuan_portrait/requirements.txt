@@ -7,12 +7,21 @@
 diffusers==0.29.0
 moviepy==1.0.1
 
+# transformers must be pinned: 4.47+ requires torch>=2.4 (we ship 2.1), and
+# 4.44+ removed FLAX_WEIGHTS_NAME from transformers.utils, which diffusers
+# 0.29.0 still imports. 4.42.4 is the latest in the compatible window.
+transformers==4.42.4
+
+# torch 2.1.0 was built against numpy 1.x; numpy 2 triggers
+# "Failed to initialize NumPy: _ARRAY_API not found" at torch import.
+numpy<2
+
 # From upstream — unpinned, fine at HEAD since their inference only uses
 # stable API surface from these libs.
-transformers
 accelerate
 omegaconf
-opencv-python-headless
+# opencv-python-headless 4.11+ requires numpy>=2; pinned for numpy<2 compat.
+opencv-python-headless<4.11
 decord
 scikit-image
 scikit-video

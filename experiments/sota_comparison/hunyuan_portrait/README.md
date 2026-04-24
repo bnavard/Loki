@@ -69,7 +69,7 @@ mkdir -p pretrained_weights
 cd pretrained_weights
 
 # Stable Video Diffusion configs (JSONs only)
-huggingface-cli download --resume-download stabilityai/stable-video-diffusion-img2vid-xt \
+hf download --force-download stabilityai/stable-video-diffusion-img2vid-xt \
     --local-dir . --include "*.json"
 
 # yoloface (face detector used by test_preprocess)
@@ -83,7 +83,7 @@ wget -c https://huggingface.co/FoivosPar/Arc2Face/resolve/da2f1e9aa3954dad093213
 
 # HunyuanPortrait's own weights — dino.pth, expression.pth, headpose.pth,
 # image_proj.pth, motion_proj.pth, pose_guider.pth, unet.pth
-huggingface-cli download --resume-download tencent/HunyuanPortrait \
+hf download --force-download tencent/HunyuanPortrait \
     --local-dir hyportrait
 ```
 
