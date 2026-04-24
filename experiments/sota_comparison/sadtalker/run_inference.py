@@ -10,14 +10,11 @@ adapter. Output layout mirrors `marionette_eval/`:
     ├── scratch/                 # per-sample working dir (source.png, audio.wav)
     └── samples/<sample_id>/panel.mp4
 
-Usage (from repo root):
+Usage (from repo root, `marionette` env — NOT `sadtalker`; the subprocess
+hops into the sadtalker env itself). Build the curated manifest for each
+dataset once via `dataset/build_manifest.py` before running these.
 
-    conda activate marionette    # NOT sadtalker — this runner only orchestrates;
-                                 # the subprocess hops to the sadtalker env itself.
-
-    # Same-identity reconstruction (matches SadTalker's paper protocol, except
-    # clip_duration_s is 3.0 instead of 8.0 because our HDTF mirror is
-    # pre-chunked into 3.24-s segments — see README).
+    # HDTF — same-identity reconstruction
     PYTHONPATH=. python experiments/sota_comparison/sadtalker/run_inference.py \
         --dataset hdtf \
         --protocol same_identity_reconstruction \
@@ -25,12 +22,27 @@ Usage (from repo root):
         --clip_duration_s 3.0 \
         --seed 42
 
-    # Cross-identity voice transfer (speaker A's face driven by speaker B's
-    # audio — complements the paper protocol).
+    # HDTF — cross-identity
     PYTHONPATH=. python experiments/sota_comparison/sadtalker/run_inference.py \
         --dataset hdtf \
         --protocol cross_identity \
         --n_samples 200 \
+        --clip_duration_s 3.0 \
+        --seed 42
+
+    # TalkVid — same-identity reconstruction
+    PYTHONPATH=. python experiments/sota_comparison/sadtalker/run_inference.py \
+        --dataset talkvid \
+        --protocol same_identity_reconstruction \
+        --n_samples 125 \
+        --clip_duration_s 3.0 \
+        --seed 42
+
+    # TalkVid — cross-identity
+    PYTHONPATH=. python experiments/sota_comparison/sadtalker/run_inference.py \
+        --dataset talkvid \
+        --protocol cross_identity \
+        --n_samples 125 \
         --clip_duration_s 3.0 \
         --seed 42
 """
