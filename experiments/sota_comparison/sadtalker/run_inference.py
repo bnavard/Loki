@@ -61,7 +61,7 @@ def parse_args():
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     # Dataset / protocol
-    p.add_argument("--dataset",         default="hdtf", choices=["hdtf"])
+    p.add_argument("--dataset",         default="hdtf", choices=["hdtf", "talkvid"])
     p.add_argument("--protocol",        default="same_identity_reconstruction",
                    choices=["same_identity_reconstruction", "cross_identity"])
     p.add_argument("--n_samples",       type=int,   default=346)

@@ -97,7 +97,7 @@ dataset-mirror constraints (documented per baseline).
 | HDTF | `data/benchmark/hdtf/clips/` | Flat `<speaker>_<session>_<start>_<end>.mp4` | First N tokens before `_<session>_<start>_<end>` | Pre-chunked into ~3.24-s segments; paper's "first 8s" can't be replicated clip-by-clip. Use `clip_duration_s=3.0` or stitch adjacent chunks (follow-up). `RD_Radio*` clips are skipped — their naming is inconsistent. |
 | CelebV-HQ | `data/benchmark/celebvhq/` | Flat `<video_id>_<idx>.mp4` | Prefix before `_<idx>` | *Adapter pending — added when a baseline needs it.* |
 | VoxCeleb2 | `data/benchmark/voxceleb2/clips/<speaker>/<video>/<utt>.mp4` | Hierarchical | Top-level folder (`id00012`, …) | Audio partly in `.7z` archives under `audio/aac/` — unpack before use. *Adapter pending.* |
-| TalkVid (ours) | `data/talkvid/talkvid/` | Flat, our own preprocessing | Prefix before first `_` | *Adapter pending — belongs here so any baseline can be evaluated on our data with zero wrapper change.* |
+| TalkVid (ours) | `data/talkvid/talkvid/*.mp4` + `data/talkvid/audio/*.wav`; clip list sourced from `data/derived/val_clips.json` (Marionette's val split) | Flat, our own preprocessing | Prefix before first `_NA_` (YouTube ID) | **Enumerates Marionette's val split**, NOT the full 10k-clip disk, so the SOTA manifest and `marionette_eval/` hit the same clip pool. **mp4s are silent** — audio lives as sibling `.wav` files under `data/talkvid/audio/`. `TalkVidDataset._audio_path_for` populates `BenchmarkClip.audio_path`; baseline adapters pull audio from that instead of the muxed video stream. Clips without an `_NA_` token (rare outliers) each become their own single-clip identity. |
 
 ## Building the benchmark manifest
 

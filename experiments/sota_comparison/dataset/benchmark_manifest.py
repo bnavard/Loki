@@ -115,17 +115,20 @@ def build_benchmark_manifest(
     # set → a given (dataset, seed) tuple reproduces the exact same UIDs.
     clips_with_uid: list[BenchmarkClip] = []
     for i, ident in enumerate(ids_sampled):
-        c = picked[ident]
-        # BenchmarkClip is frozen — rebuild it with the uid field set.
+        picked_clip = picked[ident]
+        # BenchmarkClip is frozen — rebuild it with the uid field set while
+        # forwarding every other field (audio_path included, for datasets
+        # like TalkVid where audio lives outside the mp4).
         clips_with_uid.append(BenchmarkClip(
-            clip_id     = c.clip_id,
-            identity_id = c.identity_id,
-            video_path  = c.video_path,
-            n_frames    = c.n_frames,
-            fps         = c.fps,
-            width       = c.width,
-            height      = c.height,
+            clip_id     = picked_clip.clip_id,
+            identity_id = picked_clip.identity_id,
+            video_path  = picked_clip.video_path,
+            n_frames    = picked_clip.n_frames,
+            fps         = picked_clip.fps,
+            width       = picked_clip.width,
+            height      = picked_clip.height,
             uid         = f"id_{i:04d}",
+            audio_path  = picked_clip.audio_path,
         ))
 
     meta = {

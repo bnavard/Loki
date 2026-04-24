@@ -75,15 +75,17 @@ def _extract_frame(video_path: Path, frame_idx: int, out_png: Path) -> None:
         cap.release()
 
 
-def _extract_audio(video_path: Path, out_wav: Path, duration_s: float) -> None:
-    """Extract the first `duration_s` seconds of `video_path` as mono-16 kHz
-    WAV. SadTalker's audio encoder (wav2lip-based) expects 16 kHz mono, so
-    we resample + downmix here rather than trust the source's sample rate."""
+def _extract_audio(src: Path, out_wav: Path, duration_s: float) -> None:
+    """Extract the first `duration_s` seconds of `src` as mono-16 kHz WAV.
+    `src` may be either a video with muxed audio (HDTF, VoxCeleb2, CelebV-HQ)
+    or a standalone wav (TalkVid's sidecar audio). Either way ffmpeg picks
+    the first audio stream and resamples/downmixes to 16 kHz mono — the
+    format SadTalker's wav2lip-based audio encoder expects."""
     out_wav.parent.mkdir(parents=True, exist_ok=True)
     cmd = [
         "ffmpeg", "-y", "-loglevel", "error",
         "-t", str(duration_s),
-        "-i", str(video_path),
+        "-i", str(src),
         "-vn",                          # no video
         "-acodec", "pcm_s16le",         # uncompressed WAV
         "-ac", "1",                     # mono
@@ -172,7 +174,11 @@ def run_one(
     result_dir = work / "result"
 
     _extract_frame(sample.ref_clip.video_path, ref_frame_idx, source_png)
-    _extract_audio(sample.driver_clip.video_path, driven_wav, sample.clip_duration_s)
+    # Prefer the driver's sidecar audio_path when the dataset provides one
+    # (TalkVid: silent mp4s + sibling .wav files); fall back to the video
+    # itself when audio is muxed in (HDTF, VoxCeleb2, CelebV-HQ).
+    audio_src = sample.driver_clip.audio_path or sample.driver_clip.video_path
+    _extract_audio(audio_src, driven_wav, sample.clip_duration_s)
 
     raw_mp4 = _run_sadtalker_cli(
         impl_dir=impl_dir,
