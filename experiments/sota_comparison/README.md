@@ -85,6 +85,7 @@ identity mismatch.
 |---|---|---|---|---|---|---|---|
 | [SadTalker](sadtalker/README.md) | [CVPR 2023](https://arxiv.org/abs/2211.12194) | VoxCeleb | HDTF, first 8 s of 346 videos, same-identity | source image + driven audio | 512×512 / 25 fps | [sadtalker/](sadtalker/) | see `sadtalker/COMMIT_PIN.txt` after first clone |
 | [HunyuanPortrait](hunyuan_portrait/README.md) | [CVPR 2025](https://arxiv.org/abs/2503.18860) | multi-source portraits + SVD init | (various — see paper; we run on HDTF + TalkVid) | source image + driver video (motion-only; **no audio**) | 512×512 / driver's fps | [hunyuan_portrait/](hunyuan_portrait/) | see `hunyuan_portrait/COMMIT_PIN.txt` after first clone |
+| [X-Portrait](xportrait/README.md) | [SIGGRAPH 2024](https://arxiv.org/abs/2403.15931) | (bytedance internal portrait data) | (cross-identity reenactment; paper uses a mix of HDTF + internal eval) | source image + driver video (motion-only; **no audio**) | 512×512 / driver's fps | [xportrait/](xportrait/) | see `xportrait/COMMIT_PIN.txt` after first clone |
 
 Add rows as new baselines are wrapped. The **Paper eval** column is the
 source of truth for how we replicate each baseline's published numbers —
