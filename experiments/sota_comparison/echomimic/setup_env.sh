@@ -142,10 +142,13 @@ if [[ "${need_download}" -eq 0 ]]; then
     echo "SKIP: ckpts already present."
 else
     echo "Downloading audio-only subset of BadToBest/EchoMimic → ${WEIGHTS_DIR}"
-    # Newer `hf` CLI (>= 0.31). Resume is automatic; partial files re-hash
+    # `huggingface-cli` (not the newer `hf`): we're pinned to
+    # huggingface_hub<0.31 because diffusers 0.24.0 imports the
+    # since-removed `hf_cache_home` symbol — see the comment in
+    # requirements.txt. Resume is automatic; partial files re-hash
     # and continue. The `_pose` and `_acc` variants are deliberately
     # excluded — pose-driven and accelerated paths are out of scope here.
-    hf download BadToBest/EchoMimic \
+    huggingface-cli download BadToBest/EchoMimic \
         --repo-type model \
         --local-dir "${WEIGHTS_DIR}" \
         --include \
