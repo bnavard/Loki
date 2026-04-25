@@ -1,16 +1,23 @@
 """
-FLAME retargeting utilities — pure functions shared across inference,
-evaluation, and future viz callbacks.
+FLAME retargeting utilities — pure functions shared across inference and
+evaluation (`marionette/generate.py`, `experiments/marionette_eval/`).
 
 Core idea: FLAME's topology is identity-agnostic (same V, same face indices
 across identities). Under the reference's camera and β_ref, applying the
 driver's expression ψ and head pose θ yields a mesh that:
-  - lives in the reference's pixel space (so the warp grid lookup is valid),
-  - follows the driver's motion (so the generated video matches the driver).
+  - lives in the reference's pixel space, so it spatially aligns with the
+    image the model is denoising into,
+  - follows the driver's motion, so the generated video matches the driver.
 
 Same-identity case (ref_clip == driver_clip) is a no-op: `retarget_driver_verts`
 just runs the reference's own FLAME; the retargeted verts equal the reference's
 own projected verts.
+
+Both `retarget_driver_verts` and `prepare_driver_frames` accept a
+`driver_start: int = 0` kwarg that shifts the window indexed into the
+driver clip. Used by the eval runners (`marionette_eval/evaluator.py`)
+to evaluate arbitrary windows of a long driver clip without re-loading;
+`generate.py` keeps the default `0` for the simple "first T frames" case.
 """
 from __future__ import annotations
 

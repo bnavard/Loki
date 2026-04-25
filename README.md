@@ -30,6 +30,10 @@ rasterized vertex positions + per-vertex expression deformation).
 │   ├── train.py                      # training orchestrator
 │   └── generate.py                   # inference orchestrator (same- or cross-identity)
 ├── experiments/
+│   ├── marionette_baseline/          # canonical full-stack training run
+│   ├── condition_ablation/           # audio_off / no_flame / no_posenc / no_deform arms
+│   ├── marionette_eval/              # cross + same identity eval against a checkpoint
+│   ├── sota_comparison/              # SadTalker / AniTalker / EchoMimic / HunyuanPortrait / X-Portrait wrappers
 │   └── evaluation_metrics/           # SyncNet lip-sync evaluation
 ├── scripts/                          # data-prep pipeline: download → preprocess → manifest
 ├── generate_exp_map/                 # FLAME tracking (pixel3dmm) — upstream, produces fit.npz

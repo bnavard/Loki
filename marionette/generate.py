@@ -10,12 +10,21 @@ Recipe:
   * `RefFeatureExtractor` runs the frozen SD 2.1 UNet on the VAE-encoded
     reference image once, caching per-layer self-attention inputs.
   * FLAME(β_ref, ψ_driver[t], θ_driver[t], camera=ref) is rasterized into the
-    ref's pixel space — `SpatialConditioning` emits a 45-channel `spatial_cond`
-    (pos_enc + driver_deform) at every gen slot.
+    ref's pixel space. The cond_stage module (instantiated from
+    `cfg.model.params.cond_stage_config.target` so condition_ablation arms
+    drop in without code changes) emits a `spatial_cond` tensor — 45-channel
+    pos_enc + deform for the baseline `SpatialConditioning`; different
+    widths and contents for the ablation arms.
   * DDIM denoising on T pure-noise latents with classifier-free guidance.
     At each step the gen UNet receives both `spatial_cond` (additive to the
-    first feature map) and `ref_features` (concatenated into self-attention
-    K/V at every layer). The ref never occupies a slot in the output.
+    first feature map after `ConditioningEncoder`) and `ref_features`
+    (concatenated into self-attention K/V at every layer). The ref never
+    occupies a slot in the output.
+
+The hint dict carries `driver_verts`, `driver_deform`, AND `driver_video`
+(the driver's face-cropped frames in [-1, 1]). The baseline cond_stage
+ignores `driver_video`; condition_ablation arms (no_flame, no_deform) read
+it.
 
 Usage:
     python marionette/generate.py \

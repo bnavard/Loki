@@ -1,10 +1,20 @@
 """
 TypedDict contracts for the DataLoader → SpatialConditioning → UNet pipeline.
 
-No runtime effect — these are documentation-as-types so callers and IDE
-tooling can see the exact keys each stage produces / consumes. Keep in sync
-with `TalkingHeadDataset.__getitem__`, `SpatialConditioning.forward`, and
-`MarionetteUNet.forward`.
+⚠️ STALE — DO NOT TRUST. These contracts predate the v3 reorg: they still
+reference `ref_mask`, `z_input`, `ref_image`, `ref_verts`, and
+`spatial_cond` of width 49, all of which were removed when identity moved
+into the frozen `RefFeatureExtractor`. The current schema is documented
+inline in:
+  - `TalkingHeadDataset.__getitem__` (data/video_dataset.py)
+  - `SpatialConditioning.forward` (conditioning/conditioning.py)
+  - `MarionetteUNet.forward` (model/unet.py)
+  - `MarionetteDiffusion.get_input` (model/diffusion.py)
+
+This file has no runtime effect — pure documentation-as-types — but the
+documentation itself is wrong and the file is a candidate for deletion in
+a follow-up cleanup. Kept around for now so removing it can be a separate
+focused diff.
 """
 from __future__ import annotations
 

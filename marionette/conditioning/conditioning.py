@@ -1,12 +1,24 @@
 """
-Spatial conditioning producer for the talking-head UNet.
+Spatial conditioning producer for the talking-head UNet — the **canonical**
+implementation. The same `forward(batch) → {"spatial_cond": ...}` contract
+is also implemented by per-arm modules under
+[`experiments/condition_ablation/`](../../experiments/condition_ablation/)
+(NaturalVideoConditioning, DeformOnlyConditioning, PosEncOnlyConditioning),
+each with a different `spatial_cond` width.
 
-Produces a 45-channel `spatial_cond` tensor at full image resolution:
+`SpatialConditioning` (this module) produces a **45-channel** `spatial_cond`
+tensor at full image resolution:
 
     [0:42]  pos_enc  — 42ch sinusoidal positional encoding of rasterized FLAME
                        vertex positions (in target-camera NDC).
     [42:45] deform   — 3ch per-vertex expression deformation offsets, rasterized
                        alongside pos_enc in one render pass.
+
+Two class attrs declare how the visualization helpers (`VisualizationCallback`,
+`generate.py`, `marionette_eval/evaluator.py`) should preview spatial_cond
+on the panel — `VIZ_SLICE = (42, 45)` and `VIZ_LABEL = "Driver Deform"`.
+Each ablation arm overrides these so the viz row stays correct without
+branching on arm type at the call site.
 
 Identity information does not ride on spatial_cond — it flows through the
 frozen reference UNet (`RefFeatureExtractor`), whose per-layer self-attention

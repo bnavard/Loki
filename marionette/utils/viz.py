@@ -1,14 +1,29 @@
 """Visualization utilities for Marionette.
 
 Hosts:
-  - Pure image helpers (`slice_cond_rgb`, `add_label`,
-    `save_labeled_grid`, `save_video_with_audio`, `make_grid_tensor`) used by
-    both live-training viz and offline inspection.
+  - Pure image helpers (`slice_cond_rgb`, `add_label`, `save_labeled_grid`,
+    `save_video_with_audio`, `make_grid_tensor`) used by both live-training
+    viz and offline inspection. `add_label` writes row labels VERTICALLY
+    (rotated 90° CCW) in a narrow strip so they don't clip into frame
+    content the way horizontal labels did.
   - `VisualizationCallback`, the Lightning callback that periodically runs
     same-identity DDIM reconstructions on the val set and writes mp4s /
-    labeled grids / tensorboard images.
+    labeled grids / TensorBoard images.
 
-Kept out of train.py so the orchestrator file stays thin (CLI + run loop only).
+Multi-rank behavior of `VisualizationCallback`:
+  - **Every rank participates.** `n_vis_samples` is sharded across the
+    world (first `n % world_size` ranks get one extra). File names use
+    absolute sample indices so the on-disk union across ranks is a
+    contiguous `sample_00..sample_{N-1}` set with no collisions.
+  - The TensorBoard image log is rank-0-only — TB event files aren't safe
+    under concurrent writes; PNG and mp4 on disk are the full set.
+  - `torch.distributed.barrier()` brackets the callback so fast ranks wait
+    at the post-barrier for slow ones before resuming training (otherwise
+    NCCL would time out on the next all-reduce).
+  - The whole `_generate_samples` is wrapped in try/except in
+    `on_train_batch_end` so a failure on any rank can't skip the
+    post-barrier and deadlock the others.
+
 """
 from __future__ import annotations
 
@@ -34,8 +49,13 @@ def slice_cond_rgb(
     """Render a 3-channel slice of a spatial_cond tensor as uint8 (T, 3, H, W).
 
     Args:
-        spatial_cond: (T, H, W, 49) conditioning tensor (channels-last).
-        ch_start:     first channel of the slice (42 → driver_deform, 45 → warped_ref).
+        spatial_cond: (T, H, W, C) conditioning tensor (channels-last). C
+                      depends on the active cond_stage module — 45 for the
+                      baseline `SpatialConditioning`, 3 / 42 / 45 for the
+                      condition_ablation arms.
+        ch_start:     first channel of the slice. Read from the active
+                      cond_stage's `VIZ_SLICE` class attr — e.g. (42, 45)
+                      for baseline → "Driver Deform" preview.
         target_size:  output spatial size; upsampled bilinearly if different from H/W.
         n_channels:   slice width (default 3 for RGB-like visualization).
     """

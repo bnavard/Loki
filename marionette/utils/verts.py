@@ -8,9 +8,9 @@ CROP_MARGIN = 0.2
 def verts_to_pytorch3d(verts_2d, crop_box):
     """Map pixel-space verts into pytorch3d NDC [-1, 1] relative to crop_box.
 
-    pytorch3d NDC convention: +x = left, +y = up. The sign flips on both axes
-    happen here; grid_sample's +x=right/+y=down convention is reconciled
-    downstream at the warp step (see `SpatialConditioning._warp_reference`).
+    pytorch3d NDC convention: +x = left, +y = up. Both axes are sign-flipped
+    here; downstream consumers (the FLAME mesh rasterizer in
+    `marionette.conditioning.mesh2img.PropRenderer`) expect this convention.
     """
     verts_2d[..., 0] = -((verts_2d[..., 0] - crop_box[..., 0]) / (crop_box[..., 2] - crop_box[..., 0]) * 2. - 1.)
     verts_2d[..., 1] = -((verts_2d[..., 1] - crop_box[..., 1]) / (crop_box[..., 3] - crop_box[..., 1]) * 2. - 1.)

@@ -14,29 +14,38 @@ Usage (from repo root):
 
     # Single video:
     PYTHONPATH=. python experiments/evaluation_metrics/compute_lip_sync.py \
-        --video outputs/ablate_audio/with_audio/run_*/visualizations/step_*/sample_00.mp4 \
+        --video outputs/marionette_baseline/run_<ts>/visualizations/step_<step>/sample_00.mp4 \
         --audio data/talkvid/audio/CLIP_ID.wav \
         --syncnet_weights data/weights/syncnet/syncnet_v2.model
 
     # Batch mode — evaluate all .mp4 files in a directory, paired with audio:
     PYTHONPATH=. python experiments/evaluation_metrics/compute_lip_sync.py \
-        --video_dir outputs/ablate_audio/with_audio/run_*/visualizations/step_005000/ \
+        --video_dir outputs/marionette_baseline/run_<ts>/visualizations/step_<step>/ \
         --audio_dir data/talkvid/audio/ \
         --syncnet_weights data/weights/syncnet/syncnet_v2.model \
         --output results_lip_sync.json
 
-    # Compare two experiment variants:
+    # Compare audio-on (marionette_baseline) vs audio-off
+    # (condition_ablation/audio_off):
     PYTHONPATH=. python experiments/evaluation_metrics/compute_lip_sync.py \
-        --video_dir outputs/ablate_audio/with_audio/generated/ \
+        --video_dir outputs/marionette_baseline/run_<ts>/visualizations/step_<step>/ \
         --audio_dir data/talkvid/audio/ \
         --syncnet_weights data/weights/syncnet/syncnet_v2.model \
-        --output with_audio_lse.json
+        --output audio_on_lse.json
 
     PYTHONPATH=. python experiments/evaluation_metrics/compute_lip_sync.py \
-        --video_dir outputs/ablate_audio/no_audio/generated/ \
+        --video_dir outputs/condition_ablation/audio_off/run_<ts>/visualizations/step_<step>/ \
         --audio_dir data/talkvid/audio/ \
         --syncnet_weights data/weights/syncnet/syncnet_v2.model \
-        --output no_audio_lse.json
+        --output audio_off_lse.json
+
+    # Or evaluate a SOTA baseline's panels — same script, point at the
+    # baseline's samples/ tree:
+    PYTHONPATH=. python experiments/evaluation_metrics/compute_lip_sync.py \
+        --video_dir outputs/sota_comparison/sadtalker/talkvid/cross_identity/run_<ts>/samples/ \
+        --audio_dir data/talkvid/audio/ \
+        --syncnet_weights data/weights/syncnet/syncnet_v2.model \
+        --output sadtalker_talkvid_cross_lse.json
 
 Pretrained weights download:
     mkdir -p data/weights/syncnet

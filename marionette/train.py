@@ -3,17 +3,31 @@ Training driver for the Marionette talking-head diffusion model.
 
 Two public entry points:
 
-  * run_training(cfg, output_dir=None, resume=None, gpus=(0,)) — the pure function.
-    Experiment scripts should import this and pass a pre-loaded DictConfig
-    (typically produced by `marionette.config_utils.load_experiment_config`).
+  * run_training(cfg, output_dir=None, resume=None, gpus=(0,)) — the pure
+    function. Experiment scripts (e.g. `experiments/marionette_baseline/run.py`,
+    `experiments/condition_ablation/run_*.py`) import this and pass a
+    pre-loaded DictConfig produced by
+    `marionette.config_utils.load_experiment_config`.
 
-  * main() — thin CLI wrapper that argparse-parses `--config`, `--resume`, and
-    `--gpus`, then calls run_training. Retained so a bare `python marionette/train.py
-    --config path/to/exp.yaml` still works for ad-hoc runs.
+  * main() — thin CLI wrapper that argparse-parses `--config`, `--resume`,
+    `--output_dir`, and `--gpus`, then calls run_training. Retained so a bare
+    `python marionette/train.py --config path/to/exp.yaml` still works for
+    ad-hoc runs.
 
-Data paths (video_root, audio_root, flame_root, clip_list_path) are read from the
-YAML config. The script uses PyTorch Lightning for training loop, checkpointing,
-and logging.
+Data paths (video_root, audio_root, flame_root, clip_list_path) are read from
+the YAML config; SD 2.1 pretrained init from `cfg.init_path`. Uses PyTorch
+Lightning for the training loop, checkpointing (`th-<step>.ckpt` periodic +
+`th-best-...` on val/loss), and TensorBoard logging.
+
+Side-effects worth knowing about:
+
+  * On rank 0, a `log.txt` is opened at `<run_dir>/log.txt` via
+    `marionette.utils.install_log_tee`, mirroring stdout/stderr (line-buffered)
+    so the terminal output of a run is recoverable from disk after the
+    session ends. Other ranks' stdout stays terminal-only.
+  * `VisualizationCallback` fires every `val_every_n_steps`; every rank
+    participates in the viz pass — the work is sharded across ranks by
+    sample, so a multi-GPU run scales the viz step too.
 """
 
 import argparse

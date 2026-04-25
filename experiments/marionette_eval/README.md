@@ -99,8 +99,14 @@ offset:
    driver_start=driver_start_idx)` → `(T, V, 3)` NDC verts and `(T, V, 3)`
    expression offsets, computed as `β_ref + ψ_driver[t] + θ_driver[t]` under
    the reference's camera.
-4. Run `SpatialConditioning` on `{driver_verts, driver_deform}` → 45-channel
-   `spatial_cond` `(1, T, H, W, 45)`.
+4. Instantiate the active cond_stage module via
+   `instantiate_from_config(cfg.model.params.cond_stage_config)` — this
+   resolves to the baseline's `SpatialConditioning` for a baseline
+   checkpoint, or to one of the per-arm modules under
+   [`experiments/condition_ablation/`](../condition_ablation/) for an
+   ablation checkpoint. Run it on the hint dict to get
+   `spatial_cond (1, T, H, W, C)`. `C` is 45 for the baseline; ablation
+   arms emit different widths (3 or 42).
 5. VAE-encode the ref image → `ref_z (1, 4, h, w)`. This is the sole identity
    signal; `RefFeatureExtractor` consumes it inside `sample_video`.
 6. If the model's audio encoder is present (default on this checkpoint), load
@@ -113,8 +119,11 @@ offset:
    `(T, 4, h, w)` latents.
 9. VAE-decode to `(T, 3, 512, 512)` and write:
    - `panel.png` — 4-row grid: Reference (static) | Driver Video |
-     Driver Expression | Generated.
-   - `panel.mp4` — the same panel stacked vertically, with driver audio muxed.
+     `<cond preview>` | Generated. The third row's slice + label come from
+     the active cond_stage's `VIZ_SLICE` + `VIZ_LABEL` class attrs (e.g.
+     baseline → `(42, 45)` ⇒ `"Driver Deform"`).
+   - `panel.mp4` — the same panel stacked vertically, with driver audio
+     muxed when the model has an audio encoder.
 
 Per-frame PNGs are intentionally **not** saved (phase-2 metrics read from
 `panel.mp4`).

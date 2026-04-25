@@ -80,7 +80,8 @@ PYTHONPATH=. python marionette/train.py \
 ```
 
 Defaults (`base.yaml`): `gpu_batch_size=2`, `virtual_batch_size=2`,
-`n_frames=16`, 5k steps, SD 2.1 init from
+`n_frames=16`, `n_steps=30000`, `val_every_n_steps=3000`,
+`save_every_n_steps=10000`, SD 2.1 init from
 `data/models/v2-1_512-ema-pruned.ckpt`. The experiment runner writes to
 `outputs/<experiment>/run_<timestamp>/`.
 
@@ -133,10 +134,11 @@ marionette/
 │   └── video_dataset.py           # TalkingHeadDataset (same-identity, slot-0 ref + T target frames)
 ├── utils/                         # single import surface: `from marionette.utils import ...`
 │   ├── audio.py                   # audio window loading (shared dataset + inference)
-│   ├── viz.py                     # VisualizationCallback + grid / video helpers
+│   ├── viz.py                     # VisualizationCallback (rank-sharded) + grid / video helpers
 │   ├── video_io.py                # load_frame, FrameReader
 │   ├── image_ops.py               # crop_image, rescale_image
-│   └── verts.py                   # verts_to_pytorch3d, get_bbox_from_verts, get_square_bbox
+│   ├── verts.py                   # verts_to_pytorch3d, get_bbox_from_verts, get_square_bbox
+│   └── log_tee.py                 # install_log_tee → mirrors stdout/stderr to run_<ts>/log.txt
 ├── retargeting.py                 # FLAME retargeting helpers (shared inference + eval)
 ├── train.py                       # training orchestrator
 └── generate.py                    # inference orchestrator (same- or cross-identity)

@@ -1,5 +1,21 @@
 """
-Stochastic I/O sampler for Marionette talking-head generation.
+⚠️ STALE — DO NOT IMPORT. This is the v2 `SlidingWindowSampler` that ran
+back when the reference frame occupied a slot in the gen tensor (with
+`z_input` and `ref_mask` control-dict keys). On the v3 branch identity
+moved into the frozen `RefFeatureExtractor` and the gen tensor is T pure
+target frames, so this sampler references control-dict keys that no module
+emits anymore.
+
+The current sampler is `MarionetteDiffusion.sample_video` in
+`marionette/model/diffusion.py` — DDIM with classifier-free guidance,
+called by `generate.py`, the `marionette_eval/` runners, and the
+`VisualizationCallback`. Nothing imports `SlidingWindowSampler` anymore;
+this file is a candidate for deletion in a follow-up cleanup. The original
+v2 docstring is kept below for historical context.
+
+---------------------------------------------------------------------------
+
+Stochastic I/O sampler for Marionette talking-head generation (v2).
 
 Key features:
   1. R defaults to 1 (single reference frame for talking head). Can still be

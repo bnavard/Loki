@@ -38,30 +38,47 @@ PYTHONPATH=. python experiments/evaluation_metrics/compute_lip_sync.py \
 
 ```bash
 PYTHONPATH=. python experiments/evaluation_metrics/compute_lip_sync.py \
-    --video_dir outputs/ablate_audio/with_audio/generated/ \
+    --video_dir <some-path-of-mp4s> \
     --audio_dir data/talkvid/audio/ \
-    --output results/with_audio_lse.json
+    --output results/lse.json
 ```
 
 Video files are matched to audio files by stem name (e.g. `CLIP_ID.mp4` ↔
 `CLIP_ID.wav`).
 
-### Comparing audio ablation variants
+### Comparing audio-on vs audio-off (condition_ablation)
+
+The audio-on baseline is `marionette_baseline`; the audio-off counterpart
+is the `audio_off` arm under `condition_ablation/`.
 
 ```bash
-# With audio cross-attention
+# Audio cross-attention ON (baseline)
 PYTHONPATH=. python experiments/evaluation_metrics/compute_lip_sync.py \
-    --video_dir outputs/ablate_audio/with_audio/generated/ \
+    --video_dir outputs/marionette_baseline/run_<ts>/visualizations/step_<step>/ \
     --audio_dir data/talkvid/audio/ \
-    --output results/with_audio_lse.json
+    --output results/audio_on_lse.json
 
-# Without audio cross-attention
+# Audio cross-attention OFF
 PYTHONPATH=. python experiments/evaluation_metrics/compute_lip_sync.py \
-    --video_dir outputs/ablate_audio/no_audio/generated/ \
+    --video_dir outputs/condition_ablation/audio_off/run_<ts>/visualizations/step_<step>/ \
     --audio_dir data/talkvid/audio/ \
-    --output results/no_audio_lse.json
+    --output results/audio_off_lse.json
 
 # Then diff the aggregate mean_lse_d and mean_lse_c in the two JSONs.
+```
+
+### Comparing Marionette vs SOTA baselines
+
+Every wrapper under [`sota_comparison/`](../sota_comparison/) writes
+`outputs/sota_comparison/<baseline>/<dataset>/<protocol>/run_<ts>/samples/<sample_id>/panel.mp4`.
+The same metric script handles those — point `--video_dir` at any
+`samples/` tree:
+
+```bash
+PYTHONPATH=. python experiments/evaluation_metrics/compute_lip_sync.py \
+    --video_dir outputs/sota_comparison/sadtalker/talkvid/cross_identity/run_<ts>/samples/ \
+    --audio_dir data/talkvid/audio/ \
+    --output results/sadtalker_talkvid_cross_lse.json
 ```
 
 ### Pipeline

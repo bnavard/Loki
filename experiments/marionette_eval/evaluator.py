@@ -5,16 +5,24 @@ Loads the model + checkpoint once per process and exposes `run_one(...)` to
 generate + save one panel per call. Both the cross-identity and same-identity
 entry scripts consume this — their only difference is the sampling plan.
 
-The inference path mirrors `marionette/generate.py` exactly, with two
-generalisations needed for batched evaluation:
+The inference path mirrors `marionette/generate.py` exactly, with three
+generalisations needed for batched evaluation against any checkpoint:
 
   * A `driver_start_idx` offset threads through `retarget_driver_verts`,
-    `prepare_driver_frames`, and the audio window builder — `generate.py`
-    always starts the driver at frame 0.
+    `prepare_driver_frames`, and the audio window builder so we can probe
+    arbitrary windows of long driver clips. `generate.py` always starts the
+    driver at frame 0.
+  * The cond_stage module is instantiated via
+    `instantiate_from_config(cfg.model.params.cond_stage_config)` rather
+    than hardcoded to `SpatialConditioning`, so condition_ablation
+    checkpoints (no_flame / no_posenc / no_deform) plug in without any
+    code change here. The 4-row panel's third row label + slice come from
+    the active cond_stage's `VIZ_LABEL` / `VIZ_SLICE` class attrs.
   * Audio is treated as truly optional at runtime: if
-    `model.audio_encoder is None` (e.g. trained under `overlays/audio/off.yaml`
-    or a future audio-less variant), the audio branch is skipped and no wav
-    file is read. Matches the model's own `get_input` behaviour.
+    `model.audio_encoder is None` (the audio_off arm under
+    `experiments/condition_ablation/`, or any future audio-less variant),
+    the audio branch is skipped and no wav file is read. Matches the
+    model's own `get_input` behaviour.
 """
 from __future__ import annotations
 

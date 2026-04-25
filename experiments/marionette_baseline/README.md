@@ -35,15 +35,22 @@ PYTHONPATH=. python experiments/marionette_baseline/run.py \
 ```
 outputs/marionette_baseline/run_<timestamp>/
 ├── config_resolved.yaml                           # snapshot at run start
+├── log.txt                                        # mirrored stdout / stderr (rank 0; install_log_tee)
 ├── checkpoints/
 │   ├── th-<step>.ckpt                             # every save_every_n_steps (periodic)
 │   └── th-best-<step>-<val_loss>.ckpt             # top-1 by val/loss
 ├── logs/                                          # TensorBoard
 └── visualizations/
     └── step_<step>/
-        ├── sample_NN.png                          # 4-row grid (Reference | Ground Truth | Driver Deform | Generated)
+        ├── sample_NN.png                          # 4-row grid (Reference | Ground Truth | <cond preview> | Generated)
         └── sample_NN.mp4                          # same rows, with driver audio muxed in
 ```
+
+Row 3 of the panel ("`<cond preview>`") is named by the active cond_stage
+module's `VIZ_LABEL` class attr — `"Driver Deform"` for the baseline, but
+`"Driver Video"` / `"Pos Enc"` etc. for the
+[condition_ablation](../condition_ablation/) arms. The viz code is
+arm-agnostic; the cond module owns its own row label + slice range.
 
 ## What runs periodically
 
@@ -62,24 +69,38 @@ Three independent periodic things fire during training:
 
 ### 2. `VisualizationCallback`
 
-- **When:** every `val_every_n_steps` training steps (default 2000; set in
-  `base.yaml` currently to 1 for debug).
-- **Who:** rank 0 only, wrapped in a `torch.distributed.barrier()` pair so the
-  other ranks wait through the long sampling phase (otherwise NCCL watchdog
-  times out).
-- **What:** for `n_vis_samples` val samples (rotates through the val set
-  between firings), runs `MarionetteDiffusion.sample_video` with
-  `vis_ddim_steps` denoising steps and classifier-free guidance at
-  `cfg.inference.cfg_scale`, then saves:
-  - **PNG grid** — 4 rows × up to 8 frames, labeled:
-    - `Reference` — decoded reference latent, broadcast across time (static row). Red border on frame 0 is a label-driven artifact of the viz helper, not a model slot.
+- **When:** every `val_every_n_steps` training steps (default 3000).
+- **Who:** **every rank participates** — the work is sharded across ranks
+  by sample (rank `r` of world size `W` handles
+  `n_vis_samples // W` samples, with the remainder distributed to the
+  first `n_vis_samples % W` ranks). Bracketing
+  `torch.distributed.barrier()` calls keep the cluster aligned: every rank
+  arrives at the viz callback together, fast ranks wait at the post-barrier
+  for slow ones before resuming training so no rank races into the next
+  step's all-reduce.
+- **What:** for the run's `n_vis_samples` val samples (rotated through the
+  val set across firings), each rank runs `MarionetteDiffusion.sample_video`
+  on its slice with `vis_ddim_steps` denoising steps + classifier-free
+  guidance at `cfg.inference.cfg_scale`, then writes:
+  - **PNG grid** — 4 rows × up to 8 frames. Row labels are vertical
+    (rotated 90° CCW) in a 70-px strip on the left so they don't clip into
+    the frame content.
+    - `Reference` — decoded reference latent, broadcast across time (static row).
     - `Ground Truth` — decoded target latents.
-    - `Driver Deform` — `spatial_cond[..., 42:45]` (the 3-channel per-vertex
-      deformation map rasterized from the driver's FLAME).
+    - **`<cond preview>`** — a 3-channel slice of `spatial_cond` decided by
+      the cond_stage module's `VIZ_SLICE` + `VIZ_LABEL` class attrs.
+      Baseline → `(42, 45)` ⇒ `"Driver Deform"`. Condition-ablation arms
+      override per arm.
     - `Generated` — DDIM+CFG-sampled frames from `sample_video`.
   - **MP4** — the same 4 rows stacked vertically, with the driver's audio
-    muxed in by ffmpeg (no audio → silent mp4).
-  - **TensorBoard image** — the grid, logged under `vis/sample_<N>`.
+    muxed in by ffmpeg if the model's audio encoder is active (silent mp4
+    otherwise).
+  - **TensorBoard image** — rank 0 only logs to `vis/sample_<abs_idx>` —
+    TB event files aren't safe under multi-rank concurrent writes; PNG and
+    mp4 on disk are the full set across ranks.
+
+File names use absolute sample indices (`sample_00`..`sample_{N-1}`) so
+the union across ranks is a contiguous run with no collisions.
 
 ### 3. Checkpoints (`ModelCheckpoint`)
 
@@ -90,9 +111,15 @@ Three independent periodic things fire during training:
 
 ## Knobs worth checking in `base.yaml`
 
-- `n_steps` (currently 5000) — total training steps. Raise for a real run.
-- `val_every_n_steps` (currently 1 — debug setting) — bump to 1000–2000 for
-  production so the viz callback doesn't dominate wall-clock.
-- `save_every_n_steps` (currently 250) — periodic checkpoint interval.
+- `n_steps` (currently `30000`) — total training steps.
+- `val_every_n_steps` (currently `3000`) — viz callback cadence. Drop only
+  if you don't mind the visualization run dominating wall-clock between
+  steps.
+- `save_every_n_steps` (currently `10000`) — periodic checkpoint interval
+  (in addition to the `best_ckpt` callback that fires on every val/loss
+  improvement).
+- `n_vis_samples` (currently `8`) — total samples per visualization fire.
+  Sharded across ranks at run time; each rank handles `n // world_size`
+  samples (remainder distributed to low-index ranks).
 - `gpu_batch_size` × `virtual_batch_size` — controls gradient accumulation
   (`accumulate_grad_batches = virtual_batch_size // gpu_batch_size`).
