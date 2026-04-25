@@ -45,15 +45,11 @@ every SOTA baseline's output share the layout.
 - Base training / inference configs live in `marionette/configs/`.
   Experiment-specific configs live inside each experiment subfolder.
 - Outputs land at repo root under `outputs/<experiment>/…`.
-- `<sample_id>` naming is currently consistent across every
-  `sota_comparison/<baseline>/` — UID-based (`id_0457` for same-identity,
-  `id_0457_id_0009` for cross-identity), drawn from the frozen curated
-  manifest under `experiments/sota_comparison/manifests/`. So a single
-  glob `outputs/sota_comparison/*/<dataset>/<protocol>/*/samples/<sample_id>/panel.mp4`
-  compares every SOTA baseline 1-to-1 on the same physical identity (or
-  identity pair).
-- `marionette_eval/` currently uses identity-name-based folder names
-  (e.g. `ref-05IKsqKcPIg__drv-iC5dWobPSik`) drawn directly from the val
-  set. Cross-tool alignment with the SOTA UIDs is a follow-up — it
-  requires marionette_eval to also enumerate from the curated TalkVid
-  manifest at `experiments/sota_comparison/manifests/talkvid.json`.
+- `<sample_id>` naming is UID-based (`id_0457` for same-identity,
+  `id_0457_id_0009` for cross-identity) and consistent across every
+  `sota_comparison/<baseline>/` **and** `marionette_eval/` — all of them
+  enumerate from the frozen curated manifest under
+  `experiments/sota_comparison/manifests/` via the shared
+  `experiments.sota_comparison.dataset.pairing.build_samples`. So a single
+  glob `outputs/**/samples/<sample_id>/panel.mp4` compares Marionette and
+  every SOTA baseline 1-to-1 on the same physical identity (or pair).

@@ -1,16 +1,13 @@
 # Marionette Evaluation
 
-Visual-only evaluation of a Marionette checkpoint on the validation set. Two
-runners, one file per mode:
-
-| Script | What it does | Output count |
-|---|---|---|
-| [`run_cross_identity.py`](run_cross_identity.py) | Every usable YouTube identity appears once as reference and once as driver (a derangement — `ref_identity ≠ driver_identity`). | N = number of usable identities. |
-| [`run_same_identity.py`](run_same_identity.py)   | Every usable YouTube identity contributes `samples_per_identity` self-reconstructions inside one of its own clips. | N × samples_per_identity. |
-
-Both runners share [`evaluator.py`](evaluator.py) for the inference path and
-[`pairing.py`](pairing.py) for the sample-list construction. This phase saves
-panels + muxed mp4s only — numerical metrics come next.
+Marionette's eval against a checkpoint, **wired into the same identity-pair
+infrastructure every SOTA wrapper uses**. Reads the curated TalkVid manifest
+at [`experiments/sota_comparison/manifests/talkvid.json`](../sota_comparison/manifests/talkvid.json)
+and emits panels under `outputs/marionette_eval/<protocol>/run_<ts>/samples/<sample_id>/`,
+where `<sample_id>` is the same UID-based name (`id_0457` /
+`id_0457_id_0009`) every SOTA baseline produces. A single glob across
+`outputs/**/samples/<sample_id>/panel.mp4` therefore compares Marionette
+1-to-1 against every baseline on the same physical identity (or pair).
 
 ## Quick start
 
@@ -18,138 +15,186 @@ panels + muxed mp4s only — numerical metrics come next.
 conda activate marionette
 
 # Cross-identity (recommended first)
-PYTHONPATH=. python experiments/marionette_eval/run_cross_identity.py \
-    --config     experiments/marionette_eval/configs/cross_identity.yaml \
+PYTHONPATH=. python experiments/marionette_eval/run_inference.py \
+    --dataset talkvid \
+    --protocol cross_identity \
+    --n_samples 125 \
+    --clip_duration_s 5.0 \
+    --seed 42 \
     --checkpoint outputs/marionette_baseline/run_<ts>/checkpoints/<ckpt>.ckpt
 
-# Same-identity
-PYTHONPATH=. python experiments/marionette_eval/run_same_identity.py \
-    --config     experiments/marionette_eval/configs/same_identity.yaml \
+# Same-identity reconstruction
+PYTHONPATH=. python experiments/marionette_eval/run_inference.py \
+    --dataset talkvid \
+    --protocol same_identity_reconstruction \
+    --n_samples 125 \
+    --clip_duration_s 5.0 \
+    --seed 42 \
+    --checkpoint outputs/marionette_baseline/run_<ts>/checkpoints/<ckpt>.ckpt
+
+# HDTF — cross-identity (212 identities; clips are ~3.24 s, so use a 3.0 s filter)
+PYTHONPATH=. python experiments/marionette_eval/run_inference.py \
+    --dataset hdtf \
+    --protocol cross_identity \
+    --n_samples 212 \
+    --clip_duration_s 3.0 \
+    --seed 42 \
     --checkpoint outputs/marionette_baseline/run_<ts>/checkpoints/<ckpt>.ckpt
 ```
 
-`--output_dir`, `--cfg_scale`, `--seed`, `--device` are optional overrides;
-everything else lives in the YAML so runs are reproducible from the config
-alone.
+`--checkpoint` can be set in [`configs/eval.yaml`](configs/eval.yaml) to
+avoid the CLI override. Other knobs (`--cfg_scale`, `--n_ddim_steps`,
+`--n_frames`) override the YAML on the fly.
 
-## What the config controls
+**Prerequisite:** the curated manifest must be built once with
 
-```yaml
-base: marionette/configs/base.yaml    # loads val_dataset paths, model/unet/VAE
-output_dir: outputs/marionette_eval/<mode>
-checkpoint: null                      # or pass via --checkpoint
-
-seed: 42                              # seeds pairing, ref-frame + driver-start draws, torch RNG
-
-inference:
-  n_frames:     16                    # must match UNet time_steps in base.yaml
-  cfg_scale:    2.0                   # classifier-free guidance scale at sample time
-  n_ddim_steps: 50
-
-# same_identity.yaml only:
-eval:
-  samples_per_identity: 2
-  min_ref_driver_gap:   16            # ref stays ≥ this many frames outside target window
+```bash
+PYTHONPATH=. python experiments/sota_comparison/dataset/build_manifest.py --dataset talkvid
+PYTHONPATH=. python experiments/sota_comparison/dataset/build_manifest.py --dataset hdtf  # if running HDTF
 ```
 
-The validation clip list, FLAME tracking root, video root, and audio root all
-come from `val_dataset.params` in [marionette/configs/base.yaml](../../marionette/configs/base.yaml)
-— edit there, not here, if the data paths move.
+**HDTF prereq — generate `fit.npz` for the 212 manifest clips.** TalkVid
+already has FLAME tracking under `data/flame_tracking/flowface/`. HDTF
+doesn't ship with it; generate it once into a dedicated tree under the
+HDTF root (kept separate from `data/flame_tracking/` so the two pools
+don't mix):
 
-## Sampling
+```bash
+# 1. Stage symlinks to the 212 manifest clips so the parallel runner
+#    only processes those (not all 16k+ HDTF mp4s):
+conda activate marionette
+PYTHONPATH=. python -c "
+import json
+from pathlib import Path
+m = json.load(open('experiments/sota_comparison/manifests/hdtf.json'))
+stage = Path('data/benchmark/hdtf/_eval_inputs')
+stage.mkdir(parents=True, exist_ok=True)
+for c in m['clips']:
+    dst = stage / f\"{c['clip_id']}.mp4\"
+    if dst.is_symlink() or dst.exists(): dst.unlink()
+    dst.symlink_to(Path(c['video_path']).resolve())
+print(f'staged {len(m[\"clips\"])} clips')
+"
 
-Identity is the prefix of a clip ID before `_NA_`. For the current val set
-([data/derived/val_clips.json](../../data/derived/val_clips.json)): 773 clips,
-125 unique YouTube identities.
+# 2. Run the FLAME-tracking pipeline against the staged dir, writing all
+#    intermediate + final outputs under data/benchmark/hdtf/flame_tracking/:
+conda activate expmapgen
+PIXEL3DMM_PREPROCESSED_DATA=data/benchmark/hdtf/flame_tracking/preprocessing \
+PIXEL3DMM_TRACKING_OUTPUT=data/benchmark/hdtf/flame_tracking/tracking \
+FLAME_LOG_DIR=data/benchmark/hdtf/flame_tracking/logs/artifacts \
+FLAME_COMPLETED_LOG=data/benchmark/hdtf/flame_tracking/logs/completed_videos.txt \
+FLAME_FAILED_LOG=data/benchmark/hdtf/flame_tracking/logs/failed_videos.txt \
+bash generate_exp_map/scripts/run_multi_gpu.sh \
+    data/benchmark/hdtf/_eval_inputs \
+    data/benchmark/hdtf/flame_tracking/flowface \
+    8 2
+```
 
-### Cross-identity (derangement)
+HDTF clips are 81 frames (~3.24 s at 25 fps) — pass `--clip_duration_s 3.0`
+on the eval CLI so `build_samples`'s length filter doesn't drop everything.
 
-1. Group val clips by YouTube ID.
-2. Drop identities whose clips are all shorter than `n_frames`.
-3. Shuffle the identity list under `seed` and draw a permutation until it has
-   no fixed point (a derangement). This guarantees `ref_identity ≠
-   driver_identity` for every pair and that each identity appears once as
-   ref and once as driver.
-4. Per pair: draw `ref_clip` and `driver_clip` uniformly from each identity's
-   clip list. Draw `ref_frame_idx ∈ [0, ref_clip_len)` and
-   `driver_start_idx ∈ [0, driver_clip_len - n_frames]`.
+## What `--protocol` means here
 
-### Same-identity (per-identity, windowed)
+| Protocol | ref_clip | driver_clip | Output sample_id |
+|---|---|---|---|
+| `same_identity_reconstruction` | identity A's clip | identity A's clip (same) | `id_<uid>` |
+| `cross_identity` | identity A | identity B (B ≠ A; one identity per ref + one per driver, derangement over the manifest) | `id_<ref_uid>_id_<drv_uid>` |
 
-1. Keep only identities with at least one clip of length
-   ≥ `n_frames + 2 * min_ref_driver_gap` (there has to be room for the ref
-   outside the target window).
-2. Per identity, `samples_per_identity` times: draw a clip uniformly, draw
-   `driver_start_idx` uniformly, then draw `ref_frame_idx` uniformly from
-   frames outside `[driver_start - min_gap, driver_start + n_frames + min_gap)`.
+Both protocols are produced by `experiments.sota_comparison.dataset.pairing.build_samples`
+under one seeded RNG, identically to every SOTA wrapper. A given
+`(protocol, seed, manifest)` reproduces the same pair list across SOTA
+baselines and Marionette.
 
-All randomness is funnelled through a single `np.random.default_rng(seed)`,
-so the same config + seed reproduces the same schedule.
+## Why this is "like sota_comparison" specifically
+
+- **Pair-list source identical.** Both Marionette and every SOTA baseline
+  call `load_by_dataset("talkvid")` → curated manifest → `build_samples`.
+  Same UID pool, same derangement / sampling logic.
+- **Sample-id format identical.** `id_0457` / `id_0457_id_0009`.
+- **Output layout identical.** `samples/<sample_id>/panel.{png,mp4}` plus
+  `config_resolved.yaml` and `run_args.json` snapshots at run root, plus a
+  `failed.json` when any sample errors.
+- **Seeding policy identical.** `ref_frame_idx` is drawn from a single
+  `np.random.default_rng(seed)` — `(protocol, seed, sample_id)` selects the
+  same ref frame across every baseline driven from the same manifest.
+
+## Where Marionette differs from a SOTA wrapper
+
+- **In-process, no `conda run`.** Marionette is local; the model loads once
+  in the runner and `Evaluator.run_one(...)` is called per sample. No
+  subprocess hop, no per-sample model reload.
+- **Datasets supported: `talkvid` and `hdtf`.** Both need `fit.npz` per
+  clip. The per-dataset FLAME tracking root is read from
+  `cfg.flame_roots[<dataset>]` — TalkVid points at
+  `data/flame_tracking/flowface/`, HDTF at
+  `data/benchmark/hdtf/flame_tracking/flowface/`. If `fit.npz` is missing
+  for a dataset, generate via `generate_exp_map/` first; see "HDTF prereq"
+  below.
+- **`panel.mp4` is shorter than SOTA's.** Marionette generates
+  `cfg.inference.n_frames` frames per panel (16 by default = 0.64 s at
+  25 fps). SOTA panels are typically 5 s / 125 frames. The `<sample_id>`
+  folder name aligns; the mp4 durations don't. `--clip_duration_s` here
+  only filters the eligible-clip pool inside `build_samples`; it does NOT
+  change Marionette's actual generation length.
+- **Driver-window start fixed at frame 0.** Matches every SOTA wrapper's
+  "first N frames of the trimmed driver" convention.
 
 ## Inference path (per sample)
 
-This is what `evaluator.Evaluator.run_one` does, and it mirrors
-[marionette/generate.py](../../marionette/generate.py) modulo the driver-start
-offset:
+`Evaluator.run_one(sample: EvalSample, ref_frame_idx, output_dir)`:
 
-1. Load `ref_fit` and `driver_fit` from `fit.npz`.
-2. `prepare_reference(ref_fit, ref_frame_idx, …)` → face-cropped ref image
-   (512×512, `[-1, 1]`) + the crop_box that defines ref pixel space.
+1. Load `ref_fit` and `driver_fit` from
+   `<flame_root>/<clip_id>/fit.npz` (`flame_root` from
+   `cfg.val_dataset.params.flame_root`).
+2. `prepare_reference(ref_fit, ref_frame_idx, …)` → face-cropped 512×512
+   ref image in `[-1, 1]` + crop_box.
 3. `retarget_driver_verts(ref_fit, driver_fit, crop_box, n_frames, …,
-   driver_start=driver_start_idx)` → `(T, V, 3)` NDC verts and `(T, V, 3)`
-   expression offsets, computed as `β_ref + ψ_driver[t] + θ_driver[t]` under
-   the reference's camera.
-4. Instantiate the active cond_stage module via
-   `instantiate_from_config(cfg.model.params.cond_stage_config)` — this
-   resolves to the baseline's `SpatialConditioning` for a baseline
-   checkpoint, or to one of the per-arm modules under
-   [`experiments/condition_ablation/`](../condition_ablation/) for an
-   ablation checkpoint. Run it on the hint dict to get
-   `spatial_cond (1, T, H, W, C)`. `C` is 45 for the baseline; ablation
-   arms emit different widths (3 or 42).
-5. VAE-encode the ref image → `ref_z (1, 4, h, w)`. This is the sole identity
-   signal; `RefFeatureExtractor` consumes it inside `sample_video`.
-6. If the model's audio encoder is present (default on this checkpoint), load
-   the **driver's** wav, slice `[driver_start_idx, driver_start_idx + n_frames)`,
-   build centered ±`audio_context_frames` windows, and encode them. Otherwise
-   skip audio entirely. The runtime check is `model.audio_encoder is not None`
-   — when the architecture drops audio, this code keeps working unchanged.
-7. Build `c_uncond` as zero-filled tensors for every key in `c_cond`.
-8. `model.sample_video(...)` — DDIM with classifier-free guidance; returns
-   `(T, 4, h, w)` latents.
-9. VAE-decode to `(T, 3, 512, 512)` and write:
-   - `panel.png` — 4-row grid: Reference (static) | Driver Video |
-     `<cond preview>` | Generated. The third row's slice + label come from
-     the active cond_stage's `VIZ_SLICE` + `VIZ_LABEL` class attrs (e.g.
-     baseline → `(42, 45)` ⇒ `"Driver Deform"`).
-   - `panel.mp4` — the same panel stacked vertically, with driver audio
-     muxed when the model has an audio encoder.
-
-Per-frame PNGs are intentionally **not** saved (phase-2 metrics read from
-`panel.mp4`).
+   driver_start=0)` → `(T, V, 3)` NDC verts and `(T, V, 3)` expression
+   offsets.
+4. `prepare_driver_frames(driver_fit, …, driver_start=0)` → driver's own
+   face-cropped frames, used for the panel's "Driver Video" row AND as
+   the natural-video conditioning signal that the no_flame / no_deform
+   ablation arms read (the baseline cond_stage ignores it).
+5. Run the active cond_stage module (instantiated via
+   `instantiate_from_config(cfg.model.params.cond_stage_config)`, so any
+   condition_ablation arm drops in without code changes here) on
+   `{driver_verts, driver_deform, driver_video}` → `spatial_cond`.
+6. VAE-encode the ref → `ref_z (1, 4, h, w)` for `RefFeatureExtractor`.
+7. If `model.audio_encoder is not None`, load `sample.driver_clip.audio_path`
+   (TalkVid sidecar WAV), build per-frame ±`audio_context_frames` windows,
+   encode. Otherwise skip — handles audio-off checkpoints from
+   `condition_ablation/audio_off/`.
+8. `model.sample_video(...)` — DDIM with classifier-free guidance.
+9. VAE-decode + write 4-row panel:
+   - Reference (static) | Driver Video | `<cond preview>` | Generated.
+   - Row 3 slice + label come from the active cond_stage's `VIZ_SLICE` /
+     `VIZ_LABEL` class attrs, so the row label is correct for every arm
+     (`Driver Deform` for baseline, `Driver Video` / `Pos Enc` for
+     ablations).
 
 ## Output layout
 
 ```
-outputs/marionette_eval/cross_identity/run_<timestamp>/
-├── config_resolved.yaml
-└── samples/
-    └── NNN_ref-<YT_A>__drv-<YT_B>/
-        ├── panel.png
-        └── panel.mp4
-
-outputs/marionette_eval/same_identity/run_<timestamp>/
-├── config_resolved.yaml
-└── samples/
-    └── NNN_<YT>_<k>/
-        ├── panel.png
-        └── panel.mp4
+outputs/marionette_eval/<protocol>/run_<timestamp>/
+├── config_resolved.yaml          # snapshot of the resolved YAML
+├── run_args.json                 # full CLI args + git rev + checkpoint path
+├── failed.json                   # (only if any sample errored)
+└── samples/<sample_id>/
+    ├── panel.png                 # 4-row labeled grid (vertical row labels)
+    └── panel.mp4                 # same panel as video, with driver audio if available
 ```
 
-## Audio-optional note
+Compare directly against
+`outputs/sota_comparison/<baseline>/talkvid/<protocol>/run_<ts>/samples/<sample_id>/panel.mp4`
+with a single glob.
 
-The evaluator reads `model.audio_encoder is not None` at runtime. If a future
-training config sets `audio_encoder_config: null` (or removes audio from the
-architecture entirely), the eval scripts will skip the wav load + the audio
-encoder call and pass `None` as the audio context to `sample_video`. No
-change needed here.
+## Structure
+
+```
+experiments/marionette_eval/
+├── README.md
+├── adapter.py            # Evaluator class + run_one(sample: EvalSample, ...)
+├── run_inference.py      # CLI orchestrator (single runner, --protocol selects)
+└── configs/
+    └── eval.yaml         # base + inference knobs + output_dir + checkpoint
+```
