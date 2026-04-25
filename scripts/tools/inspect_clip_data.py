@@ -1,4 +1,4 @@
-"""
+r"""
 Validate every data file the TalkingHeadDataset will touch, with a per-file
 timeout so corrupt videos that hang decord (a likely cause of NCCL timeouts
 during DDP training) are caught instead of stalling the inspector.
@@ -14,10 +14,10 @@ file for later use (e.g. removing them from the filtered clip lists).
 
 Usage (from repo root):
 
-    PYTHONPATH=. python scripts/tools/inspect_clip_data.py \\
-        --clip_lists data/derived/train_clips.json data/derived/val_clips.json \\
-        --workers 16 \\
-        --timeout 30 \\
+    PYTHONPATH=. python scripts/tools/inspect_clip_data.py \
+        --clip_lists data/derived/train_clips.json data/derived/val_clips.json \
+        --workers 16 \
+        --timeout 30 \
         --output data/derived/bad_clips.json
 """
 

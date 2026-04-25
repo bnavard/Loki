@@ -35,7 +35,6 @@ from einops import rearrange
 from ldm_base.ldm.models.diffusion.ddpm import LatentDiffusion
 from ldm_base.ldm.util import exists, default, instantiate_from_config
 from ldm_base.ldm.modules.diffusionmodules.util import make_beta_schedule
-from ldm_base.ldm.models.diffusion.ddim import DDIMSampler
 
 from marionette.model.utils import shift_schedule, enforce_zero_terminal_snr
 from marionette.model.ref_unet import RefFeatureExtractor

@@ -34,7 +34,6 @@ is used.
 
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 import einops
 
 from marionette.conditioning.mesh2img import PropRenderer

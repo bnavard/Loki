@@ -10,7 +10,6 @@ Window alignment:
   - For video frame index i, the corresponding MFCC slice is [i*4 : i*4 + 20]
 """
 
-from pathlib import Path
 from typing import Optional
 
 import numpy as np

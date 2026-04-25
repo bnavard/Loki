@@ -37,7 +37,6 @@ from typing import Optional, Sequence
 
 import torch
 torch.backends.cudnn.enabled = False
-import numpy as np
 import pytorch_lightning as pl
 from pytorch_lightning.callbacks import ModelCheckpoint
 from pytorch_lightning.loggers import TensorBoardLogger

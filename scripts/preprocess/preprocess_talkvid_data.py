@@ -30,7 +30,6 @@ Usage:
 
 import argparse
 import json
-import os
 import random
 import subprocess
 from pathlib import Path

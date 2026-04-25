@@ -28,7 +28,6 @@ injection.
 """
 
 import torch
-import torch.nn as nn
 import einops
 
 from ldm_base.ldm.modules.diffusionmodules.openaimodel import UNetModel

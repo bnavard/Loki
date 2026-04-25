@@ -9,7 +9,7 @@ Everything is self-contained — no external flowface dependency.
 """
 
 import pickle
-from typing import Any, Dict, List, MutableMapping, Optional
+from typing import Any, Dict, List, MutableMapping
 
 import einops
 import numpy as np

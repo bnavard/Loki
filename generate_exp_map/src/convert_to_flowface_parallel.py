@@ -32,7 +32,6 @@ Usage:
 
 import argparse
 import os
-import sys
 import traceback
 from pathlib import Path
 from multiprocessing import Process, Queue

@@ -9,9 +9,8 @@ import torch
 import torch.nn.functional as F
 from torch import nn, einsum
 from einops import rearrange, repeat
-from typing import Optional, Any
 
-from ldm_base.ldm.modules.diffusionmodules.util import checkpoint, GroupNorm32, LayerNorm32
+from ldm_base.ldm.modules.diffusionmodules.util import GroupNorm32, LayerNorm32
 
 try:
     import xformers
@@ -85,7 +84,15 @@ def Normalize(in_channels):
     return GroupNorm32(num_groups=32, num_channels=in_channels, eps=1e-6, affine=True)
 
 
-def legacy_attention(q, k, v, scale, mask=None):
+def legacy_attention(q, k, v, scale):
+    """Plain Q·Kᵀ → softmax → ·V attention. No mask path — the talking-head
+    pipeline never passes one (every caller of `AttentionModule.forward` in
+    this codebase leaves `mask=None`), and the previous version of this
+    function referenced an undefined `h` inside a `if exists(mask):` branch
+    that was effectively dead. Delete-rather-than-fix because there's no
+    realistic future use for masked self-attention here; reintroduce the
+    parameter (with `h` threaded in explicitly) only if a real consumer
+    appears."""
     if _ATTN_PRECISION == "fp32":
         with torch.autocast(enabled=False, device_type='cuda'):
             q, k = q.float(), k.float()
@@ -94,12 +101,6 @@ def legacy_attention(q, k, v, scale, mask=None):
         sim = einsum('b i d, b j d -> b i j', q, k) * scale
 
     del q, k
-
-    if exists(mask):
-        mask = rearrange(mask, 'b ... -> b (...)')
-        max_neg_value = -torch.finfo(sim.dtype).max
-        mask = repeat(mask, 'b j -> (b h) () j', h=h)
-        sim.masked_fill_(~mask, max_neg_value)
 
     sim = sim.softmax(dim=-1)
     return einsum('b i j, b j d -> b i d', sim, v)
@@ -136,7 +137,7 @@ class AttentionModule(nn.Module):
             nn.Dropout(dropout)
         )
 
-    def forward(self, x, context=None, mask=None, ref_kv=None):
+    def forward(self, x, context=None, ref_kv=None):
         """ref_kv is a pre-norm feature map `(B, N_ref, D)` captured from a
         frozen reference UNet at this layer. When present, its K/V contribution
         is concatenated onto the gen K/V pool so every gen query attends to
@@ -224,9 +225,9 @@ class AttentionModule(nn.Module):
 
             if _USE_FP16_ATTENTION:
                 dtype_before = q.dtype
-                out = legacy_attention(q.half(), k.half(), v.half(), self.scale, mask=mask).type(dtype_before)
+                out = legacy_attention(q.half(), k.half(), v.half(), self.scale).type(dtype_before)
             else:
-                out = legacy_attention(q, k, v, self.scale, mask=mask)
+                out = legacy_attention(q, k, v, self.scale)
 
             if self.mode == "3d":
                 out = rearrange(out, '(b h) (n t) d -> (b t) n (h d)', b=b // t, h=h, t=t)

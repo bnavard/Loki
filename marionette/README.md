@@ -144,7 +144,3 @@ marionette/
 └── generate.py                    # inference orchestrator (same- or cross-identity)
 ```
 
-Stale modules pending cleanup: `data/types.py` (v2 TypedDicts — doc-only, no
-runtime effect, references removed `ref_mask`/`z_input`/`warped_ref`) and
-`model/sampler.py` (v2 `SlidingWindowSampler`, no longer imported; replaced by
-`MarionetteDiffusion.sample_video`). Candidates for deletion in a follow-up.

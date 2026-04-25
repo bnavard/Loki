@@ -2,17 +2,14 @@
 Mesh-to-image rasterization: rasterizes FLAME mesh vertex properties (positions
 and per-vertex offsets) into 2D feature maps used as spatial conditioning.
 """
-from typing import Dict, List, Tuple
+from typing import Tuple
 
 import numpy as np
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 from pytorch3d.ops.interp_face_attrs import interpolate_face_attributes
 from pytorch3d.renderer import (
-    BlendParams,
     PerspectiveCameras,
-    hard_rgb_blend,
     rasterize_meshes,
 )
 from pytorch3d.renderer.mesh.rasterizer import Fragments
