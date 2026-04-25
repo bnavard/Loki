@@ -86,6 +86,8 @@ identity mismatch.
 | [SadTalker](sadtalker/README.md) | [CVPR 2023](https://arxiv.org/abs/2211.12194) | VoxCeleb | HDTF, first 8 s of 346 videos, same-identity | source image + driven audio | 512×512 / 25 fps | [sadtalker/](sadtalker/) | see `sadtalker/COMMIT_PIN.txt` after first clone |
 | [HunyuanPortrait](hunyuan_portrait/README.md) | [CVPR 2025](https://arxiv.org/abs/2503.18860) | multi-source portraits + SVD init | (various — see paper; we run on HDTF + TalkVid) | source image + driver video (motion-only; **no audio**) | 512×512 / driver's fps | [hunyuan_portrait/](hunyuan_portrait/) | see `hunyuan_portrait/COMMIT_PIN.txt` after first clone |
 | [X-Portrait](xportrait/README.md) | [SIGGRAPH 2024](https://arxiv.org/abs/2403.15931) | (bytedance internal portrait data) | (cross-identity reenactment; paper uses a mix of HDTF + internal eval) | source image + driver video (motion-only; **no audio**) | 512×512 / driver's fps | [xportrait/](xportrait/) | see `xportrait/COMMIT_PIN.txt` after first clone |
+| [AniTalker](anitalker/README.md) | [ACM MM 2024](https://arxiv.org/abs/2405.03121) | VoxCeleb2 + HDTF (HuBERT audio-driven) | HDTF + custom eval, same-identity | source image + driven audio (WAV; HuBERT features) | 512×512 (via `--face_sr`) / 25 fps | [anitalker/](anitalker/) | see `anitalker/COMMIT_PIN.txt` after first clone |
+| [EchoMimic](echomimic/README.md) | [AAAI 2025](https://arxiv.org/abs/2407.08136) | (Ant Group internal portrait + audio data) | (custom eval; demo on a mix of Chinese / English / singing audio) | source image + driven audio (WAV; whisper-tiny features) | 512×512 / configurable fps (default 25) | [echomimic/](echomimic/) | see `echomimic/COMMIT_PIN.txt` after first clone |
 
 Add rows as new baselines are wrapped. The **Paper eval** column is the
 source of truth for how we replicate each baseline's published numbers —
@@ -120,6 +122,22 @@ Re-running the CLI refuses to overwrite an existing manifest unless
 should not silently shift.
 
 ## Running a baseline
+
+**Before the first `setup_env.sh`: log in to HuggingFace.** Several baselines
+pull multi-GB weight bundles from HF (e.g. `BadToBest/EchoMimic`,
+`taocode/anitalker_ckpts`). Unauthenticated requests hit aggressive
+rate-limits — large `.pth` files often fail mid-download (the HF CLI prints
+`Warning: You are sending unauthenticated requests…`) and the layout check
+at the end of the script reports them as missing. Avoid this by logging in
+once per machine:
+
+```bash
+hf auth login    # paste a token from https://huggingface.co/settings/tokens
+```
+
+A read-only token is sufficient for all current baselines. The token
+persists in `~/.cache/huggingface/token`; subsequent `setup_env.sh` runs
+pick it up automatically.
 
 Each baseline ships a one-shot setup script that creates the conda env,
 installs pip deps, clones upstream, and downloads model weights:
