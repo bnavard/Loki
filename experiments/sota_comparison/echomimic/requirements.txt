@@ -1,0 +1,37 @@
+# EchoMimic pip deps. Torch 2.1.0+cu121 comes from env.yml; this file
+# handles everything else. Mirrors upstream's `impl/requirements.txt` with
+# small tweaks documented inline.
+
+# ---------------------------------------------------------------------------
+# Diffusion / transformers stack — pinned by upstream's inference path
+# ---------------------------------------------------------------------------
+diffusers==0.24.0
+transformers>=4.38.2
+torchmetrics
+torchtyping
+einops==0.4.1
+omegaconf==2.3.0
+
+# ---------------------------------------------------------------------------
+# Face detection + audio + video I/O
+# ---------------------------------------------------------------------------
+mediapipe                    # face landmark detection
+facenet_pytorch==2.5.0       # face detector (MTCNN); uses torch
+moviepy==1.0.3               # final mp4 audio mux
+# `av` is pinned in env.yml (conda-forge) — see comment there.
+ffmpeg-python==0.2.0
+opencv-python
+
+# ---------------------------------------------------------------------------
+# Misc utilities the inference path imports
+# ---------------------------------------------------------------------------
+tqdm
+
+# ---------------------------------------------------------------------------
+# Added by us — used by setup_env.sh to fetch the ~10 GB ckpt subset from
+# `BadToBest/EchoMimic`. The full HF repo is 34 GB (multiple model variants);
+# we only download what infer_audio2vid.py needs for audio-only inference.
+# `[cli]` extra ships the `huggingface-cli` / `hf` command. The newer `hf`
+# CLI (huggingface_hub >= 0.31) is what setup_env.sh calls.
+# ---------------------------------------------------------------------------
+huggingface_hub[cli]
