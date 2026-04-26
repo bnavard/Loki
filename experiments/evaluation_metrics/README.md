@@ -4,8 +4,8 @@ Quantitative metrics for any run dir produced by the SOTA-comparison or
 marionette-eval runners. The CLI reads `<run_dir>/config_resolved.json` to
 recover `dataset` + `protocol`, then routes the right metric set:
 
-| Protocol                          | Per-sample metrics             | Distribution metrics |
-|-----------------------------------|--------------------------------|----------------------|
+| Protocol                          | Per-sample metrics              | Distribution metrics |
+|-----------------------------------|---------------------------------|----------------------|
 | `same_identity_reconstruction`    | PSNR, SSIM, LPIPS, LMD-F, LMD-M | FVD                  |
 | `cross_identity`                  | ID similarity (ArcFace cosine)  | FVD                  |
 
@@ -14,14 +14,36 @@ aggregates + FVD at `<run_dir>/metrics_summary.json`.
 
 ## Conventions
 
-- Inputs live at `<run_dir>/samples/<sample_id>/panel.mp4` — the canonical
+- **Inputs**: `<run_dir>/samples/<sample_id>/panel.mp4` — the canonical
   per-sample prediction file every SOTA wrapper writes.
-- Ground truth is the manifest's `video_path` for the sample's UID,
+- **Ground truth**: the manifest's `video_path` for the sample's UID,
   resolved from `experiments/sota_comparison/manifests/<dataset>.json`.
   No per-tool GT dump required.
-- Predictions are 25 fps at 512×512 across every tool in this repo;
-  variable-fps GT clips are resampled to 25 fps at load time
-  (nearest-neighbor in time — no temporal interpolation).
+- **fps + resolution**: predictions are 25 fps at 512×512 across every
+  tool in this repo; variable-fps GT clips are resampled to 25 fps at
+  load time (nearest-neighbor — no temporal interpolation).
+- **Face-region cropping** (default-on, same-id only): both pred and GT
+  are independently cropped to a square around the detected face
+  (`1.3 ×` the RetinaFace bbox), then resized to 512×512. PSNR / SSIM /
+  LPIPS / LMD therefore measure face-region quality directly, with no
+  framing or scale asymmetry between pred and GT. Disable with
+  `--no-face-crop` for raw-framing numbers.
+- **Per-frame handling**:
+  - PSNR / SSIM / LPIPS run on **every** paired frame — broken pred
+    frames produce bad numbers and naturally penalize the tool.
+  - LMD-F / LMD-M and ID-cosine require face detection per frame; a
+    frame contributes only when MediaPipe (LMD) / ArcFace (ID-cosine)
+    detects a face. The per-sample `lmd_detect_rate` /
+    `id_detect_rate` is recorded so failure density is visible.
+- **Run-level aggregation**:
+  - PSNR / SSIM / LPIPS: arithmetic mean across samples.
+  - LMD-F / LMD-M / ID-cosine: **weighted** mean using each sample's
+    detect rate as the weight, so noisy samples (where many frames
+    failed detection) contribute proportionally less.
+- **Sample skip**: only when clip-level RetinaFace fails on the first
+  10 probe frames of pred or GT (logged as
+  `skipped: face_detection_failed_clip` in `metrics.jsonl`). Per-frame
+  failures don't trigger a skip.
 
 ## Setup
 
@@ -32,16 +54,18 @@ conda activate evaluation_metrics
 
 ## Usage
 
+### Single run
+
 ```bash
-# SOTA wrapper, same-identity reconstruction:
+# Same-identity:
 PYTHONPATH=. python experiments/evaluation_metrics/compute_metrics.py \
     --run-dir outputs/sota_comparison/sadtalker/talkvid/same_identity_reconstruction/run_<ts>/
 
-# SOTA wrapper, cross-identity:
+# Cross-identity:
 PYTHONPATH=. python experiments/evaluation_metrics/compute_metrics.py \
     --run-dir outputs/sota_comparison/xportrait/talkvid/cross_identity/run_<ts>/
 
-# Skip the distribution-level FVD step (e.g. while iterating on per-sample metrics):
+# Skip the distribution-level FVD step (faster — useful while iterating):
 PYTHONPATH=. python experiments/evaluation_metrics/compute_metrics.py \
     --run-dir outputs/sota_comparison/anitalker/hdtf/same_identity_reconstruction/run_<ts>/ \
     --skip-fvd
@@ -52,36 +76,51 @@ PYTHONPATH=. python experiments/evaluation_metrics/compute_metrics.py \
     --fvd-models videomae i3d
 ```
 
+### Sweep all SOTA runs
+
+`run_eval_metrics_on_sota.sh` walks every
+`outputs/sota_comparison/<baseline>/<dataset>/<protocol>/run_*/`, runs
+`compute_metrics.py --skip-fvd` on each, and mirrors every
+`metrics_summary.json` into a centralized tree under
+`outputs/test_metric/metrics/<baseline>/<dataset>/<protocol>/`:
+
+```bash
+bash experiments/evaluation_metrics/run_eval_metrics_on_sota.sh \
+    > outputs/test_metric/metrics/_batch.log 2>&1 &
+tail -f outputs/test_metric/metrics/_batch.log
+```
+
+Idempotent: already-summarized run dirs are skipped on re-run.
+
 ## Metrics
 
 ### PSNR
-`torchmetrics.functional.image.peak_signal_noise_ratio` with `data_range=1.0`.
-Per-frame, averaged over time per video. Higher is better (dB).
+`torchmetrics.functional.image.peak_signal_noise_ratio` with
+`data_range=1.0`. Per-frame, averaged over time per sample. Higher is
+better (dB).
 
 ### SSIM
 `torchmetrics.functional.image.structural_similarity_index_measure` with
-the canonical Wang et al. 2004 settings (11×11 Gaussian, σ=1.5,
-K1=0.01, K2=0.03). Per-frame, averaged over time. Higher is better
-(bounded in `[-1, 1]`, in practice `[0, 1]` for natural videos).
+canonical Wang et al. 2004 settings (11×11 Gaussian, σ=1.5, K1=0.01,
+K2=0.03). Per-frame, averaged over time. Higher is better.
 
 ### LPIPS
-`lpips.LPIPS(net='alex')` — the Zhang et al. 2018 paper default and what
-nearly every talking-head paper reports. Inputs converted to `[-1, 1]`
-at the call site. Per-frame, averaged over time. Lower is better.
+`lpips.LPIPS(net='alex')` — the Zhang et al. 2018 paper default and the
+talking-head literature standard. Inputs converted to `[-1, 1]` at the
+call site. Per-frame, averaged over time. Lower is better.
 
 ### LMD-F / LMD-M
-MediaPipe FaceMesh with `refine_landmarks=True` (attention-mesh variant
-— sharper iris and lip precision). Per-frame Euclidean distance between
-corresponding 2D landmarks on pred vs. GT, normalized by the GT frame's
-inter-ocular distance (landmarks 33 ↔ 263) so the metric is
-scale-invariant. Reports two variants:
-- **LMD-F**: mean over all 468 face landmarks — penalizes pose /
+MediaPipe FaceLandmarker (Tasks API, `face_landmarker_v2_with_blendshapes.task`).
+Per-frame Euclidean distance between corresponding 2D landmarks on pred
+vs. GT, normalized by the GT frame's inter-ocular distance (landmarks
+33 ↔ 263) so the metric is scale-invariant.
+- **LMD-F**: mean over all 478 face landmarks — penalizes pose /
   expression mismatch alongside lip motion.
 - **LMD-M**: mean over the 22 lip-region landmarks — proxy for lip-sync
   quality.
 
-`detect_rate` (hits / T) is reported alongside; if it drops below ~0.95
-the LMD numbers are biased toward easier frames.
+`lmd_detect_rate` is reported per-sample; the run-level mean for LMD-F
+and LMD-M is **weighted** by this rate.
 
 ### ID similarity (cross-identity only)
 InsightFace `buffalo_l` — RetinaFace + ArcFace R100. The identity prior
@@ -89,26 +128,39 @@ is the L2-normalized mean of ArcFace embeddings over **all frames of the
 ref clip**; per-frame cosine of generated vs. prior is averaged over
 time. Bounded in `[-1, 1]`; higher is better. Per-clip priors are
 cached so a ref clip used by multiple cross-id pairs is only embedded
-once.
+once. Run-level mean is **weighted** by `id_detect_rate`.
 
 ### FVD (distribution metric)
-`cdfvd` (Ge et al., CVPR 2024 — content-debiased FVD). Default backbone
+`cd-fvd` (Ge et al., CVPR 2024 — content-debiased FVD). Default backbone
 is **VideoMAE** (converges on smaller samples than the I3D one per Luo
-et al. JEDi); I3D is opt-in via `--fvd-models videomae i3d` for
-compatibility with older literature.
+et al. JEDi); I3D is opt-in via `--fvd-models videomae i3d`.
 
-I3D FVD is widely held to need ≥ 2k clips for stability. The talking-head
-benchmarks here are 125 (TalkVid) / 212 (HDTF), so the summary tags
-`low_sample = True` whenever the count is below the threshold.
+I3D FVD is widely held to need ≥ 2k clips for stability. The
+talking-head benchmarks here are 125 (TalkVid) / 212 (HDTF), so the
+summary tags `low_sample = True` whenever the count is below the
+threshold.
 
-Internally the runner stages a `<run_dir>/_fvd/{pred,ref}/` symlink tree
-so cdfvd's video-folder loader has paired `<sample_id>.mp4` filenames.
-Symlinks rather than copies — source GT files are hundreds of MB.
+Internally the runner stages a `<run_dir>/_fvd/{pred,ref}/` tree where
+both sides are face-cropped via the same routine used for per-sample
+metrics, so the FVD distribution comparison is on aligned face crops.
 
-## Tests
+## Sanity check
+
+`sanity_check/` ships visualization tools that *don't* compute the
+aggregate metrics — they render per-frame overlays so you can verify by
+eye that the metric inputs are sensible (face crops, landmark detection,
+ArcFace bbox).
 
 ```bash
-PYTHONPATH=. pytest experiments/evaluation_metrics/tests/ -v
+# One sample (same-id or cross-id auto-detected from the run's protocol):
+PYTHONPATH=. python experiments/evaluation_metrics/sanity_check/visualize_sample.py \
+    --run-dir outputs/sota_comparison/sadtalker/talkvid/same_identity_reconstruction/run_<ts>/ \
+    --sample-id id_0042
+
+# Batch — first / middle / last sample of every run dir, mirroring under
+# outputs/test_metric/visualizations/<baseline>/<dataset>/<protocol>/<sample_id>/:
+bash experiments/evaluation_metrics/sanity_check/visualize_batch.sh \
+    > outputs/test_metric/visualizations/_batch.log 2>&1 &
 ```
 
 ## Layout
@@ -116,23 +168,22 @@ PYTHONPATH=. pytest experiments/evaluation_metrics/tests/ -v
 ```
 experiments/evaluation_metrics/
 ├── README.md
-├── setup_env.sh                      # creates `evaluation_metrics` conda env
-├── env.yml                           # python 3.11 + cuda + torch
-├── requirements.txt                  # pip-installable libs
-├── compute_metrics.py                # CLI — auto-routes by protocol
+├── setup_env.sh                          # creates `evaluation_metrics` conda env
+├── env.yml                               # python 3.11 + cuda + torch
+├── requirements.txt                      # pip-installable libs
+├── compute_metrics.py                    # CLI — auto-routes by protocol
+├── run_eval_metrics_on_sota.sh           # sweep every outputs/sota_comparison/**/run_*/
 ├── metrics/
 │   ├── __init__.py
-│   ├── io.py                         # decode + manifest-aware GT resolution
-│   ├── psnr.py                       # torchmetrics wrapper
-│   ├── ssim.py                       # torchmetrics wrapper
-│   ├── lpips_metric.py               # AlexNet, chunked over (B*T)
-│   ├── lmd.py                        # MediaPipe FaceMesh (LMD-F + LMD-M)
-│   ├── fvd.py                        # cdfvd (videomae default, i3d opt-in)
-│   ├── id_sim.py                     # InsightFace ArcFace cosine
-│   └── evaluator.py                  # protocol-aware routing
-└── tests/
-    ├── test_psnr_ssim.py             # cross-check vs scikit-image
-    ├── test_lpips.py                 # identity LPIPS(x,x) ≈ 0
-    ├── test_lmd.py                   # MediaPipe roundtrip + sample_id split
-    └── test_io.py                    # sample_id splitter + run-metadata parsing
+│   ├── io.py                             # decode + manifest GT resolution + face crop
+│   ├── psnr.py                           # torchmetrics wrapper
+│   ├── ssim.py                           # torchmetrics wrapper
+│   ├── lpips_metric.py                   # AlexNet, chunked over (B*T)
+│   ├── lmd.py                            # MediaPipe FaceLandmarker (LMD-F + LMD-M)
+│   ├── fvd.py                            # cd-fvd (videomae default, i3d opt-in)
+│   ├── id_sim.py                         # InsightFace ArcFace cosine
+│   └── evaluator.py                      # protocol-aware routing + weighted aggregation
+└── sanity_check/                         # visual debugging — NOT used by compute_metrics.py
+    ├── visualize_sample.py               # one sample → overlay mp4 + curves PNG
+    └── visualize_batch.sh                # 60 samples across the SOTA tree
 ```

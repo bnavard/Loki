@@ -40,6 +40,12 @@ import torch.nn.functional as F
 DEFAULT_FPS        = 25
 DEFAULT_RESOLUTION = 512
 
+# Face-crop margin around the raw RetinaFace bbox. 1.3× adds a small
+# forehead + jaw cushion to the eyebrows-to-chin RetinaFace box without
+# pulling in hair or shoulders, so the cropped face fills ~80% of the
+# resized frame on both pred and GT.
+DEFAULT_FACE_CROP_MARGIN = 1.3
+
 
 # ---------------------------------------------------------------------------
 # Video decoding
@@ -258,3 +264,117 @@ def truncate_to_match(pred: torch.Tensor, ref: torch.Tensor) -> tuple[torch.Tens
     near-identical frames that bias PSNR/SSIM upward."""
     T = min(pred.shape[0], ref.shape[0])
     return pred[:T], ref[:T]
+
+
+# ---------------------------------------------------------------------------
+# Face-cropping for paired-metric framing alignment
+# ---------------------------------------------------------------------------
+# Predictions in this repo are already face-cropped at 512×512 by each
+# generation tool, but the tool-specific crop varies (SadTalker is tighter
+# than X-Portrait, etc.) and the manifest GT clips aren't face-cropped at
+# all. Pixel-aligned metrics (PSNR / SSIM / LPIPS) collapse if pred and GT
+# don't have the face filling the same fraction of the frame.
+#
+# The fix: detect a face bbox on the first hit-frame of each video, expand
+# it by `margin` (1.5× matches SadTalker's convention and is roughly the
+# talking-head literature default), square it, and crop+resize to the
+# target resolution. Apply the same procedure to **both** sides so the
+# framing is aligned regardless of each tool's idiosyncratic crop.
+
+
+def detect_face_bbox_xyxy(
+    video: torch.Tensor,
+    detect_fn,                       # callable: np_uint8_bgr -> list (insightface Face-likes)
+    max_probe_frames: int = 10,
+) -> tuple[float, float, float, float] | None:
+    """Detect the largest face on the first hit-frame; return its raw
+    `(x1, y1, x2, y2)` in pixel coords, or None on no detection within
+    `max_probe_frames`.
+
+    Pure detection — no margin, no squaring, no resizing. The caller
+    decides what to do with the bbox (measure a face-fill ratio, derive a
+    square crop, etc.).
+    """
+    T = video.shape[0]
+    for t in range(min(max_probe_frames, T)):
+        img_rgb = (video[t].permute(1, 2, 0).cpu().numpy() * 255).astype("uint8")
+        faces = detect_fn(img_rgb[..., ::-1].copy())   # InsightFace expects BGR
+        if not faces:
+            continue
+        face = max(faces, key=lambda f: (f.bbox[2] - f.bbox[0]) * (f.bbox[3] - f.bbox[1]))
+        x1, y1, x2, y2 = face.bbox
+        return (float(x1), float(y1), float(x2), float(y2))
+    return None
+
+
+def face_crop_video(
+    video:             torch.Tensor,
+    bbox_xyxy:         tuple[int, int, int, int],
+    target_resolution: int = DEFAULT_RESOLUTION,
+) -> torch.Tensor:
+    """Apply a precomputed `(x1, y1, x2, y2)` bbox crop to every frame of
+    `video` and bilinearly resize each crop to `target_resolution`.
+
+    `video`: `(T, 3, H, W)` float32 in `[0, 1]`. Returns the same shape with
+    `H == W == target_resolution`.
+    """
+    x1, y1, x2, y2 = bbox_xyxy
+    cropped = video[:, :, y1:y2, x1:x2]
+    return F.interpolate(
+        cropped, size=(target_resolution, target_resolution),
+        mode="bilinear", align_corners=False,
+    )
+
+
+def face_crop_around_detection(
+    video:             torch.Tensor,
+    detect_fn,
+    margin:            float = DEFAULT_FACE_CROP_MARGIN,
+    target_resolution: int   = DEFAULT_RESOLUTION,
+    max_probe_frames:  int   = 10,
+) -> torch.Tensor | None:
+    """Detect a face on the first hit-frame of `video`, expand its bbox by
+    `margin`, square it (face-centered), and crop+resize every frame to
+    `target_resolution`.
+
+    Returns None if face detection fails on the first `max_probe_frames`.
+
+    The same routine is applied to **both** pred and GT in same-identity
+    metric evaluation: each video's metrics are computed on a tight
+    face-only square. This eliminates the framing mismatch between a
+    tool's tool-specific pred crop and the manifest GT's wide crop, and
+    matches what talking-head papers report as PSNR / SSIM / LPIPS on the
+    face region.
+
+    `margin` controls the padding around the raw RetinaFace bbox.
+    RetinaFace returns roughly eyebrows-to-chin already, so 1.3× adds a
+    small forehead and jaw cushion without pulling in hair or shoulders.
+    """
+    bbox = detect_face_bbox_xyxy(video, detect_fn, max_probe_frames)
+    if bbox is None:
+        return None
+    x1, y1, x2, y2 = bbox
+    cx, cy = (x1 + x2) / 2, (y1 + y2) / 2
+    half   = max(x2 - x1, y2 - y1) / 2 * margin
+
+    H, W = video.shape[-2], video.shape[-1]
+    half = min(half, float(min(H, W)) / 2)   # crop can't exceed the frame
+
+    # Center first; shift back inside the image if the square pokes out
+    # (rather than clipping the side, which would change the face-fill
+    # ratio between pred and GT).
+    cx1, cy1, cx2, cy2 = cx - half, cy - half, cx + half, cy + half
+    if cx1 < 0: cx2 -= cx1; cx1 = 0
+    if cy1 < 0: cy2 -= cy1; cy1 = 0
+    if cx2 > W: cx1 -= (cx2 - W); cx2 = W
+    if cy2 > H: cy1 -= (cy2 - H); cy2 = H
+    cx1, cy1 = max(0.0, cx1), max(0.0, cy1)
+    cx2, cy2 = min(float(W), cx2), min(float(H), cy2)
+    if (cx2 - cx1) < 1 or (cy2 - cy1) < 1:
+        return None
+
+    return face_crop_video(
+        video,
+        (int(round(cx1)), int(round(cy1)), int(round(cx2)), int(round(cy2))),
+        target_resolution,
+    )

@@ -55,6 +55,16 @@ def parse_args():
                    help="Inner-batch size for LPIPS — drop if you OOM.")
     p.add_argument("--skip-fvd",       action="store_true",
                    help="Skip the distribution-level FVD step.")
+    p.add_argument("--no-face-crop", dest="face_crop", action="store_false",
+                   help="Disable face-cropping. Default: enabled — both pred "
+                        "and GT are independently cropped to a tight square "
+                        "around the detected face (margin × bbox), then "
+                        "resized to --resolution. PSNR / SSIM / LPIPS / LMD "
+                        "thus measure pure face-region quality. Disable for "
+                        "raw-framing numbers.")
+    p.add_argument("--face-crop-margin", type=float, default=1.3,
+                   help="Padding multiplier around the raw RetinaFace bbox.")
+    p.set_defaults(face_crop=True)
     return p.parse_args()
 
 
@@ -67,6 +77,8 @@ def main():
         fvd_models       = args.fvd_models,
         fvd_seq_len      = args.fvd_seq_len,
         lpips_chunk_size = args.lpips_chunk,
+        face_crop        = args.face_crop,
+        face_crop_margin = args.face_crop_margin,
     )
     summary = evaluate(args.run_dir, cfg, skip_fvd=args.skip_fvd)
     print(json.dumps(summary, indent=2))

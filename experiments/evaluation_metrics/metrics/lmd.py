@@ -51,6 +51,28 @@ RIGHT_EYE_OUTER = 263
 DEFAULT_MODEL_PATH = Path("data/weights/mediapipe/face_landmarker_v2_with_blendshapes.task")
 
 
+def landmark_distance_pair(
+    pred_lms:         np.ndarray,
+    gt_lms:           np.ndarray,
+    normalize_by_iod: bool = True,
+) -> tuple[float, float]:
+    """Per-frame LMD-F and LMD-M from two `(478, 2)` landmark arrays.
+
+    Inter-ocular distance is measured on the **GT** so the normalization
+    is anchored to a stable reference (the prediction's eye geometry can
+    be off in failure modes — using its IOD as the denominator would
+    under-weight bad predictions).
+
+    Returns `(lmd_f, lmd_m)`.
+    """
+    if normalize_by_iod:
+        iod = float(np.linalg.norm(gt_lms[LEFT_EYE_OUTER] - gt_lms[RIGHT_EYE_OUTER])) + 1e-8
+    else:
+        iod = 1.0
+    d = np.linalg.norm(pred_lms - gt_lms, axis=1) / iod
+    return float(d.mean()), float(d[MOUTH_LANDMARKS].mean())
+
+
 class LMD:
     """One MediaPipe `FaceLandmarker` per process — the underlying graph
     is single-threaded and not safe to share across workers (silent
@@ -97,8 +119,14 @@ class LMD:
         )
         self._landmarker = mp_vision.FaceLandmarker.create_from_options(options)
 
-    def _extract(self, frame_uint8: np.ndarray) -> np.ndarray | None:
-        """`frame_uint8`: (H, W, 3) RGB uint8. Returns (478, 2) pixel coords or None."""
+    def extract(self, frame_uint8: np.ndarray) -> np.ndarray | None:
+        """`frame_uint8`: (H, W, 3) RGB uint8. Returns (478, 2) pixel coords or None.
+
+        Public extractor: the evaluator's unified per-frame loop calls
+        this directly to gate PSNR / SSIM / LPIPS / LMD on the same
+        per-frame detection result, so a frame either contributes to all
+        metrics or to none.
+        """
         import mediapipe as mp
         self._ensure_landmarker()
         H, W, _ = frame_uint8.shape
@@ -110,6 +138,9 @@ class LMD:
             return None
         lms = result.face_landmarks[0]
         return np.array([[p.x * W, p.y * H] for p in lms], dtype=np.float32)
+
+    # Back-compat alias used by older callers (visualize_sample.py, tests).
+    _extract = extract
 
     # ---------------- public API ----------------
 
