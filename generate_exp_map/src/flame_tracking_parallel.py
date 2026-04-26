@@ -137,21 +137,41 @@ def main():
     mp4_files = to_process
     total = len(mp4_files)
 
+    # Resolve which physical GPUs to use. If the parent shell set
+    # CUDA_VISIBLE_DEVICES (e.g. `CUDA_VISIBLE_DEVICES=1,2,3 bash run_multi_gpu.sh ... 3`),
+    # we honor that mask — the worker would otherwise overwrite its own
+    # CUDA_VISIBLE_DEVICES with the loop index and end up on physical GPUs
+    # 0..N-1 (the parent's mask is *not* re-applied once a child process
+    # rewrites the variable). Falling back to 0..N-1 when no mask is set
+    # preserves the original behavior.
+    parent_visible = os.environ.get("CUDA_VISIBLE_DEVICES", "")
+    visible_ids = [s.strip() for s in parent_visible.split(",") if s.strip()]
+    if visible_ids:
+        if len(visible_ids) < args.num_gpus:
+            raise ValueError(
+                f"--num_gpus={args.num_gpus} but CUDA_VISIBLE_DEVICES "
+                f"exposes only {len(visible_ids)} GPU(s): {visible_ids}"
+            )
+        physical_gpus = visible_ids[:args.num_gpus]
+    else:
+        physical_gpus = [str(i) for i in range(args.num_gpus)]
+
     print(f"Found {total} videos to process ({len(already_done)} already done)")
-    print(f"Using {args.num_gpus} GPUs x {args.workers_per_gpu} workers = "
+    print(f"Using {args.num_gpus} GPUs (physical: {physical_gpus}) x "
+          f"{args.workers_per_gpu} workers = "
           f"{args.num_gpus * args.workers_per_gpu} concurrent jobs\n")
 
     if total == 0:
         print("Nothing to do.")
         return
 
-    # Create queues + workers
-    task_queues = [Queue() for _ in range(args.num_gpus)]
+    # Create queues + workers (keyed by physical GPU id, not slot index)
+    task_queues = {gid: Queue() for gid in physical_gpus}
     result_queue = Queue()
     stop_event = Event()
 
     workers = []
-    for gpu_id in range(args.num_gpus):
+    for gpu_id in physical_gpus:
         for _ in range(args.workers_per_gpu):
             p = Process(target=worker_process,
                         args=(gpu_id, task_queues[gpu_id], result_queue, stop_event))
@@ -160,10 +180,10 @@ def main():
 
     # Distribute round-robin
     for i, video_path in enumerate(mp4_files):
-        task_queues[i % args.num_gpus].put(str(video_path))
+        task_queues[physical_gpus[i % len(physical_gpus)]].put(str(video_path))
 
     # Poison pills
-    for q in task_queues:
+    for q in task_queues.values():
         for _ in range(args.workers_per_gpu):
             q.put(None)
 

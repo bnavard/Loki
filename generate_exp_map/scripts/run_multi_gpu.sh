@@ -63,8 +63,22 @@ echo "Phase 1 complete."
 echo ""
 
 # --- Phase 2: FlowFace conversion (parallel) ---
-# Build GPU list: 0 1 2 ... (NUM_GPUS-1)
-GPU_LIST=$(seq 0 $((NUM_GPUS - 1)))
+# Build the physical GPU list. Honor CUDA_VISIBLE_DEVICES from the parent
+# shell when set (e.g. CUDA_VISIBLE_DEVICES=1,2,3 ... NUM_GPUS=3) — without
+# this, convert_to_flowface_parallel.py would receive logical 0..N-1 and
+# each worker's `os.environ["CUDA_VISIBLE_DEVICES"]=...` would overwrite
+# the parent mask, landing on physical GPUs 0..N-1 instead of the masked
+# set. Falls back to 0..N-1 when no mask is set (original behavior).
+if [[ -n "${CUDA_VISIBLE_DEVICES:-}" ]]; then
+    IFS=',' read -ra _MASKED <<< "${CUDA_VISIBLE_DEVICES}"
+    if (( ${#_MASKED[@]} < NUM_GPUS )); then
+        echo "ERROR: NUM_GPUS=${NUM_GPUS} but CUDA_VISIBLE_DEVICES exposes only ${#_MASKED[@]} GPU(s): ${CUDA_VISIBLE_DEVICES}" >&2
+        exit 1
+    fi
+    GPU_LIST="${_MASKED[*]:0:NUM_GPUS}"
+else
+    GPU_LIST=$(seq 0 $((NUM_GPUS - 1)))
+fi
 
 echo "========== Phase 2: FlowFace conversion =========="
 PYTHONPATH=. python generate_exp_map/src/convert_to_flowface_parallel.py \

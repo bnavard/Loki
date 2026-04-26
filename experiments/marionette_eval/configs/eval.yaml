@@ -15,7 +15,7 @@ base: marionette/configs/base.yaml
 # SOTA wrappers and this one share the
 # `outputs/<experiment>/.../<protocol>/run_<ts>/` pattern.
 output_dir: outputs/marionette_eval
-checkpoint: null
+checkpoint: outputs/marionette_baseline/run_20260421_035445/checkpoints/th-step=030000.ckpt
 
 seed: 42
 
