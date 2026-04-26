@@ -171,7 +171,13 @@ def main():
                 n_ok += 1
             else:
                 n_fail += 1
+                # Print the full traceback (worker captured it as `tb`) so
+                # systemic failures like missing weights surface immediately
+                # instead of looking like silent "incomplete" outputs.
                 tqdm.write(f"  [FAIL] {result['name']}: {result.get('error', '?')}")
+                tb = result.get("tb")
+                if tb:
+                    tqdm.write(tb.rstrip())
             pbar.update(1)
             pbar.set_postfix(ok=n_ok, fail=n_fail)
 

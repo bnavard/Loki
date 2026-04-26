@@ -417,15 +417,60 @@ done
 echo ""
 
 # =============================================================================
-# Step 10: Phase 2 weights check
+# Step 10: Phase 2 weights (L2CS gaze + RVM matting)
+#
+# Phase 2 (FlowFace conversion) cannot save fit.npz without these — the
+# convert_to_flowface pipeline instantiates L2CSTracker(...) and RVM
+# unconditionally. Previously this step only WARNED on missing files and
+# then Phase 2 failed silently for every video. Now we download them.
 # =============================================================================
 echo "===== Step 10: Phase 2 weights ====="
 
-L2CS_WEIGHTS="${REPO_ROOT}/data/weights/l2cs/L2CSNet_gaze360.pkl"
-RVM_WEIGHTS="${REPO_ROOT}/data/weights/rvm/rvm_mobilenetv3.pth"
+L2CS_DIR="${REPO_ROOT}/data/weights/l2cs"
+RVM_DIR="${REPO_ROOT}/data/weights/rvm"
+L2CS_WEIGHTS="${L2CS_DIR}/L2CSNet_gaze360.pkl"
+RVM_WEIGHTS="${RVM_DIR}/rvm_mobilenetv3.pth"
+mkdir -p "${L2CS_DIR}" "${RVM_DIR}"
 
-[ -f "${L2CS_WEIGHTS}" ] && echo "L2CS gaze weights: OK" || echo "WARNING: L2CS weights missing at ${L2CS_WEIGHTS}"
-[ -f "${RVM_WEIGHTS}" ] && echo "RVM matting weights: OK" || echo "WARNING: RVM weights missing at ${RVM_WEIGHTS}"
+# --- RVM (RobustVideoMatting, mobilenetv3 backbone) ---
+if [ -f "${RVM_WEIGHTS}" ]; then
+    echo "SKIP: RVM matting weights already present (${RVM_WEIGHTS})"
+else
+    echo "Downloading RVM mobilenetv3 weights (~15 MB)..."
+    wget -q --show-progress -c \
+        https://github.com/PeterL1n/RobustVideoMatting/releases/download/v1.0.0/rvm_mobilenetv3.pth \
+        -O "${RVM_WEIGHTS}"
+fi
+
+# --- L2CS (gaze tracking, gaze360 checkpoint) ---
+# Upstream L2CS-Net publishes weights only via Google Drive (no direct URL
+# per file). The folder URL contains the gaze360 checkpoint we need plus
+# ~10 MPIIGaze fold checkpoints we don't. We download the folder to a temp
+# dir, copy the one file, then drop the rest. ~1 GB of transient bandwidth
+# during setup; runs once.
+if [ -f "${L2CS_WEIGHTS}" ]; then
+    echo "SKIP: L2CS gaze weights already present (${L2CS_WEIGHTS})"
+else
+    echo "Downloading L2CS-Net gaze360 weights (folder, ~1 GB transient; ~92 MB kept)..."
+    pip install -q gdown
+    L2CS_TMP="$(mktemp -d)"
+    gdown --folder \
+        "https://drive.google.com/drive/folders/17p6ORr-JQJcw-eYtG2WGNiuS_qVKwdWd" \
+        -O "${L2CS_TMP}"
+    if [ -f "${L2CS_TMP}/L2CSNet/Gaze360/L2CSNet_gaze360.pkl" ]; then
+        cp "${L2CS_TMP}/L2CSNet/Gaze360/L2CSNet_gaze360.pkl" "${L2CS_WEIGHTS}"
+        rm -rf "${L2CS_TMP}"
+        echo "L2CS gaze weights: OK"
+    else
+        echo "ERROR: gdown finished but L2CSNet_gaze360.pkl was not found in ${L2CS_TMP}" >&2
+        echo "       Manual download: https://drive.google.com/drive/folders/17p6ORr-JQJcw-eYtG2WGNiuS_qVKwdWd" >&2
+        echo "       Place the file at: ${L2CS_WEIGHTS}" >&2
+        exit 1
+    fi
+fi
+
+[ -f "${L2CS_WEIGHTS}" ] && echo "L2CS gaze weights: OK ($(du -h "${L2CS_WEIGHTS}" | cut -f1))"
+[ -f "${RVM_WEIGHTS}"  ] && echo "RVM matting weights: OK ($(du -h "${RVM_WEIGHTS}"  | cut -f1))"
 echo ""
 
 # =============================================================================

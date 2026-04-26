@@ -36,7 +36,7 @@ it's safe to re-run after a failure.
 | **CUDA 11.8 toolkit** with `nvcc` + headers | nvdiffrast compiles from source against CUDA 11.8 | The script searches `$CUDA_HOME_118`, `/usr/local/cuda-11.8`, `/opt/cuda-11.8`, and `$CONDA_PREFIX`. If none is valid it will prompt you interactively. A toolkit without `include/cuda_runtime.h` will be rejected — you need the full dev install, not just the driver. |
 | FLAME website account | FLAME 2020 + 2023 model downloads are credentialed | Register at <https://flame.is.tue.mpg.de/>. The script prompts for username (email) and password in step 9. |
 | `data/assets/flame/flame2023.pkl` and `flame2023_no_jaw.pkl` (if you want the chumpy fix) | step 9.5 rewrites these under NumPy 1.23 so downstream loaders don't hit `numpy._core` paths or chumpy breakage | Step skips any file it can't find and keeps going. A `.bak` is written the first time. |
-| `data/weights/l2cs/L2CSNet_gaze360.pkl` and `data/weights/rvm/rvm_mobilenetv3.pth` | Phase 2 gaze + background matting | Step 10 only warns if missing; setup still completes. Phase 2 will fail later without them. |
+| `data/weights/l2cs/L2CSNet_gaze360.pkl` and `data/weights/rvm/rvm_mobilenetv3.pth` | Phase 2 gaze + background matting | Step 10 downloads both automatically: RVM via direct GitHub release URL (~15 MB), L2CS via `gdown --folder` from the L2CS-Net Google Drive (~1 GB transient, ~92 MB kept). Re-running the step is a no-op if the files are already in place. |
 | Outbound network | clones GitHub repos, pulls PyTorch / PyTorch3D / nvdiffrast / FLAME / gdown-hosted weights | Corporate proxies blocking `dl.fbaipublicfiles.com`, `drive.google.com`, or `download.is.tue.mpg.de` will break the run. |
 
 ### What the script does
@@ -161,11 +161,11 @@ generate_exp_map/
 
 Located in `data/weights/` (shared repo-wide):
 
-| Weight | Source | Used by |
-|---|---|---|
-| `l2cs/L2CSNet_gaze360.pkl` | [L2CS-Net](https://github.com/Ahmednull/L2CS-Net) | Gaze tracking in Phase 2 |
-| `rvm/rvm_mobilenetv3.pth` | [RobustVideoMatting](https://github.com/PeterL1n/RobustVideoMatting) | Background matting in Phase 2 |
-| pixel3dmm checkpoints | [pixel3dmm](https://github.com/SimonGiebenhain/pixel3dmm) | Phase 1 (normals + UV prediction) |
+| Weight | Source | Auto-downloaded by | Used by |
+|---|---|---|---|
+| `l2cs/L2CSNet_gaze360.pkl` | [L2CS-Net Google Drive folder](https://drive.google.com/drive/folders/17p6ORr-JQJcw-eYtG2WGNiuS_qVKwdWd) (upstream: [L2CS-Net](https://github.com/Ahmednull/L2CS-Net)) | `setup.sh` step 10 (via `gdown --folder` + cherry-pick) | Gaze tracking in Phase 2 |
+| `rvm/rvm_mobilenetv3.pth` | [RobustVideoMatting v1.0.0 release](https://github.com/PeterL1n/RobustVideoMatting/releases/download/v1.0.0/rvm_mobilenetv3.pth) | `setup.sh` step 10 (direct `wget`) | Background matting in Phase 2 |
+| pixel3dmm checkpoints | [pixel3dmm](https://github.com/SimonGiebenhain/pixel3dmm) | `setup.sh` step 6d (gdown) | Phase 1 (normals + UV prediction) |
 
 ## Output
 
