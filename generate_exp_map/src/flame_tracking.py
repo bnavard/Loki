@@ -60,13 +60,27 @@ def process_video(video_path: str, log_to_file: bool = True, gpu_id: str = "0"):
     video_path = str(Path(video_path).resolve())
     vid_name = Path(video_path).stem
 
-    # Check if tracking output already exists on disk (directory-based resume).
-    # More robust than log-file checks since it survives interrupted runs.
+    # On-disk resume check (survives kills / log-file loss). Sentinels:
+    #   - tracking done   ↔ tracking_dir/<stem>_nV1.../result.mp4 exists
+    #     (final write at tracker.py:1754, after the full optim loop;
+    #     `checkpoint/` is created mid-run and is NOT a reliable marker).
+    #   - preproc done    ↔ p3dmm/uv_map/ has one PNG per frame in cropped/
+    #     (mirrors upstream's own skip at network_inference.py:103-105;
+    #     directory existence alone would falsely match a partial run).
     tracking_dir = Path(os.environ.get("PIXEL3DMM_TRACKING_OUTPUT", "data/flame_tracking/tracking"))
     preprocessing_dir = Path(os.environ.get("PIXEL3DMM_PREPROCESSED_DATA", "data/flame_tracking/preprocessing"))
     tracking_suffix = "_nV1_noPho_uv2000.0_n1000.0"
-    if (tracking_dir / f"{vid_name}{tracking_suffix}" / "checkpoint").is_dir() \
-       and (preprocessing_dir / vid_name / "seg_og").is_dir():
+
+    tracking_done = (tracking_dir / f"{vid_name}{tracking_suffix}" / "result.mp4").is_file()
+    cropped = preprocessing_dir / vid_name / "cropped"
+    uv_map  = preprocessing_dir / vid_name / "p3dmm" / "uv_map"
+    preproc_done = False
+    if cropped.is_dir() and uv_map.is_dir():
+        n_frames  = sum(1 for _ in cropped.iterdir())
+        n_uv_maps = sum(1 for f in uv_map.iterdir() if f.suffix == ".png")
+        preproc_done = n_frames > 0 and n_uv_maps == n_frames
+
+    if tracking_done and preproc_done:
         print(f"Already completed: {vid_name}, skipping...")
         return True
 

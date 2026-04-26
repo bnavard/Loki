@@ -112,18 +112,31 @@ def main():
     mp4_files = sorted(mp4_files)
 
     # Check completion by looking at actual output directories on disk.
-    # Tracking is complete when {stem}_nV1_noPho_uv2000.0_n1000.0/checkpoint/ exists.
-    # Preprocessing is complete when {stem}/ exists in the preprocessing dir.
+    # Tracking is complete only when `result.mp4` is written. That's the
+    # final artifact, produced by `mediapy.write_video(...)` at the very
+    # end of tracker.py after the optimization loop. The `checkpoint/`
+    # directory appears mid-run, so its existence does NOT imply done.
+    #
+    # Preprocessing is complete when the last per-frame PNG has landed in
+    # `p3dmm/uv_map/` AND every input frame in `cropped/` has a matching
+    # PNG there. This mirrors upstream's own skip check
+    # (network_inference.py:103-105) — counting PNGs against the source
+    # frame count catches partial runs that `is_dir()` would miss.
     tracking_dir = Path(os.environ["PIXEL3DMM_TRACKING_OUTPUT"])
     preprocessing_dir = Path(os.environ["PIXEL3DMM_PREPROCESSED_DATA"])
     tracking_suffix = "_nV1_noPho_uv2000.0_n1000.0"
 
     def is_tracking_complete(stem):
-        return (tracking_dir / f"{stem}{tracking_suffix}" / "checkpoint").is_dir()
+        return (tracking_dir / f"{stem}{tracking_suffix}" / "result.mp4").is_file()
 
     def is_preprocessing_complete(stem):
-        d = preprocessing_dir / stem
-        return d.is_dir() and (d / "seg_og").is_dir()
+        cropped = preprocessing_dir / stem / "cropped"
+        uv_map  = preprocessing_dir / stem / "p3dmm" / "uv_map"
+        if not cropped.is_dir() or not uv_map.is_dir():
+            return False
+        n_frames  = sum(1 for _ in cropped.iterdir())
+        n_uv_maps = sum(1 for f in uv_map.iterdir() if f.suffix == ".png")
+        return n_frames > 0 and n_uv_maps == n_frames
 
     already_done = []
     to_process = []
