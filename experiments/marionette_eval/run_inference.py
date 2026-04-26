@@ -136,7 +136,7 @@ def parse_args():
                    help="Override `cfg.checkpoint`.")
     p.add_argument("--output_dir", type=Path, default=None,
                    help=f"Root for outputs. Default: "
-                        f"{DEFAULT_OUT}/<protocol>/run_<ts>/")
+                        f"{DEFAULT_OUT}/<dataset>/<protocol>/run_<ts>/")
     p.add_argument("--device",     default="cuda")
     p.add_argument("--n_take",     type=int, default=None,
                    help="Cap pair list to this many samples (debug).")
@@ -162,10 +162,13 @@ def main():
     torch.cuda.manual_seed_all(seed)
 
     # Resolve output directory (timestamped per run, mirrors SOTA wrappers).
+    # Layout: <root>/<dataset>/<protocol>/run_<ts>/ — matches every SOTA
+    # wrapper (e.g. sota_comparison/sadtalker/run_inference.py:124) so HDTF
+    # and TalkVid runs of the same protocol don't collide in one parent dir.
     if args.output_dir is None:
         ts  = datetime.now().strftime("%Y%m%d_%H%M%S")
         root = Path(cfg.output_dir) if "output_dir" in cfg else DEFAULT_OUT
-        out  = root / args.protocol / f"run_{ts}"
+        out  = root / args.dataset / args.protocol / f"run_{ts}"
     else:
         out = args.output_dir
     out.mkdir(parents=True, exist_ok=True)

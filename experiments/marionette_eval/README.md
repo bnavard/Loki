@@ -3,7 +3,7 @@
 Marionette's eval against a checkpoint, **wired into the same identity-pair
 infrastructure every SOTA wrapper uses**. Reads the curated TalkVid manifest
 at [`experiments/sota_comparison/manifests/talkvid.json`](../sota_comparison/manifests/talkvid.json)
-and emits panels under `outputs/marionette_eval/<protocol>/run_<ts>/samples/<sample_id>/`,
+and emits panels under `outputs/marionette_eval/<dataset>/<protocol>/run_<ts>/samples/<sample_id>/`,
 where `<sample_id>` is the same UID-based name (`id_0457` /
 `id_0457_id_0009`) every SOTA baseline produces. A single glob across
 `outputs/**/samples/<sample_id>/panel.mp4` therefore compares Marionette
@@ -175,7 +175,7 @@ baselines and Marionette.
 ## Output layout
 
 ```
-outputs/marionette_eval/<protocol>/run_<timestamp>/
+outputs/marionette_eval/<dataset>/<protocol>/run_<timestamp>/
 ├── config_resolved.yaml          # snapshot of the resolved YAML
 ├── config_resolved.json          # CLI args + git rev + checkpoint path
 │                                  # (read by the metrics runner)
