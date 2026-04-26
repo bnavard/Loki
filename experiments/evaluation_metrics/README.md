@@ -76,21 +76,38 @@ PYTHONPATH=. python experiments/evaluation_metrics/compute_metrics.py \
     --fvd-models videomae i3d
 ```
 
-### Sweep all SOTA runs
+### Sweep all SOTA runs (multi-GPU)
 
 `run_eval_metrics_on_sota.sh` walks every
-`outputs/sota_comparison/<baseline>/<dataset>/<protocol>/run_*/`, runs
-`compute_metrics.py --skip-fvd` on each, and mirrors every
-`metrics_summary.json` into a centralized tree under
+`outputs/sota_comparison/<baseline>/<dataset>/<protocol>/run_*/` and
+round-robin assigns the run dirs across the available GPUs (default 8).
+Each GPU gets its own worker process; per-worker logs land at
+`outputs/test_metric/metrics/_worker_<gpu>.log`. Every
+`metrics_summary.json` is mirrored into a centralized tree under
 `outputs/test_metric/metrics/<baseline>/<dataset>/<protocol>/`:
 
 ```bash
+# All 8 GPUs (default):
+bash experiments/evaluation_metrics/run_eval_metrics_on_sota.sh
+
+# Override GPU count:
+NUM_GPUS=4 bash experiments/evaluation_metrics/run_eval_metrics_on_sota.sh
+
+# Pin to specific GPU indices:
+GPUS="0 2 4 6" bash experiments/evaluation_metrics/run_eval_metrics_on_sota.sh
+
+# Background + tail one worker:
 bash experiments/evaluation_metrics/run_eval_metrics_on_sota.sh \
     > outputs/test_metric/metrics/_batch.log 2>&1 &
-tail -f outputs/test_metric/metrics/_batch.log
+tail -f outputs/test_metric/metrics/_worker_0.log
 ```
 
-Idempotent: already-summarized run dirs are skipped on re-run.
+Wall-clock for the full 20-run sweep with `--skip-fvd`: ~20–30 min on
+8 GPUs (vs ~2–3 hours sequential). GPU memory per worker is ~600 MB
+(LPIPS AlexNet + InsightFace `buffalo_l` + MediaPipe).
+
+Idempotent: any run dir whose `metrics_summary.json` already exists
+both locally and centrally is skipped on re-run.
 
 ## Metrics
 

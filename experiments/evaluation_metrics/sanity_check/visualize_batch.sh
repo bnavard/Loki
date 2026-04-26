@@ -32,9 +32,14 @@
 set -u
 set -o pipefail
 
+# Locate conda + activate the `evaluation_metrics` env. Sets `$PYTHON`
+# to the env's interpreter regardless of where the env lives on disk.
+HERE="$(cd "$(dirname "$0")" && pwd)"
+# shellcheck source=../_activate.sh
+source "${HERE}/../_activate.sh"
+
 OUT_ROOT="outputs/test_metric/visualizations"
 N_PER_RUN=3
-PYTHON="/venv/evaluation_metrics/bin/python"
 VIZ="experiments/evaluation_metrics/sanity_check/visualize_sample.py"
 
 mkdir -p "${OUT_ROOT}"
