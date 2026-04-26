@@ -107,7 +107,7 @@ if [[ -f "${MP_MODEL_PATH}" ]]; then
     echo "SKIP: ${MP_MODEL_PATH} already present."
 else
     wget -q -O "${MP_MODEL_PATH}" \
-        "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker_v2_with_blendshapes/float16/1/face_landmarker_v2_with_blendshapes.task"
+        "https://storage.googleapis.com/mediapipe-assets/face_landmarker_v2_with_blendshapes.task"
     echo "downloaded ${MP_MODEL_PATH}"
 fi
 echo ""
