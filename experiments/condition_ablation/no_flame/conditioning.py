@@ -72,4 +72,9 @@ class NaturalVideoConditioning(nn.Module):
                     f"NaturalVideoConditioning expects driver_video at "
                     f"{self.image_size}x{self.image_size}; got {H}x{W}."
                 )
-        return {"spatial_cond": driver_video}
+        # `driver_video` shares storage with `target_video[1:]` (see
+        # video_dataset.py). Cloning here so any in-place op deep in the
+        # UNet / VAE / autocast path on `spatial_cond` can't silently
+        # corrupt the diffusion target — suspected trigger for the
+        # no_flame mid-training divergence at step ~2545.
+        return {"spatial_cond": driver_video.clone()}

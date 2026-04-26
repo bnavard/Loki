@@ -1,0 +1,17 @@
+# Pinned for reproducibility — bump with care, especially LPIPS (weights
+# are baked in and any future repackaging would change reported numbers).
+
+torchmetrics>=1.3
+lpips==0.1.4               # AlexNet weights — the talking-head reference set
+cd-fvd                     # content-debiased FVD; ships I3D + VideoMAE backbones (PyPI name is `cd-fvd`, import is `cdfvd`)
+mediapipe>=0.10            # FaceMesh w/ refine_landmarks (attention mesh)
+insightface>=0.7.3         # buffalo_l: RetinaFace + ArcFace R100
+onnxruntime-gpu==1.16.3    # last release with CUDA 11.8 + cuDNN 8 support
+decord                     # fast random-access video decode
+imageio[ffmpeg]            # decode fallback when decord isn't available
+scikit-image               # tests cross-check PSNR/SSIM against this
+numpy<2                    # mediapipe + insightface + several torchmetrics
+                           # ext modules are still compiled against numpy 1.x.
+                           # Lift this when the upstream stack catches up.
+tqdm
+pytest                     # tests/

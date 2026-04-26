@@ -1,103 +1,138 @@
 # Evaluation Metrics
 
-Quantitative metrics for evaluating Marionette's generated talking-head videos.
-All scripts are reusable across experiments.
+Quantitative metrics for any run dir produced by the SOTA-comparison or
+marionette-eval runners. The CLI reads `<run_dir>/run_args.json` to
+recover `dataset` + `protocol`, then routes the right metric set:
 
-## Lip Sync (LSE-D / LSE-C)
+| Protocol                          | Per-sample metrics             | Distribution metrics |
+|-----------------------------------|--------------------------------|----------------------|
+| `same_identity_reconstruction`    | PSNR, SSIM, LPIPS, LMD-F, LMD-M | FVD                  |
+| `cross_identity`                  | ID similarity (ArcFace cosine)  | FVD                  |
 
-Measures audio-visual synchronisation using the pretrained SyncNet v2 model
-(Chung & Zisserman, 2016). Three metrics are reported:
+Per-sample results land at `<run_dir>/metrics.jsonl` (one line per sample);
+aggregates + FVD at `<run_dir>/metrics_summary.json`.
 
-| Metric | Meaning | Better |
-|---|---|---|
-| **LSE-D** | Min avg L2 distance between audio and video embeddings across temporal offsets | Lower |
-| **LSE-C** | Confidence = median distance − min distance (how distinguishable the best offset is) | Higher |
-| **AV Offset** | Best-matching temporal offset in frames | Closer to 0 |
+## Conventions
 
-### Setup
+- Inputs live at `<run_dir>/samples/<sample_id>/panel.mp4` — the canonical
+  per-sample prediction file every SOTA wrapper writes.
+- Ground truth is the manifest's `video_path` for the sample's UID,
+  resolved from `experiments/sota_comparison/manifests/<dataset>.json`.
+  No per-tool GT dump required.
+- Predictions are 25 fps at 512×512 across every tool in this repo;
+  variable-fps GT clips are resampled to 25 fps at load time
+  (nearest-neighbor in time — no temporal interpolation).
 
-```bash
-# Install dependency
-pip install python-speech-features
-
-# Download pretrained SyncNet v2 weights (~55 MB)
-mkdir -p data/weights/syncnet
-wget -O data/weights/syncnet/syncnet_v2.model \
-    https://huggingface.co/lithiumice/syncnet/resolve/main/syncnet_v2.model
-```
-
-### Single video
+## Setup
 
 ```bash
-PYTHONPATH=. python experiments/evaluation_metrics/compute_lip_sync.py \
-    --video path/to/generated.mp4 \
-    --audio path/to/source_audio.wav
+bash experiments/evaluation_metrics/setup_env.sh
+conda activate evaluation_metrics
 ```
 
-### Batch mode (all videos in a directory)
+## Usage
 
 ```bash
-PYTHONPATH=. python experiments/evaluation_metrics/compute_lip_sync.py \
-    --video_dir <some-path-of-mp4s> \
-    --audio_dir data/talkvid/audio/ \
-    --output results/lse.json
+# SOTA wrapper, same-identity reconstruction:
+PYTHONPATH=. python experiments/evaluation_metrics/compute_metrics.py \
+    --run-dir outputs/sota_comparison/sadtalker/talkvid/same_identity_reconstruction/run_<ts>/
+
+# SOTA wrapper, cross-identity:
+PYTHONPATH=. python experiments/evaluation_metrics/compute_metrics.py \
+    --run-dir outputs/sota_comparison/xportrait/talkvid/cross_identity/run_<ts>/
+
+# Skip the distribution-level FVD step (e.g. while iterating on per-sample metrics):
+PYTHONPATH=. python experiments/evaluation_metrics/compute_metrics.py \
+    --run-dir outputs/sota_comparison/anitalker/hdtf/same_identity_reconstruction/run_<ts>/ \
+    --skip-fvd
+
+# Both FVD backbones (default is videomae only):
+PYTHONPATH=. python experiments/evaluation_metrics/compute_metrics.py \
+    --run-dir outputs/sota_comparison/hunyuan_portrait/talkvid/same_identity_reconstruction/run_<ts>/ \
+    --fvd-models videomae i3d
 ```
 
-Video files are matched to audio files by stem name (e.g. `CLIP_ID.mp4` ↔
-`CLIP_ID.wav`).
+## Metrics
 
-### Comparing audio-on vs audio-off (condition_ablation)
+### PSNR
+`torchmetrics.functional.image.peak_signal_noise_ratio` with `data_range=1.0`.
+Per-frame, averaged over time per video. Higher is better (dB).
 
-The audio-on baseline is `marionette_baseline`; the audio-off counterpart
-is the `audio_off` arm under `condition_ablation/`.
+### SSIM
+`torchmetrics.functional.image.structural_similarity_index_measure` with
+the canonical Wang et al. 2004 settings (11×11 Gaussian, σ=1.5,
+K1=0.01, K2=0.03). Per-frame, averaged over time. Higher is better
+(bounded in `[-1, 1]`, in practice `[0, 1]` for natural videos).
+
+### LPIPS
+`lpips.LPIPS(net='alex')` — the Zhang et al. 2018 paper default and what
+nearly every talking-head paper reports. Inputs converted to `[-1, 1]`
+at the call site. Per-frame, averaged over time. Lower is better.
+
+### LMD-F / LMD-M
+MediaPipe FaceMesh with `refine_landmarks=True` (attention-mesh variant
+— sharper iris and lip precision). Per-frame Euclidean distance between
+corresponding 2D landmarks on pred vs. GT, normalized by the GT frame's
+inter-ocular distance (landmarks 33 ↔ 263) so the metric is
+scale-invariant. Reports two variants:
+- **LMD-F**: mean over all 468 face landmarks — penalizes pose /
+  expression mismatch alongside lip motion.
+- **LMD-M**: mean over the 22 lip-region landmarks — proxy for lip-sync
+  quality.
+
+`detect_rate` (hits / T) is reported alongside; if it drops below ~0.95
+the LMD numbers are biased toward easier frames.
+
+### ID similarity (cross-identity only)
+InsightFace `buffalo_l` — RetinaFace + ArcFace R100. The identity prior
+is the L2-normalized mean of ArcFace embeddings over **all frames of the
+ref clip**; per-frame cosine of generated vs. prior is averaged over
+time. Bounded in `[-1, 1]`; higher is better. Per-clip priors are
+cached so a ref clip used by multiple cross-id pairs is only embedded
+once.
+
+### FVD (distribution metric)
+`cdfvd` (Ge et al., CVPR 2024 — content-debiased FVD). Default backbone
+is **VideoMAE** (converges on smaller samples than the I3D one per Luo
+et al. JEDi); I3D is opt-in via `--fvd-models videomae i3d` for
+compatibility with older literature.
+
+I3D FVD is widely held to need ≥ 2k clips for stability. The talking-head
+benchmarks here are 125 (TalkVid) / 212 (HDTF), so the summary tags
+`low_sample = True` whenever the count is below the threshold.
+
+Internally the runner stages a `<run_dir>/_fvd/{pred,ref}/` symlink tree
+so cdfvd's video-folder loader has paired `<sample_id>.mp4` filenames.
+Symlinks rather than copies — source GT files are hundreds of MB.
+
+## Tests
 
 ```bash
-# Audio cross-attention ON (baseline)
-PYTHONPATH=. python experiments/evaluation_metrics/compute_lip_sync.py \
-    --video_dir outputs/marionette_baseline/run_<ts>/visualizations/step_<step>/ \
-    --audio_dir data/talkvid/audio/ \
-    --output results/audio_on_lse.json
-
-# Audio cross-attention OFF
-PYTHONPATH=. python experiments/evaluation_metrics/compute_lip_sync.py \
-    --video_dir outputs/condition_ablation/audio_off/run_<ts>/visualizations/step_<step>/ \
-    --audio_dir data/talkvid/audio/ \
-    --output results/audio_off_lse.json
-
-# Then diff the aggregate mean_lse_d and mean_lse_c in the two JSONs.
+PYTHONPATH=. pytest experiments/evaluation_metrics/tests/ -v
 ```
 
-### Comparing Marionette vs SOTA baselines
-
-Every wrapper under [`sota_comparison/`](../sota_comparison/) writes
-`outputs/sota_comparison/<baseline>/<dataset>/<protocol>/run_<ts>/samples/<sample_id>/panel.mp4`.
-The same metric script handles those — point `--video_dir` at any
-`samples/` tree:
-
-```bash
-PYTHONPATH=. python experiments/evaluation_metrics/compute_lip_sync.py \
-    --video_dir outputs/sota_comparison/sadtalker/talkvid/cross_identity/run_<ts>/samples/ \
-    --audio_dir data/talkvid/audio/ \
-    --output results/sadtalker_talkvid_cross_lse.json
-```
-
-### Pipeline
-
-1. **Video**: decode frames → resize to 224×224 → sliding windows of 5 frames
-2. **Audio**: load WAV → compute 13-coefficient MFCC at 100 Hz → sliding windows
-   of 20 MFCC frames (aligned to 5 video frames at 25 FPS)
-3. **Embeddings**: both streams through pretrained SyncNet v2 → 1024-dim each
-4. **Metric**: L2 distance between video and audio embeddings at each temporal
-   offset (±15 frames), then min (LSE-D) and median−min (LSE-C)
-
-### Structure
+## Layout
 
 ```
 experiments/evaluation_metrics/
 ├── README.md
-├── compute_lip_sync.py           # CLI entry point
-└── syncnet/
-    ├── __init__.py
-    ├── model.py                  # SyncNet v2 architecture + weight loading
-    └── preprocess.py             # MFCC + frame extraction + window alignment
+├── setup_env.sh                      # creates `evaluation_metrics` conda env
+├── env.yml                           # python 3.11 + cuda + torch
+├── requirements.txt                  # pip-installable libs
+├── compute_metrics.py                # CLI — auto-routes by protocol
+├── metrics/
+│   ├── __init__.py
+│   ├── io.py                         # decode + manifest-aware GT resolution
+│   ├── psnr.py                       # torchmetrics wrapper
+│   ├── ssim.py                       # torchmetrics wrapper
+│   ├── lpips_metric.py               # AlexNet, chunked over (B*T)
+│   ├── lmd.py                        # MediaPipe FaceMesh (LMD-F + LMD-M)
+│   ├── fvd.py                        # cdfvd (videomae default, i3d opt-in)
+│   ├── id_sim.py                     # InsightFace ArcFace cosine
+│   └── evaluator.py                  # protocol-aware routing
+└── tests/
+    ├── test_psnr_ssim.py             # cross-check vs scikit-image
+    ├── test_lpips.py                 # identity LPIPS(x,x) ≈ 0
+    ├── test_lmd.py                   # MediaPipe roundtrip + sample_id split
+    └── test_io.py                    # sample_id splitter + run_args parsing
 ```
