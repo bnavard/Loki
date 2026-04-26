@@ -190,8 +190,13 @@ def main():
     git_rev = subprocess.run(
         ["git", "rev-parse", "HEAD"], capture_output=True, text=True,
     ).stdout.strip()
+    # Two snapshots at the run root:
+    #   * `config_resolved.yaml` — full OmegaConf dump (model architecture etc.).
+    #   * `config_resolved.json` — flattened CLI args + run metadata.
+    #     The metrics runner reads this to recover dataset/protocol; same
+    #     filename every SOTA wrapper writes, so a single loader handles all.
     OmegaConf.save(cfg, out / "config_resolved.yaml")
-    (out / "run_args.json").write_text(json.dumps({
+    (out / "config_resolved.json").write_text(json.dumps({
         **vars(args),
         "config":     str(args.config),
         "checkpoint": str(checkpoint),

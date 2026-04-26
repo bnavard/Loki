@@ -52,7 +52,7 @@ def test_resample_max_frames_caps_output():
 
 
 def test_load_run_metadata_missing_args(tmp_path: Path):
-    with pytest.raises(FileNotFoundError, match="run_args.json"):
+    with pytest.raises(FileNotFoundError, match="config_resolved.json"):
         load_run_metadata(tmp_path)
 
 
@@ -60,7 +60,7 @@ def test_load_run_metadata_unknown_dataset(tmp_path: Path):
     """`load_run_metadata` fails loud when the dataset's manifest doesn't
     exist on disk — would-be silent mis-routing of metrics is worse than
     refusing to run."""
-    (tmp_path / "run_args.json").write_text(json.dumps({
+    (tmp_path / "config_resolved.json").write_text(json.dumps({
         "dataset": "no_such_dataset", "protocol": "same_identity_reconstruction",
     }))
     with pytest.raises(FileNotFoundError, match="manifest"):
@@ -68,6 +68,6 @@ def test_load_run_metadata_unknown_dataset(tmp_path: Path):
 
 
 def test_load_run_metadata_missing_protocol(tmp_path: Path):
-    (tmp_path / "run_args.json").write_text(json.dumps({"dataset": "talkvid"}))
+    (tmp_path / "config_resolved.json").write_text(json.dumps({"dataset": "talkvid"}))
     with pytest.raises(ValueError, match="protocol"):
         load_run_metadata(tmp_path)

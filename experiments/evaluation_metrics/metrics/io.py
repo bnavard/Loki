@@ -12,7 +12,7 @@ Two responsibilities:
    to `imageio.v3` if `decord` isn't available.
 
 2. **Walk a SOTA-comparison-style run dir** — `<run_dir>/samples/<sample_id>/panel.mp4`
-   plus a `run_args.json` at the run root carrying `dataset` / `protocol` —
+   plus a `config_resolved.json` at the run root carrying `dataset` / `protocol` —
    and pair each sample with its ground-truth video resolved from the curated
    manifest under `experiments/sota_comparison/manifests/<dataset>.json`.
 
@@ -147,15 +147,20 @@ class RunMetadata:
 
 
 def load_run_metadata(run_dir: Path) -> RunMetadata:
-    """Read `<run_dir>/run_args.json` to recover dataset+protocol, then
-    load + index the curated manifest. Fail loud if either is missing —
-    we'd rather refuse to run than silently mis-route metrics."""
+    """Read `<run_dir>/config_resolved.json` to recover dataset+protocol,
+    then load + index the curated manifest. Fail loud if it's missing —
+    we'd rather refuse to run than silently mis-route metrics.
+
+    Every runner in this repo (marionette_eval + the 5 SOTA wrappers)
+    writes a `config_resolved.json` at the run root with at least
+    `dataset` and `protocol` populated.
+    """
     run_dir = Path(run_dir)
-    args_path = run_dir / "run_args.json"
+    args_path = run_dir / "config_resolved.json"
     if not args_path.is_file():
         raise FileNotFoundError(
             f"`{args_path}` not found. The metrics runner needs to read "
-            f"`dataset` and `protocol` from the run's recorded args."
+            f"`dataset` and `protocol` from the run's recorded config."
         )
     args = json.loads(args_path.read_text())
     dataset  = args.get("dataset")

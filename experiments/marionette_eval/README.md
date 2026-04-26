@@ -112,7 +112,7 @@ baselines and Marionette.
   Same UID pool, same derangement / sampling logic.
 - **Sample-id format identical.** `id_0457` / `id_0457_id_0009`.
 - **Output layout identical.** `samples/<sample_id>/panel.{png,mp4}` plus
-  `config_resolved.yaml` and `run_args.json` snapshots at run root, plus a
+  `config_resolved.yaml` and `config_resolved.json` snapshots at run root, plus a
   `failed.json` when any sample errors.
 - **Seeding policy identical.** `ref_frame_idx` is drawn from a single
   `np.random.default_rng(seed)` — `(protocol, seed, sample_id)` selects the
@@ -177,7 +177,8 @@ baselines and Marionette.
 ```
 outputs/marionette_eval/<protocol>/run_<timestamp>/
 ├── config_resolved.yaml          # snapshot of the resolved YAML
-├── run_args.json                 # full CLI args + git rev + checkpoint path
+├── config_resolved.json          # CLI args + git rev + checkpoint path
+│                                  # (read by the metrics runner)
 ├── failed.json                   # (only if any sample errored)
 └── samples/<sample_id>/
     ├── panel.png                 # 4-row labeled grid (vertical row labels)

@@ -1,6 +1,6 @@
 r"""CLI entry point for the metrics package.
 
-Auto-detects protocol + dataset from `<run_dir>/run_args.json` and routes
+Auto-detects protocol + dataset from `<run_dir>/config_resolved.json` and routes
 the right metric set:
   * `same_identity_reconstruction`: PSNR / SSIM / LPIPS / LMD-F / LMD-M  (+ FVD)
   * `cross_identity`: ID similarity (ArcFace cosine)                      (+ FVD)

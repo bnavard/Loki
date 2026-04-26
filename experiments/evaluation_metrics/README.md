@@ -1,7 +1,7 @@
 # Evaluation Metrics
 
 Quantitative metrics for any run dir produced by the SOTA-comparison or
-marionette-eval runners. The CLI reads `<run_dir>/run_args.json` to
+marionette-eval runners. The CLI reads `<run_dir>/config_resolved.json` to
 recover `dataset` + `protocol`, then routes the right metric set:
 
 | Protocol                          | Per-sample metrics             | Distribution metrics |
@@ -134,5 +134,5 @@ experiments/evaluation_metrics/
     ├── test_psnr_ssim.py             # cross-check vs scikit-image
     ├── test_lpips.py                 # identity LPIPS(x,x) ≈ 0
     ├── test_lmd.py                   # MediaPipe roundtrip + sample_id split
-    └── test_io.py                    # sample_id splitter + run_args parsing
+    └── test_io.py                    # sample_id splitter + run-metadata parsing
 ```
