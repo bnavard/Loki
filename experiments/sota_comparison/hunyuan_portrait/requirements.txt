@@ -1,0 +1,46 @@
+# HunyuanPortrait pip deps.
+#
+# Mirrors upstream's `impl/requirements.txt` with two differences documented
+# below. Install on top of env.yml's torch 2.1.0+cu121 stack.
+
+# From upstream — tight pins that ship with their inference.py
+diffusers==0.29.0
+moviepy==1.0.1
+
+# transformers must be pinned: 4.47+ requires torch>=2.4 (we ship 2.1), and
+# 4.44+ removed FLAX_WEIGHTS_NAME from transformers.utils, which diffusers
+# 0.29.0 still imports. 4.42.4 is the latest in the compatible window.
+transformers==4.42.4
+
+# torch 2.1.0 was built against numpy 1.x; numpy 2 triggers
+# "Failed to initialize NumPy: _ARRAY_API not found" at torch import.
+numpy<2
+
+# From upstream — unpinned, fine at HEAD since their inference only uses
+# stable API surface from these libs.
+accelerate
+omegaconf
+# opencv-python-headless 4.11+ requires numpy>=2; pinned for numpy<2 compat.
+opencv-python-headless<4.11
+decord
+scikit-image
+scikit-video
+einops
+tqdm
+
+# ---------------------------------------------------------------------------
+# Deviations from upstream
+# ---------------------------------------------------------------------------
+# Upstream lists `onnxruntime` AND `onnxruntime-gpu` unpinned. Installing
+# both together is ambiguous and the CPU wheel can shadow the GPU one
+# depending on pip's solver. We pin onnxruntime-gpu only (which includes
+# the CPU execution provider anyway) at a version known to resolve CUDA 12
+# cleanly. If ORT can't find the CUDAExecutionProvider at runtime, ArcFace
+# silently falls back to CPU → ~10x slowdown; `config.use_arcface: False`
+# in the yaml is the escape hatch.
+onnxruntime-gpu==1.19.2
+
+# Hugging Face CLI used by `pretrained_weights/` download scripts (README
+# step 3). Kept here so a fresh env install doesn't need a separate
+# `pip install huggingface_hub[cli]` invocation.
+huggingface_hub[cli]

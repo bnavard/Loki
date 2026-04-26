@@ -1,0 +1,93 @@
+#!/bin/bash
+# =============================================================================
+# Generate fit.npz for all videos (multi-GPU parallel)
+#
+# Runs both phases across multiple GPUs:
+#   Phase 1: pixel3dmm FLAME tracking (parallel across GPUs)
+#   Phase 2: FlowFace conversion (parallel across GPUs)
+#
+# Each phase resumes from where it left off — already completed videos
+# are skipped automatically.
+#
+# Prerequisites:
+#   - Run setup.sh first (installs everything)
+#   - Activate: conda activate expmapgen
+#
+# Usage:
+#   cd <repo_root>
+#   bash generate_exp_map/scripts/run_multi_gpu.sh [data_dir] [output_dir] [num_gpus] [workers_per_gpu]
+#
+# Examples:
+#   bash generate_exp_map/scripts/run_multi_gpu.sh
+#   bash generate_exp_map/scripts/run_multi_gpu.sh data/talkvid/talkvid data/flame_tracking/flowface 8 2
+# =============================================================================
+
+set -e
+
+DATA_DIR="${1:-data/talkvid/talkvid}"
+OUTPUT_DIR="${2:-data/flame_tracking/flowface}"
+NUM_GPUS="${3:-8}"
+WORKERS_PER_GPU="${4:-2}"
+
+# Auto-detect paths (all default to generate_exp_map/pixel3dmm and data/flame_tracking/)
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+export PIXEL3DMM_CODE_BASE="${PIXEL3DMM_CODE_BASE:-${SCRIPT_DIR}/../pixel3dmm}"
+export PIXEL3DMM_PREPROCESSED_DATA="${PIXEL3DMM_PREPROCESSED_DATA:-data/flame_tracking/preprocessing}"
+export PIXEL3DMM_TRACKING_OUTPUT="${PIXEL3DMM_TRACKING_OUTPUT:-data/flame_tracking/tracking}"
+
+# CUDA 11.8 for nvdiffrast + onnxruntime runtime
+export CUDA_HOME="${CUDA_HOME_118:-/home/pouyan/cuda/cuda118}"
+export LD_LIBRARY_PATH="${CUDA_HOME}/lib64:${LD_LIBRARY_PATH}"
+
+PREPROCESSING_DIR="${PIXEL3DMM_PREPROCESSED_DATA}"
+TRACKING_DIR="${PIXEL3DMM_TRACKING_OUTPUT}"
+
+echo "============================================================"
+echo "Generating fit.npz for all videos"
+echo "Data dir:    ${DATA_DIR}"
+echo "Output dir:  ${OUTPUT_DIR}"
+echo "GPUs:        ${NUM_GPUS}"
+echo "Workers/GPU: ${WORKERS_PER_GPU}"
+echo "============================================================"
+echo ""
+
+# --- Phase 1: pixel3dmm FLAME tracking (parallel) ---
+echo "========== Phase 1: pixel3dmm FLAME tracking =========="
+PYTHONPATH=. python generate_exp_map/src/flame_tracking_parallel.py \
+    --data_dirs "${DATA_DIR}" \
+    --num_gpus "${NUM_GPUS}" \
+    --workers_per_gpu "${WORKERS_PER_GPU}"
+
+echo ""
+echo "Phase 1 complete."
+echo ""
+
+# --- Phase 2: FlowFace conversion (parallel) ---
+# Build the physical GPU list. Honor CUDA_VISIBLE_DEVICES from the parent
+# shell when set (e.g. CUDA_VISIBLE_DEVICES=1,2,3 ... NUM_GPUS=3) — without
+# this, convert_to_flowface_parallel.py would receive logical 0..N-1 and
+# each worker's `os.environ["CUDA_VISIBLE_DEVICES"]=...` would overwrite
+# the parent mask, landing on physical GPUs 0..N-1 instead of the masked
+# set. Falls back to 0..N-1 when no mask is set (original behavior).
+if [[ -n "${CUDA_VISIBLE_DEVICES:-}" ]]; then
+    IFS=',' read -ra _MASKED <<< "${CUDA_VISIBLE_DEVICES}"
+    if (( ${#_MASKED[@]} < NUM_GPUS )); then
+        echo "ERROR: NUM_GPUS=${NUM_GPUS} but CUDA_VISIBLE_DEVICES exposes only ${#_MASKED[@]} GPU(s): ${CUDA_VISIBLE_DEVICES}" >&2
+        exit 1
+    fi
+    GPU_LIST="${_MASKED[*]:0:NUM_GPUS}"
+else
+    GPU_LIST=$(seq 0 $((NUM_GPUS - 1)))
+fi
+
+echo "========== Phase 2: FlowFace conversion =========="
+PYTHONPATH=. python generate_exp_map/src/convert_to_flowface_parallel.py \
+    --preprocessing_dir "${PREPROCESSING_DIR}" \
+    --tracking_dir "${TRACKING_DIR}" \
+    --output_dir "${OUTPUT_DIR}" \
+    --gpus ${GPU_LIST}
+
+echo ""
+echo "============================================================"
+echo "Done. fit.npz files saved to ${OUTPUT_DIR}/"
+echo "============================================================"

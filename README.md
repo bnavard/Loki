@@ -1,75 +1,92 @@
-# Expressive Talking Head
+# Marionette — Identity-Preserving Talking-Head Video Diffusion
 
-A modular framework for talking-head video generation from audio and facial expression controls. Built on [CAP4D](https://github.com/felixtaubner/CAP4D) (CVPR 2025), the system combines a Stable Diffusion 2.1 UNet (extended with 3D spatiotemporal attention) for video rendering, wav2vec2 audio cross-attention for lip sync, and FLAME 3DMM expression maps for spatial facial control.
+A latent video diffusion model for identity-preserving talking-head generation.
+Given a reference portrait and a driver clip, the model produces video of the
+reference identity performing the driver's expression and head pose,
+synchronised to the driver's audio.
 
-A separate text-to-expression-field pipeline trains Wan2.2-T2V (via LoRA) to synthesize FLAME expression dense fields directly from text descriptions, enabling text-only generation without a driving video.
-
-## Table of Contents
-
-- [Repository Structure](#repository-structure)
-- [Modules](#modules)
-- [Installation](#installation)
-- [Data Layout](#data-layout)
-- [Acknowledgements](#acknowledgements)
+Identity is preserved by a **reference UNet** (AnimateAnyone / ReferenceNet
+pattern). A frozen SD 2.1 UNet runs once on the VAE-encoded reference frame
+and we cache the input to each self-attention block. Those per-layer features
+are then injected as additional K/V tokens into the generation UNet's
+corresponding self-attention layers, so every generated frame attends to
+both its own tokens and the reference's — rich, multi-scale identity
+conditioning that does not need a hand-designed warp. Motion is specified
+separately by a 45-channel FLAME conditioning map (sinusoidal pos_enc of
+rasterized vertex positions + per-vertex expression deformation).
 
 ## Repository Structure
 
 ```
 .
-├── talkinghead_sd21_unet_cap4d_based/   # Talking-head rendering (SD 2.1 UNet + 3D attention)
-├── text_to_expr_field/                  # Text → expression field generation (Wan2.2 DiT + LoRA)
-├── controlnet/                          # SD LDM utilities (inherited from CAP4D)
-├── data/assets/flame/                   # FLAME model files (mesh, blendshapes)
-├── instructions/                        # Design documents
-└── README.md
+├── marionette/                       # the video diffusion model (training + inference)
+│   ├── configs/base.yaml             # canonical config
+│   ├── conditioning/conditioning.py  # SpatialConditioning — 45ch (pos_enc + driver_deform)
+│   ├── model/{diffusion,unet,ref_unet,conditioning_encoder,audio_encoder,attention}.py
+│   ├── data/{video_dataset,types}.py
+│   ├── utils/                        # audio / viz / video_io / image_ops / verts
+│   ├── flame/                        # FLAME 3DMM
+│   ├── retargeting.py                # FLAME retargeting helpers (shared inference + eval)
+│   ├── train.py                      # training orchestrator
+│   └── generate.py                   # inference orchestrator (same- or cross-identity)
+├── experiments/
+│   ├── marionette_baseline/          # canonical full-stack training run
+│   ├── condition_ablation/           # audio_off / no_flame / no_posenc / no_deform arms
+│   ├── marionette_eval/              # cross + same identity eval against a checkpoint
+│   ├── sota_comparison/              # SadTalker / AniTalker / EchoMimic / HunyuanPortrait / X-Portrait wrappers
+│   └── evaluation_metrics/           # SyncNet lip-sync evaluation
+├── scripts/                          # data-prep pipeline: download → preprocess → manifest
+├── generate_exp_map/                 # FLAME tracking (pixel3dmm) — upstream, produces fit.npz
+├── ldm_base/                         # vendored SD 2.1 LDM utilities
+├── data/                             # data / models / derived (mostly .gitignored symlinks)
+├── instructions/                     # design docs + paper context
+└── outputs/                          # training runs (gitignored)
 ```
 
-## Modules
-
-### talkinghead_sd21_unet_cap4d_based
-
-Talking-head video rendering. Three conditioning signals: FLAME expression maps (46ch spatial addition), wav2vec2 audio (cross-attention), reference frame (identity passthrough). Expression-weighted diffusion loss amplifies gradients on high-deformation face regions. Five experiment configs for ablation studies.
-
-See [`talkinghead_sd21_unet_cap4d_based/README.md`](talkinghead_sd21_unet_cap4d_based/README.md).
-
-### text_to_expr_field
-
-Generates 45-channel FLAME expression dense fields from text captions via LoRA-fine-tuned Wan2.2-T2V-A14B. The 45-channel field is reshaped into 15 three-channel pseudo-video groups for VAE compatibility. VAE latents and UMT5 text embeddings are precomputed and cached to disk for training throughput.
-
-See [`text_to_expr_field/README.md`](text_to_expr_field/README.md).
+See [marionette/README.md](marionette/README.md) for architecture details,
+training, and inference usage.
 
 ## Installation
 
+Tested on Linux + CUDA 12.1 with a single conda env `marionette`:
+
 ```bash
-conda create -n cap4d_env python=3.10 -y
-conda activate cap4d_env
-
-pip install torch==2.4.1+cu121 torchvision==0.19.1+cu121 torchaudio==2.4.1+cu121 \
-    --index-url https://download.pytorch.org/whl/cu121
-
-pip install --no-index --no-cache-dir pytorch3d \
-    -f https://dl.fbaipublicfiles.com/pytorch3d/packaging/wheels/py310_cu121_pyt241/download.html
-
+conda create -n marionette python=3.10 -y
+conda activate marionette
 pip install -r requirements.txt
 ```
 
+Heavy dependencies worth flagging:
+- **pytorch3d** — used by `SpatialConditioning` for GPU mesh rasterization +
+  UV lookup. Must be built against the torch version you install.
+- **decord** — video reading. Lazy-imported in `marionette/utils/video_io.py`
+  to avoid CUDA-init ordering issues.
+
 ## Data Layout
+
+Training reads from:
 
 ```
 data/
-├── talkvid/talkvid/{clip_id}.mp4      # source videos
-├── talkvid/audio/{clip_id}.wav        # 16kHz mono audio
-├── flowface/{clip_id}/fit.npz         # FLAME tracking parameters
-├── flowface/{clip_id}/images/cam0/    # extracted frames
-├── derived/captions/                  # text captions
-├── derived/vae_latent_cache/          # precomputed VAE latents
-├── derived/prompt_latent_cache/       # precomputed text embeddings
-└── assets/flame/                      # FLAME model files (in repo)
+├── flame_tracking/flowface/{clip_id}/fit.npz     # per-frame FLAME params
+├── talkvid/talkvid/{clip_id}.mp4                 # face-cropped 512×512 @ 25fps
+├── talkvid/audio/{clip_id}.wav                   # 16 kHz mono driver audio
+├── derived/
+│   ├── manifest.json                             # output of scripts/manifest/build_manifest.py
+│   ├── train_clips.json
+│   └── val_clips.json                            # output of scripts/manifest/partition_dataset.py
+├── models/v2-1_512-ema-pruned.ckpt               # SD 2.1 init
+└── assets/flame/                                 # FLAME model files (mesh + blendshapes)
 ```
+
+To produce `fit.npz` from raw videos, see [generate_exp_map/README.md](generate_exp_map/README.md)
+(pixel3dmm-based pipeline, separate env).
 
 ## Acknowledgements
 
-- [CAP4D](https://github.com/felixtaubner/CAP4D) — Creating Animatable 4D Portrait Avatars (CVPR 2025)
-- [Stable Diffusion 2.1](https://huggingface.co/docs/diffusers/api/pipelines/stable_diffusion/stable_diffusion_2)
-- [Wan2.2](https://github.com/Wan-Video/Wan2.2) — Video diffusion transformer
-- [FLAME](https://flame.is.tue.mpg.de/) — 3D morphable face model
+This codebase inherits from [CAP4D](https://github.com/felixtaubner/cap4d)
+(CVPR 2025) — we adopt their SD 2.1 UNet + 3D attention scaffold and FLAME
+rasterization utilities. The reference-UNet identity pathway follows
+[AnimateAnyone](https://arxiv.org/abs/2311.17117) (Hu et al., 2024). The
+reorganisation and the combined ReferenceNet + FLAME + audio recipe are
+specific to this branch.

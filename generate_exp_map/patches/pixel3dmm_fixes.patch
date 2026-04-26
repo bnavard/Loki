@@ -1,0 +1,185 @@
+diff --git a/download_flame2023.sh b/download_flame2023.sh
+index 09a11de..0c69f37 100755
+--- a/download_flame2023.sh
++++ b/download_flame2023.sh
+@@ -13,7 +13,7 @@ password=$(urle $password)
+ echo -e "\nDownloading FLAME..."
+ mkdir -p data/FLAME2023/
+ wget --post-data "username=$username&password=$password" 'https://download.is.tue.mpg.de/download.php?domain=flame&sfile=FLAME2023.zip&resume=1' -O './FLAME2023.zip' --no-check-certificate --continue
+-unzip FLAME2023.zip -d data/FLAME2023/
++unzip FLAME2023.zip -d data/
+ rm -rf FLAME2023.zip
+ 
+ echo -e "\nInstallation has finished!"
+diff --git a/environment.yml b/environment.yml
+index 99d0553..a01e0f6 100644
+--- a/environment.yml
++++ b/environment.yml
+@@ -21,7 +21,6 @@ dependencies:
+   - gxx
+   - torchvision
+ 
+-  -
+   - nvidia/label/cuda-11.8.0::cuda-nvcc  # for nvcc
+   - nvidia/label/cuda-11.8.0::cuda-cccl
+   - nvidia/label/cuda-11.8.0::cuda-cudart
+@@ -61,8 +60,9 @@ dependencies:
+       - numpy==1.23
+ 
+ 
+-      - git+https://github.com/facebookresearch/pytorch3d.git@stable
+-      - git+https://github.com/NVlabs/nvdiffrast.git
++      # - git+https://github.com/facebookresearch/pytorch3d.git@stable
++      # nvdiffrast needs --no-build-isolation, install separately after env creation:
++      # pip install --no-build-isolation git+https://github.com/NVlabs/nvdiffrast.git
+ 
+     # for MICA
+       - insightface
+diff --git a/scripts/run_cropping.py b/scripts/run_cropping.py
+index a270fd6..cbfcadd 100644
+--- a/scripts/run_cropping.py
++++ b/scripts/run_cropping.py
+@@ -73,7 +73,8 @@ def unpack_images(base_path, video_or_images_path):
+     elif video_or_images_path.endswith('.jpg') or video_or_images_path.endswith('.jpeg') or video_or_images_path.endswith('.png'):
+         Image.open(video_or_images_path).save(f'{base_path}/{0:05d}.jpg', quality=95)
+     else:
+-        frames = mediapy.read_video(f'{video_or_images_path}')
++        # Path is already absolute from main()
++        frames = mediapy.read_video(video_or_images_path)
+         if len(frames) == len(os.listdir(base_path)):
+             return
+         for i, frame in enumerate(frames):
+@@ -82,6 +83,9 @@ def unpack_images(base_path, video_or_images_path):
+ def main(video_or_images_path : str,
+          max_bbox : bool = True, # not used
+          disable_cropping : bool = False):
++    # Resolve to absolute path immediately to avoid issues with relative paths
++    video_or_images_path = os.path.abspath(video_or_images_path)
++    
+     if os.path.isdir(video_or_images_path):
+         video_name = video_or_images_path.split('/')[-1]
+     else:
+diff --git a/scripts/run_facer_segmentation.py b/scripts/run_facer_segmentation.py
+index 076524e..135776b 100644
+--- a/scripts/run_facer_segmentation.py
++++ b/scripts/run_facer_segmentation.py
+@@ -200,6 +200,9 @@ def main(video_name : str):
+ 
+ 
+                 for _iidx in range(seg_probs.shape[0]):
++                    # Skip if index is out of bounds (edge case with batch processing)
++                    if _iidx >= len(frame_idx_batch):
++                        continue
+                     frame = frame_idx_batch[_iidx]
+                     iidx = faces['image_ids'][_iidx].item()
+                     try:
+diff --git a/scripts/run_preprocessing.py b/scripts/run_preprocessing.py
+index 7fcc1fd..539af86 100644
+--- a/scripts/run_preprocessing.py
++++ b/scripts/run_preprocessing.py
+@@ -5,18 +5,25 @@ from pixel3dmm import env_paths
+ 
+ 
+ def main(video_or_images_path : str):
++    # Resolve to absolute path immediately to avoid issues with relative paths
++    video_or_images_path = os.path.abspath(video_or_images_path)
+ 
+     if os.path.isdir(video_or_images_path):
+         vid_name = video_or_images_path.split('/')[-1]
+     else:
+         vid_name = video_or_images_path.split('/')[-1][:-4]
+-
+-    os.system(f'cd {env_paths.CODE_BASE}/scripts/ ; python run_cropping.py --video_or_images_path {video_or_images_path}')
+-
+-    os.system(f'cd {env_paths.CODE_BASE}/src/pixel3dmm/preprocessing/MICA ; python demo.py -video_name {vid_name} -a {env_paths.PREPROCESSED_DATA}/{vid_name}/arcface/')
+-
+-    os.system(f'cd {env_paths.CODE_BASE}/scripts/ ; python run_facer_segmentation.py --video_name {vid_name}')
+-
++    
++    exit_code = os.system(f'cd {env_paths.CODE_BASE}/scripts/ ; python run_cropping.py --video_or_images_path {video_or_images_path}')
++    if exit_code != 0: 
++        raise RuntimeError(f"run_cropping.py failed for {video_or_images_path}")
++    
++    exit_code = os.system(f'cd {env_paths.CODE_BASE}/src/pixel3dmm/preprocessing/MICA ; python demo.py -video_name {vid_name} -a {env_paths.PREPROCESSED_DATA}/{vid_name}/arcface/')
++    if exit_code != 0: 
++        raise RuntimeError(f"MICA/demo.py failed while running {video_or_images_path}")
++
++    exit_code = os.system(f'cd {env_paths.CODE_BASE}/scripts/ ; python run_facer_segmentation.py --video_name {vid_name}')
++    if exit_code != 0: 
++        raise RuntimeError(f"run_facer_segmentation.py failed while running {video_or_images_path}")
+ 
+ 
+ if __name__ == '__main__':
+diff --git a/src/pixel3dmm/preprocessing/pipnet_utils.py b/src/pixel3dmm/preprocessing/pipnet_utils.py
+index 1592548..ce24155 100644
+--- a/src/pixel3dmm/preprocessing/pipnet_utils.py
++++ b/src/pixel3dmm/preprocessing/pipnet_utils.py
+@@ -181,8 +181,6 @@ def demo_image(image_dir, pid, save_dir, preprocess, cfg, input_size, net_stride
+ 
+                 image_height, image_width, _ = image.shape
+ 
+-
+-
+                 detections, _ = detector.detect(image, my_thresh, 1)
+                 dets_filtered = [det for det in detections if det[0] == 'face']
+                 dets_filtered.sort(key=lambda x: -1 * x[1])
+diff --git a/src/pixel3dmm/tracking/losses.py b/src/pixel3dmm/tracking/losses.py
+index 1b65c57..87a53c2 100644
+--- a/src/pixel3dmm/tracking/losses.py
++++ b/src/pixel3dmm/tracking/losses.py
+@@ -76,7 +76,7 @@ class UVLoss():
+     def is_next(self):
+         self.gt_2_verts = None
+ 
+-    @torch.compiler.disable
++    # @torch.compiler.disable
+     def compute_corresp(self, gt, selected_frames=None):
+ 
+         self.gt = gt
+diff --git a/src/pixel3dmm/tracking/tracker.py b/src/pixel3dmm/tracking/tracker.py
+index 6fd4e6a..29acb43 100644
+--- a/src/pixel3dmm/tracking/tracker.py
++++ b/src/pixel3dmm/tracking/tracker.py
+@@ -121,7 +121,8 @@ WFLW_2_iBUG68 = np.array(
+ WFLW_2_iBUG68 = torch.from_numpy(WFLW_2_iBUG68).cuda()
+ 
+ # for debugging might to be set to False
+-COMPILE = True
++# Set to False for PyTorch < 2.0 compatibility
++COMPILE = False
+ 
+ 
+ if COMPILE:
+@@ -198,7 +199,7 @@ class Tracker(object):
+         self.checkpoint_folder = os.path.join(self.save_folder, self.actor_name, "checkpoint")
+         self.mesh_folder = os.path.join(self.save_folder, self.actor_name, "mesh")
+         self.create_output_folders()
+-        self.writer = SummaryWriter(log_dir=self.save_folder + self.actor_name + '/logs')
++        # self.writer = SummaryWriter(log_dir=self.save_folder + self.actor_name + '/logs')
+ 
+         self.cam_pose_nvd = {}
+         self.R_base = {}
+@@ -686,7 +687,6 @@ class Tracker(object):
+         self.frame = 0
+ 
+ 
+-    @torch.compiler.disable
+     def get_vars(self, is_joint, selected_frames):
+         if not is_joint:
+             exp = self.exp
+@@ -716,7 +716,6 @@ class Tracker(object):
+         return exp, eyes, eyelids, _R, _t, jaw, neck, focal_length, principal_point
+ 
+ 
+-    @torch.compiler.disable
+     def data_stuff(self, is_joint, iters, p, image_lmks68, lmk_mask, normal_map, normal_mask, uv_map, uv_mask, left_iris, right_iris, mask_left_iris, mask_right_iris):
+         if is_joint:
+             with torch.no_grad():
+@@ -801,7 +800,6 @@ class Tracker(object):
+         losses['smooth/focal_length'] = reg_smooth_focal_length * self.config.reg_smooth_fl * self.config.reg_smooth_mult
+         return losses
+ 
+-    @torch.compiler.disable
+     def add_smooth_loss(self, losses, is_joint, p, iters, variables):
+         if is_joint and self.config.smooth and ((p >= int(iters * 0.15) and (p % 2 == 1)) ):  # and p % 2 != 0 and False:
+             losses = self.actual_smooth(variables, losses)

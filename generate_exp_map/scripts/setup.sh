@@ -1,0 +1,516 @@
+#!/bin/bash
+# =============================================================================
+# Full setup for the FLAME expression map generation pipeline.
+#
+# Creates the conda environment, clones and patches pixel3dmm, installs
+# all dependencies, and downloads pretrained weights.
+#
+# Idempotent: safe to re-run after a failure — already-completed steps
+# are detected and skipped automatically.
+#
+# Usage:
+#   cd <repo_root>
+#   bash generate_exp_map/scripts/setup.sh
+#
+# After setup:
+#   conda activate expmapgen
+#   bash generate_exp_map/scripts/run_multi_gpu.sh
+# =============================================================================
+
+set -e
+
+REPO_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+P3DMM_DIR="${REPO_ROOT}/generate_exp_map/pixel3dmm"
+ENV_NAME="expmapgen"
+
+echo "============================================================"
+echo "Setting up FLAME expression map generation pipeline"
+echo "Repo root: ${REPO_ROOT}"
+echo "pixel3dmm: ${P3DMM_DIR}"
+echo "============================================================"
+echo ""
+
+# =============================================================================
+# Step 1: Create conda environment
+# =============================================================================
+echo "===== Step 1: Conda environment ====="
+
+if conda info --envs | grep -q "${ENV_NAME}"; then
+    echo "SKIP: Environment '${ENV_NAME}' already exists."
+else
+    conda create -n "${ENV_NAME}" python=3.9 -y
+fi
+
+eval "$(conda shell.bash hook)"
+conda activate "${ENV_NAME}"
+echo "Python: $(python --version)"
+echo ""
+
+# =============================================================================
+# Step 2: Install PyTorch + CUDA
+# =============================================================================
+echo "===== Step 2: PyTorch ====="
+
+if python -c "import torch; assert torch.__version__.startswith('2.0.1')" 2>/dev/null; then
+    echo "SKIP: PyTorch 2.0.1 already installed."
+else
+    pip install torch==2.0.1+cu118 torchvision==0.15.2+cu118 \
+        --index-url https://download.pytorch.org/whl/cu118
+fi
+echo ""
+
+# =============================================================================
+# Step 3: Install PyTorch3D
+# =============================================================================
+echo "===== Step 3: PyTorch3D ====="
+
+if python -c "import pytorch3d" 2>/dev/null; then
+    echo "SKIP: PyTorch3D already installed."
+else
+    pip install fvcore iopath
+    pip install --no-index --no-cache-dir pytorch3d==0.7.4 \
+        -f https://dl.fbaipublicfiles.com/pytorch3d/packaging/wheels/py39_cu118_pyt201/download.html
+fi
+echo ""
+
+# =============================================================================
+# Step 4: Install nvdiffrast
+# =============================================================================
+echo "===== Step 4: nvdiffrast ====="
+
+if python -c "import nvdiffrast" 2>/dev/null; then
+    echo "SKIP: nvdiffrast already installed."
+else
+    # nvdiffrast requires CUDA 11.8 nvcc + GCC ≤ 11 + ninja
+    pip install setuptools wheel ninja cython
+
+    # Install GCC 11 via conda-forge (no system permissions needed)
+    if ! ls "${CONDA_PREFIX}"/bin/*conda*gnu-gcc 2>/dev/null | grep -q .; then
+        echo "Installing GCC 11 via conda-forge..."
+        conda install -c conda-forge gcc_linux-64=11 gxx_linux-64=11 -y
+    else
+        echo "GCC 11 already installed via conda."
+    fi
+
+    CONDA_GCC="${CONDA_PREFIX}/bin/x86_64-conda-linux-gnu-gcc"
+    CONDA_GXX="${CONDA_PREFIX}/bin/x86_64-conda-linux-gnu-g++"
+    if [ ! -f "${CONDA_GCC}" ]; then
+        CONDA_GCC="${CONDA_PREFIX}/bin/x86_64-conda_cos6-linux-gnu-gcc"
+        CONDA_GXX="${CONDA_PREFIX}/bin/x86_64-conda_cos6-linux-gnu-g++"
+    fi
+    echo "GCC: $(${CONDA_GCC} --version | head -1)"
+
+    # Locate a complete CUDA 11.8 toolkit (needs nvcc + headers + libs).
+    # Precedence: $CUDA_HOME_118 → common paths → interactive prompt.
+    validate_cuda118() {
+        local p="$1"
+        [ -n "$p" ] && [ -x "$p/bin/nvcc" ] && [ -f "$p/include/cuda_runtime.h" ] && \
+            "$p/bin/nvcc" --version 2>/dev/null | grep -q "release 11.8"
+    }
+
+    CUDA_118=""
+    for cand in "${CUDA_HOME_118:-}" /usr/local/cuda-11.8 /opt/cuda-11.8 "${CONDA_PREFIX}"; do
+        if validate_cuda118 "$cand"; then
+            CUDA_118="$cand"
+            break
+        fi
+    done
+
+    while [ -z "$CUDA_118" ]; do
+        echo ""
+        echo "CUDA 11.8 toolkit not found automatically."
+        echo "Need a directory containing bin/nvcc AND include/cuda_runtime.h (CUDA 11.8)."
+        read -p "Path to CUDA 11.8 toolkit (or 'q' to abort): " user_path
+        [ "$user_path" = "q" ] && { echo "Aborted."; exit 1; }
+        if validate_cuda118 "$user_path"; then
+            CUDA_118="$user_path"
+        else
+            echo "Invalid: missing nvcc, headers, or not CUDA 11.8. Try again."
+        fi
+    done
+    echo "CUDA 11.8: ${CUDA_118}"
+
+    # 8.9+PTX includes PTX for forward compat with SM 9.0+ (Hopper/H100/H200)
+    CUDA_HOME="${CUDA_118}" \
+    PATH="${CUDA_118}/bin:${PATH}" \
+    CC="${CONDA_GCC}" \
+    CXX="${CONDA_GXX}" \
+    TORCH_CUDA_ARCH_LIST="7.0;7.5;8.0;8.6;8.9+PTX" \
+    MAX_JOBS=1 \
+    pip install git+https://github.com/NVlabs/nvdiffrast.git --no-build-isolation
+fi
+echo ""
+
+# =============================================================================
+# Step 5: Clone and patch pixel3dmm
+# =============================================================================
+echo "===== Step 5: pixel3dmm clone + patch ====="
+
+if [ -d "${P3DMM_DIR}" ]; then
+    echo "SKIP: pixel3dmm already cloned."
+else
+    git clone https://github.com/SimonGiebenhain/pixel3dmm.git "${P3DMM_DIR}"
+fi
+
+cd "${P3DMM_DIR}"
+if git apply --check "${REPO_ROOT}/generate_exp_map/patches/pixel3dmm_fixes.patch" 2>/dev/null; then
+    git apply "${REPO_ROOT}/generate_exp_map/patches/pixel3dmm_fixes.patch"
+    echo "Patches applied."
+else
+    echo "SKIP: Patches already applied."
+fi
+cd "${REPO_ROOT}"
+echo ""
+
+# =============================================================================
+# Step 6: Install pixel3dmm + preprocessing pipeline
+# =============================================================================
+echo "===== Step 6: pixel3dmm + preprocessing ====="
+
+PREPROC_DIR="${P3DMM_DIR}/src/pixel3dmm/preprocessing"
+
+# pixel3dmm itself
+if python -c "import pixel3dmm" 2>/dev/null; then
+    echo "SKIP: pixel3dmm already installed."
+else
+    pip install -e "${P3DMM_DIR}"
+fi
+
+# --- facer ---
+echo "[6a] facer..."
+if [ -d "${PREPROC_DIR}/facer" ] && python -c "import facer" 2>/dev/null; then
+    echo "SKIP: facer already installed."
+else
+    cd "${PREPROC_DIR}"
+    [ ! -d "facer" ] && git clone https://github.com/FacePerceiver/facer.git
+    cd facer
+    cp "${PREPROC_DIR}/replacement_code/farl.py" facer/face_parsing/farl.py 2>/dev/null || true
+    cp "${PREPROC_DIR}/replacement_code/facer_transform.py" facer/transform.py 2>/dev/null || true
+    pip install -e .
+    cd "${REPO_ROOT}"
+fi
+
+# --- MICA ---
+echo "[6b] MICA..."
+if [ -d "${PREPROC_DIR}/MICA/micalib" ]; then
+    echo "SKIP: MICA already cloned and patched."
+else
+    cd "${PREPROC_DIR}"
+    [ ! -d "MICA" ] && git clone https://github.com/Zielon/MICA.git
+    cd MICA
+    cp "${PREPROC_DIR}/replacement_code/install_mica_download_flame.sh" install.sh 2>/dev/null || true
+    cp "${PREPROC_DIR}/replacement_code/mica_demo.py" demo.py 2>/dev/null || true
+    cp "${PREPROC_DIR}/replacement_code/mica.py" micalib/models/mica.py 2>/dev/null || true
+    chmod +x install.sh
+    bash install.sh
+    cd "${REPO_ROOT}"
+fi
+
+# --- PIPNet ---
+echo "[6c] PIPNet..."
+cd "${PREPROC_DIR}"
+[ ! -d "PIPNet" ] && git clone https://github.com/jhb86253817/PIPNet.git
+
+# Build NMS extension
+cd PIPNet/FaceBoxesV2/utils
+if ! ls nms/*.so 2>/dev/null | grep -q .; then
+    sed -i 's/np\.int_t/np.intp_t/g' nms/cpu_nms.pyx
+    bash make.sh
+else
+    echo "SKIP: NMS already compiled."
+fi
+cd ../..
+
+# Download PIPNet snapshot
+mkdir -p snapshots/WFLW/pip_32_16_60_r18_l2_l1_10_1_nb10/
+if [ ! -f "snapshots/WFLW/pip_32_16_60_r18_l2_l1_10_1_nb10/epoch59.pth" ]; then
+    pip install gdown
+    gdown --id 1nVkaSbxy3NeqblwMTGvLg4nF49cI_99C \
+        -O snapshots/WFLW/pip_32_16_60_r18_l2_l1_10_1_nb10/epoch59.pth
+else
+    echo "SKIP: PIPNet snapshot already downloaded."
+fi
+cd "${REPO_ROOT}"
+
+# --- pixel3dmm pretrained weights ---
+echo "[6d] pixel3dmm weights..."
+mkdir -p "${P3DMM_DIR}/pretrained_weights"
+cd "${P3DMM_DIR}/pretrained_weights"
+if [ ! -f "uv.ckpt" ] || [ ! -f "normals.ckpt" ]; then
+    pip install gdown
+    [ ! -f "uv.ckpt" ] && gdown --id 1SDV_8_qWTe__rX_8e4Fi-BE3aES0YzJY -O ./uv.ckpt
+    [ ! -f "normals.ckpt" ] && gdown --id 1KYYlpN-KGrYMVcAOT22NkVQC0UAfycMD -O ./normals.ckpt
+else
+    echo "SKIP: pixel3dmm checkpoints already downloaded."
+fi
+cd "${REPO_ROOT}"
+echo ""
+
+# =============================================================================
+# Step 7: Copy optimized scripts + patch imports
+# =============================================================================
+echo "===== Step 7: Optimized scripts + import patches ====="
+
+cp "${REPO_ROOT}/generate_exp_map/src/pixel3dmm_preprocessing.py" "${P3DMM_DIR}/scripts/"
+cp "${REPO_ROOT}/generate_exp_map/src/pixel3dmm_inference.py" "${P3DMM_DIR}/scripts/"
+cp "${REPO_ROOT}/generate_exp_map/src/pixel3dmm_segmentation.py" "${P3DMM_DIR}/scripts/"
+
+# __init__.py files so PIPNet/MICA are importable as packages
+touch "${P3DMM_DIR}/src/pixel3dmm/preprocessing/PIPNet/__init__.py" 2>/dev/null || true
+touch "${P3DMM_DIR}/src/pixel3dmm/preprocessing/PIPNet/FaceBoxesV2/__init__.py" 2>/dev/null || true
+touch "${P3DMM_DIR}/src/pixel3dmm/preprocessing/PIPNet/FaceBoxesV2/utils/__init__.py" 2>/dev/null || true
+touch "${P3DMM_DIR}/src/pixel3dmm/preprocessing/MICA/__init__.py" 2>/dev/null || true
+
+# Patch FaceBoxesV2 bare imports to relative
+FB_DET="${P3DMM_DIR}/src/pixel3dmm/preprocessing/PIPNet/FaceBoxesV2/faceboxes_detector.py"
+if [ -f "${FB_DET}" ] && grep -q "^from detector import" "${FB_DET}"; then
+    sed -i 's/^from detector import/from .detector import/' "${FB_DET}"
+    sed -i 's/^from utils\./from .utils./' "${FB_DET}"
+    echo "Patched FaceBoxesV2 imports."
+else
+    echo "SKIP: FaceBoxesV2 imports already patched."
+fi
+echo ""
+
+# =============================================================================
+# Step 8: Install remaining Python dependencies
+# =============================================================================
+echo "===== Step 8: Remaining dependencies ====="
+
+# onnxruntime-gpu 1.16.3 is the last version supporting CUDA 11.8 + cuDNN 8
+pip install insightface==0.7.3 onnxruntime-gpu==1.16.3
+pip install face-alignment
+pip install trimesh decord omegaconf tyro
+pip install scipy opencv-python tqdm pyyaml environs mediapy loguru distinctipy einops chumpy
+pip install pytorch-lightning==2.0.0 wandb tensorboard pyvista dreifus
+
+pip install "numpy==1.23"
+
+echo ""
+
+# =============================================================================
+# Step 9: FLAME models (requires registration)
+# =============================================================================
+echo "===== Step 9: FLAME models ====="
+
+MICA_DATA="${P3DMM_DIR}/src/pixel3dmm/preprocessing/MICA/data"
+
+# Step 6b's MICA install already downloaded FLAME, but leaves files nested
+# (e.g. FLAME2020/FLAME2020/generic_model.pkl). Flatten so step 9 finds them.
+if [ -f "${MICA_DATA}/FLAME2023/FLAME2023/flame2023.pkl" ] && [ ! -f "${MICA_DATA}/FLAME2023/flame2023.pkl" ]; then
+    cp -r "${MICA_DATA}/FLAME2023/FLAME2023/"* "${MICA_DATA}/FLAME2023/"
+fi
+if [ -f "${MICA_DATA}/FLAME2020/FLAME2020/generic_model.pkl" ] && [ ! -f "${MICA_DATA}/FLAME2020/generic_model.pkl" ]; then
+    cp -r "${MICA_DATA}/FLAME2020/FLAME2020/"* "${MICA_DATA}/FLAME2020/"
+fi
+
+if [ -f "${MICA_DATA}/FLAME2023/flame2023.pkl" ] && [ -f "${MICA_DATA}/FLAME2020/generic_model.pkl" ]; then
+    echo "SKIP: FLAME 2023 + 2020 models already present."
+else
+    echo ""
+    echo "FLAME models required. This needs your FLAME website credentials."
+    echo "(Register at https://flame.is.tue.mpg.de/ if you haven't)"
+    echo ""
+    read -p "FLAME username (email): " FLAME_USER
+    read -sp "FLAME password: " FLAME_PASS
+    echo ""
+
+    FLAME_USER_ENC=$(python -c "import urllib.parse; print(urllib.parse.quote('${FLAME_USER}'))")
+    FLAME_PASS_ENC=$(python -c "import urllib.parse; print(urllib.parse.quote('${FLAME_PASS}'))")
+
+    if [ ! -f "${MICA_DATA}/FLAME2023/flame2023.pkl" ]; then
+        echo "Downloading FLAME 2023..."
+        wget --post-data "username=${FLAME_USER_ENC}&password=${FLAME_PASS_ENC}" \
+            'https://download.is.tue.mpg.de/download.php?domain=flame&sfile=FLAME2023.zip&resume=1' \
+            -O '/tmp/FLAME2023.zip' --no-check-certificate --continue
+        # Zip contains FLAME2023/ folder — extract to parent so we get MICA/data/FLAME2023/
+        unzip -o /tmp/FLAME2023.zip -d /tmp/flame_extract
+        mkdir -p "${MICA_DATA}/FLAME2023"
+        cp -r /tmp/flame_extract/FLAME2023/* "${MICA_DATA}/FLAME2023/" 2>/dev/null || \
+        cp -r /tmp/flame_extract/* "${MICA_DATA}/FLAME2023/"
+        rm -rf /tmp/FLAME2023.zip /tmp/flame_extract
+    fi
+
+    if [ ! -f "${MICA_DATA}/FLAME2020/generic_model.pkl" ]; then
+        echo "Downloading FLAME 2020..."
+        wget --post-data "username=${FLAME_USER_ENC}&password=${FLAME_PASS_ENC}" \
+            'https://download.is.tue.mpg.de/download.php?domain=flame&sfile=FLAME2020.zip&resume=1' \
+            -O '/tmp/FLAME2020.zip' --no-check-certificate --continue
+        # Zip may contain nested folder — extract and flatten
+        unzip -o /tmp/FLAME2020.zip -d /tmp/flame_extract
+        mkdir -p "${MICA_DATA}/FLAME2020"
+        # Find generic_model.pkl wherever it ended up and copy to target
+        find /tmp/flame_extract -name "generic_model.pkl" -exec cp {} "${MICA_DATA}/FLAME2020/" \;
+        find /tmp/flame_extract -name "FLAME_masks*" -exec cp -r {} "${MICA_DATA}/FLAME2020/" \; 2>/dev/null
+        rm -rf /tmp/FLAME2020.zip /tmp/flame_extract
+    fi
+
+    echo "FLAME models downloaded."
+fi
+echo ""
+
+# =============================================================================
+# Step 9.5: Fix FLAME pickles in data/assets/flame/
+#   - Strip chumpy.Ch → plain ndarrays (chumpy is ancient, flaky on modern stack)
+#   - Rewrite under NumPy 1.23 so pickles don't reference numpy._core (2.x path)
+#   The fix is idempotent: re-running on an already-fixed file is a no-op.
+# =============================================================================
+echo "===== Step 9.5: Fix FLAME pickles (chumpy → ndarray, numpy 1.x paths) ====="
+
+FLAME_PKLS=(
+    "${REPO_ROOT}/data/assets/flame/flame2023.pkl"
+    "${REPO_ROOT}/data/assets/flame/flame2023_no_jaw.pkl"
+)
+
+for PKL in "${FLAME_PKLS[@]}"; do
+    if [ ! -f "${PKL}" ]; then
+        echo "SKIP: ${PKL} not found"
+        continue
+    fi
+    if [ ! -f "${PKL}.bak" ]; then
+        cp "${PKL}" "${PKL}.bak"
+        echo "Backed up: ${PKL}.bak"
+    fi
+    python - "${PKL}" <<'PYEOF'
+import sys, pickle, inspect
+import numpy as np
+
+# chumpy uses APIs removed in modern Python/NumPy — patch BEFORE importing chumpy
+if not hasattr(inspect, "getargspec"):
+    inspect.getargspec = inspect.getfullargspec
+for _name, _py in [("bool", bool), ("int", int), ("float", float),
+                   ("complex", complex), ("object", object),
+                   ("str", str), ("unicode", str)]:
+    if not hasattr(np, _name):
+        setattr(np, _name, _py)
+
+# Import chumpy before the numpy._core shim (shim-first order segfaults chumpy)
+import chumpy as ch
+
+# Load pickles produced under NumPy >=2.0 while running NumPy <2.0
+if not hasattr(np, "_core"):
+    sys.modules["numpy._core"] = np.core
+    sys.modules["numpy._core.multiarray"] = np.core.multiarray
+    sys.modules["numpy._core.numeric"] = np.core.numeric
+    sys.modules["numpy._core.umath"] = np.core.umath
+
+def ch_to_numpy(obj):
+    if isinstance(obj, ch.Ch):
+        return obj.r
+    if isinstance(obj, dict):
+        return {k: ch_to_numpy(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [ch_to_numpy(v) for v in obj]
+    if isinstance(obj, tuple):
+        return tuple(ch_to_numpy(v) for v in obj)
+    return obj
+
+path = sys.argv[1]
+with open(path, "rb") as f:
+    data = pickle.load(f, encoding="latin1")
+data = ch_to_numpy(data)
+with open(path, "wb") as f:
+    pickle.dump(data, f)
+print(f"  Fixed: {path}")
+PYEOF
+done
+echo ""
+
+# =============================================================================
+# Step 10: Phase 2 weights (L2CS gaze + RVM matting)
+#
+# Phase 2 (FlowFace conversion) cannot save fit.npz without these — the
+# convert_to_flowface pipeline instantiates L2CSTracker(...) and RVM
+# unconditionally. Previously this step only WARNED on missing files and
+# then Phase 2 failed silently for every video. Now we download them.
+# =============================================================================
+echo "===== Step 10: Phase 2 weights ====="
+
+L2CS_DIR="${REPO_ROOT}/data/weights/l2cs"
+RVM_DIR="${REPO_ROOT}/data/weights/rvm"
+L2CS_WEIGHTS="${L2CS_DIR}/L2CSNet_gaze360.pkl"
+RVM_WEIGHTS="${RVM_DIR}/rvm_mobilenetv3.pth"
+mkdir -p "${L2CS_DIR}" "${RVM_DIR}"
+
+# --- RVM (RobustVideoMatting, mobilenetv3 backbone) ---
+if [ -f "${RVM_WEIGHTS}" ]; then
+    echo "SKIP: RVM matting weights already present (${RVM_WEIGHTS})"
+else
+    echo "Downloading RVM mobilenetv3 weights (~15 MB)..."
+    wget -q --show-progress -c \
+        https://github.com/PeterL1n/RobustVideoMatting/releases/download/v1.0.0/rvm_mobilenetv3.pth \
+        -O "${RVM_WEIGHTS}"
+fi
+
+# --- L2CS (gaze tracking, gaze360 checkpoint) ---
+# Upstream L2CS-Net publishes weights only via Google Drive (no direct URL
+# per file). The folder URL contains the gaze360 checkpoint we need plus
+# ~10 MPIIGaze fold checkpoints we don't. We download the folder to a temp
+# dir, copy the one file, then drop the rest. ~1 GB of transient bandwidth
+# during setup; runs once.
+if [ -f "${L2CS_WEIGHTS}" ]; then
+    echo "SKIP: L2CS gaze weights already present (${L2CS_WEIGHTS})"
+else
+    echo "Downloading L2CS-Net gaze360 weights (folder, ~1 GB transient; ~92 MB kept)..."
+    pip install -q gdown
+    L2CS_TMP="$(mktemp -d)"
+    gdown --folder \
+        "https://drive.google.com/drive/folders/17p6ORr-JQJcw-eYtG2WGNiuS_qVKwdWd" \
+        -O "${L2CS_TMP}"
+    if [ -f "${L2CS_TMP}/L2CSNet/Gaze360/L2CSNet_gaze360.pkl" ]; then
+        cp "${L2CS_TMP}/L2CSNet/Gaze360/L2CSNet_gaze360.pkl" "${L2CS_WEIGHTS}"
+        rm -rf "${L2CS_TMP}"
+        echo "L2CS gaze weights: OK"
+    else
+        echo "ERROR: gdown finished but L2CSNet_gaze360.pkl was not found in ${L2CS_TMP}" >&2
+        echo "       Manual download: https://drive.google.com/drive/folders/17p6ORr-JQJcw-eYtG2WGNiuS_qVKwdWd" >&2
+        echo "       Place the file at: ${L2CS_WEIGHTS}" >&2
+        exit 1
+    fi
+fi
+
+[ -f "${L2CS_WEIGHTS}" ] && echo "L2CS gaze weights: OK ($(du -h "${L2CS_WEIGHTS}" | cut -f1))"
+[ -f "${RVM_WEIGHTS}"  ] && echo "RVM matting weights: OK ($(du -h "${RVM_WEIGHTS}"  | cut -f1))"
+echo ""
+
+# =============================================================================
+# Step 11: Create output directories
+# =============================================================================
+echo "===== Step 11: Output directories ====="
+
+mkdir -p "${REPO_ROOT}/data/flame_tracking/preprocessing"
+mkdir -p "${REPO_ROOT}/data/flame_tracking/tracking"
+mkdir -p "${REPO_ROOT}/data/flame_tracking/logs"
+mkdir -p "${REPO_ROOT}/data/flame_tracking/flowface"
+
+echo "OK"
+echo ""
+
+# =============================================================================
+# Step 12: Verify installation
+# =============================================================================
+echo "===== Step 12: Verification ====="
+
+python -c "
+import torch; print(f'  torch {torch.__version__} (CUDA {torch.version.cuda})')
+import torchvision; print(f'  torchvision {torchvision.__version__}')
+import pytorch3d; print(f'  pytorch3d {pytorch3d.__version__}')
+import nvdiffrast; print(f'  nvdiffrast {nvdiffrast.__version__}')
+import numpy; print(f'  numpy {numpy.__version__}')
+import cv2; print(f'  opencv {cv2.__version__}')
+import pixel3dmm; print(f'  pixel3dmm OK')
+print('  All imports passed!')
+" || {
+    echo "ERROR: Some imports failed."
+    exit 1
+}
+
+echo ""
+echo "============================================================"
+echo "Setup complete!"
+echo ""
+echo "Run:"
+echo "  conda activate ${ENV_NAME}"
+echo "  cd ${REPO_ROOT}"
+echo "  bash generate_exp_map/scripts/run_multi_gpu.sh"
+echo "============================================================"

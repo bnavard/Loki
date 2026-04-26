@@ -193,43 +193,47 @@ cython_debug/
 .cursorignore
 .cursorindexingignore
 
-# ==== ExpressiveTalkingHead ====
+# ==== Marionette ====
+**/pixel3dmm
 
-# Data (symlinks to external storage + derived features)
-data/talkvid
-data/flowface
-data/derived/
-data/weights/
-
-# Keep FLAME model assets (small, needed for inference)
-!data/assets/
-!data/assets/flame/
+# Data folder: ignore every subdirectory except `assets/` and `weights/`.
+# Everything else under data/ (talkvid, flowface, derived, models, additional_data, ...)
+# is local / derived / large and should not be tracked.
+data
 
 # Outputs and checkpoints
-outputs/
-models/
+**/outputs
+scripts/tools/parallel_push155.sh
 
-# Brainstorming / scratch
-brainstorming/
+# Download data artifacts (large JSON + downloaded clips)
+scripts/download/talkvid_data.json
+scripts/download/clips_output/.
 
-# Large binary files
+# Large binary files (anywhere in the repo)
 *.pt
+*.pth
 *.ckpt
 *.safetensors
 *.pkl
 *.npy
 
-# Keep FLAME assets specifically
+# Re-include small FLAME asset files that live under data/assets/
 !data/assets/flame/*.pkl
 !data/assets/flame/*.npy
 !data/assets/flame/*.obj
 !data/assets/flame/*.txt
 
-# Wan2.2 source (large, installed via pip or git clone)
-talkinghead_wan22_animate_14b/wan/
-
 # Experimental / scratch work
 **/experimental/
+
+# Tensorboard logs
+**/runs/
+
+# Cloned third-party baseline repos under the SOTA comparison suite.
+# Each `impl/` is a full working install of an upstream model (code +
+# weights + its own patched deps). Keep history clean; the baseline's
+# README pins the commit it was run against.
+experiments/sota_comparison/*/impl/
 
 # Misc
 .current_run_dir

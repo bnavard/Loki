@@ -1,0 +1,59 @@
+# EchoMimic pip deps. Torch 2.1.0+cu121 comes from env.yml; this file
+# handles everything else. Mirrors upstream's `impl/requirements.txt` with
+# small tweaks documented inline.
+
+# ---------------------------------------------------------------------------
+# Diffusion / transformers stack — pinned by upstream's inference path
+# ---------------------------------------------------------------------------
+diffusers==0.24.0
+# transformers 4.44.x is the highest minor that still resolves to
+# huggingface_hub<0.26, which is the floor required by diffusers 0.24.0
+# (see hf_hub comment below — diffusers 0.24 imports `cached_download`,
+# removed in hf_hub 0.26). 4.45+ tightens to hf_hub>=0.26 and forces a
+# resolver conflict; 5.x requires hf_hub>=1.5.
+transformers>=4.38.2,<4.45
+torchmetrics
+torchtyping
+einops==0.4.1
+omegaconf==2.3.0
+
+# numpy<2: torch 2.1.0+cu121 (from env.yml) was compiled against numpy 1.x.
+# numpy 2.x raises "_ARRAY_API not found" / "compiled using NumPy 1.x" when
+# torch tries to interop with numpy arrays. Holding numpy on the 1.26 line
+# avoids the rebuild dance.
+numpy<2
+
+# ---------------------------------------------------------------------------
+# Face detection + audio + video I/O
+# ---------------------------------------------------------------------------
+mediapipe                    # face landmark detection
+facenet_pytorch==2.5.0       # face detector (MTCNN); uses torch
+moviepy==1.0.3               # final mp4 audio mux
+# `av` is pinned in env.yml (conda-forge) — see comment there.
+ffmpeg-python==0.2.0
+# opencv-python 4.10+ requires numpy>=2, which conflicts with our `numpy<2`
+# pin (forced by torch 2.1 ABI). Hold opencv on the 4.9 line.
+opencv-python<4.10
+
+# ---------------------------------------------------------------------------
+# Misc utilities the inference path imports
+# ---------------------------------------------------------------------------
+tqdm
+
+# ---------------------------------------------------------------------------
+# Added by us — used by setup_env.sh to fetch the ~10 GB ckpt subset from
+# `BadToBest/EchoMimic`. The full HF repo is 34 GB (multiple model variants);
+# we only download what infer_audio2vid.py needs for audio-only inference.
+#
+# Pinned to <0.26 because diffusers 0.24.0 imports BOTH `cached_download`
+# (removed in hf_hub 0.26) AND `hf_cache_home` (removed in 0.31). The 0.25.x
+# line is the last one with both symbols. We can't bump diffusers without
+# breaking upstream's custom UNet subclasses, so huggingface_hub stays old.
+#
+# `[cli]` extra ships the `huggingface-cli` command (the `hf` rename only
+# landed in 0.32+, which we can't use here). setup_env.sh therefore invokes
+# `huggingface-cli download …` rather than `hf download …`. The auth token
+# from `hf auth login` (or `huggingface-cli login`) is shared across both
+# CLIs via `~/.cache/huggingface/token`.
+# ---------------------------------------------------------------------------
+huggingface_hub[cli]<0.26

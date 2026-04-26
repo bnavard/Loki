@@ -1,0 +1,470 @@
+"""Visualization utilities for Marionette.
+
+Hosts:
+  - Pure image helpers (`slice_cond_rgb`, `add_label`, `save_labeled_grid`,
+    `save_video_with_audio`, `make_grid_tensor`) used by both live-training
+    viz and offline inspection. `add_label` writes row labels VERTICALLY
+    (rotated 90° CCW) in a narrow strip so they don't clip into frame
+    content the way horizontal labels did.
+  - `VisualizationCallback`, the Lightning callback that periodically runs
+    same-identity DDIM reconstructions on the val set and writes mp4s /
+    labeled grids / TensorBoard images.
+
+Multi-rank behavior of `VisualizationCallback`:
+  - **Every rank participates.** `n_vis_samples` is sharded across the
+    world (first `n % world_size` ranks get one extra). File names use
+    absolute sample indices so the on-disk union across ranks is a
+    contiguous `sample_00..sample_{N-1}` set with no collisions.
+  - The TensorBoard image log is rank-0-only — TB event files aren't safe
+    under concurrent writes; PNG and mp4 on disk are the full set.
+  - `torch.distributed.barrier()` brackets the callback so fast ranks wait
+    at the post-barrier for slow ones before resuming training (otherwise
+    NCCL would time out on the next all-reduce).
+  - The whole `_generate_samples` is wrapped in try/except in
+    `on_train_batch_end` so a failure on any rank can't skip the
+    post-barrier and deadlock the others.
+
+"""
+from __future__ import annotations
+
+import os
+import shutil
+import subprocess
+import tempfile
+from pathlib import Path
+from typing import List, Optional
+
+import cv2
+import numpy as np
+import torch
+from pytorch_lightning.callbacks import Callback
+
+
+def slice_cond_rgb(
+    spatial_cond: torch.Tensor,
+    ch_start: int,
+    target_size: int,
+    n_channels: int = 3,
+) -> np.ndarray:
+    """Render a 3-channel slice of a spatial_cond tensor as uint8 (T, 3, H, W).
+
+    Args:
+        spatial_cond: (T, H, W, C) conditioning tensor (channels-last). C
+                      depends on the active cond_stage module — 45 for the
+                      baseline `SpatialConditioning`, 3 / 42 / 45 for the
+                      condition_ablation arms.
+        ch_start:     first channel of the slice. Read from the active
+                      cond_stage's `VIZ_SLICE` class attr — e.g. (42, 45)
+                      for baseline → "Driver Deform" preview.
+        target_size:  output spatial size; upsampled bilinearly if different from H/W.
+        n_channels:   slice width (default 3 for RGB-like visualization).
+    """
+    x = spatial_cond[..., ch_start:ch_start + n_channels].cpu().numpy()
+    T, H, W, _ = x.shape
+
+    mn, mx = x.min(), x.max()
+    if mx - mn > 1e-8:
+        x = (x - mn) / (mx - mn)
+    else:
+        x = np.zeros_like(x)
+    x = (x * 255).astype(np.uint8)
+
+    frames = []
+    for t in range(T):
+        frame = x[t] if (H == target_size and W == target_size) else cv2.resize(
+            x[t], (target_size, target_size), interpolation=cv2.INTER_LINEAR,
+        )
+        frames.append(frame.transpose(2, 0, 1))
+    return np.stack(frames, axis=0)
+
+
+def add_label(row_img: np.ndarray, label: str,
+              font_scale: float = 1.0, thickness: int = 2,
+              label_w: int = 70) -> np.ndarray:
+    """Prepend a narrow black strip with the label drawn **vertically** on the
+    left of a row image. Text is rotated 90° counterclockwise so it reads
+    bottom-to-top along the strip — the standard matplotlib y-axis convention.
+
+    Vertical orientation lets the strip stay narrow (default 70 px) without
+    clipping; horizontal labels at this font size were spilling past the old
+    180-px strip into the row content.
+
+    `label_w` must be the same across every row of a composite so vertical
+    concatenation still aligns; the default applies to both the PNG grid
+    and the audio-muxed mp4 rendered by the VisualizationCallback.
+    """
+    H, W = row_img.shape[:2]
+
+    # Draw text horizontally on a temp canvas sized `label_w` tall × H wide,
+    # then rotate CCW — the wide axis becomes the tall strip height, the
+    # tall axis becomes the narrow strip width. This keeps rendering crisp
+    # (no per-pixel text path) while giving us vertical text.
+    horiz = np.zeros((label_w, H, 3), dtype=np.uint8)
+    text_w, text_h = cv2.getTextSize(
+        label, cv2.FONT_HERSHEY_SIMPLEX, font_scale, thickness,
+    )[0]
+    tx = (H - text_w) // 2
+    ty = (label_w + text_h) // 2
+    cv2.putText(
+        horiz, label, (tx, ty),
+        cv2.FONT_HERSHEY_SIMPLEX, font_scale, (255, 255, 255), thickness, cv2.LINE_AA,
+    )
+    vert_strip = cv2.rotate(horiz, cv2.ROTATE_90_COUNTERCLOCKWISE)   # (H, label_w, 3)
+
+    canvas = np.zeros((H, label_w + W, 3), dtype=np.uint8)
+    canvas[:, :label_w] = vert_strip
+    canvas[:,  label_w:] = row_img
+    return canvas
+
+
+def save_labeled_grid(
+    rows_data: List[np.ndarray],
+    labels: List[str],
+    path: Path,
+    title: Optional[str] = None,
+):
+    """Write a labeled N-row strip grid to disk.
+
+    Args:
+        rows_data: list of (T, 3, H, W) uint8 arrays, one per row.
+        labels:    row labels, same length.
+        title:     optional title bar drawn at the top.
+    """
+    T = rows_data[0].shape[0]
+    n_show = min(T, 8)
+    indices = np.linspace(0, T - 1, n_show, dtype=int)
+
+    labeled_rows = []
+    for imgs, label in zip(rows_data, labels):
+        frames = []
+        for t_idx in indices:
+            frame = imgs[t_idx].transpose(1, 2, 0).copy()
+            frame_bgr = frame[..., ::-1].copy()
+            frames.append(frame_bgr)
+        strip = np.concatenate(frames, axis=1)
+        labeled_rows.append(add_label(strip, label))
+
+    grid = np.concatenate(labeled_rows, axis=0)
+
+    if title:
+        title_h = 40
+        title_bar = np.zeros((title_h, grid.shape[1], 3), dtype=np.uint8)
+        text_size = cv2.getTextSize(title, cv2.FONT_HERSHEY_SIMPLEX, 0.8, 2)[0]
+        text_x = (grid.shape[1] - text_size[0]) // 2
+        cv2.putText(
+            title_bar, title, (text_x, 28),
+            cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 255), 2, cv2.LINE_AA,
+        )
+        grid = np.concatenate([title_bar, grid], axis=0)
+
+    cv2.imwrite(str(path), grid)
+
+
+def save_video_with_audio(
+    rows_data: List[np.ndarray],
+    labels: List[str],
+    audio_np: Optional[np.ndarray],
+    path: Path,
+    fps: float = 25.0,
+    title: Optional[str] = None,
+):
+    """Write a stacked labeled video (rows stacked vertically) with optional muxed audio.
+
+    Args:
+        rows_data: list of (T, 3, H, W) uint8 arrays.
+        audio_np:  (T, window_samples) float32 per-frame audio windows, or None.
+        path:      output .mp4 path.
+    """
+    T = rows_data[0].shape[0]
+
+    frames = []
+    for t in range(T):
+        rows = []
+        for imgs, label in zip(rows_data, labels):
+            frame_rgb = imgs[t].transpose(1, 2, 0).copy()
+            frame_bgr = frame_rgb[..., ::-1].copy()
+            rows.append(add_label(frame_bgr, label, font_scale=0.7, thickness=1))
+        composite = np.concatenate(rows, axis=0)
+
+        if title:
+            title_h = 30
+            title_bar = np.zeros((title_h, composite.shape[1], 3), dtype=np.uint8)
+            text_size = cv2.getTextSize(title, cv2.FONT_HERSHEY_SIMPLEX, 0.6, 1)[0]
+            text_x = (composite.shape[1] - text_size[0]) // 2
+            cv2.putText(
+                title_bar, title, (text_x, 22),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 1, cv2.LINE_AA,
+            )
+            composite = np.concatenate([title_bar, composite], axis=0)
+        frames.append(composite)
+
+    tmp_video = tempfile.NamedTemporaryFile(suffix=".mp4", delete=False)
+    tmp_video_path = tmp_video.name
+    tmp_video.close()
+
+    fourcc = cv2.VideoWriter_fourcc(*"mp4v")
+    writer = cv2.VideoWriter(
+        tmp_video_path, fourcc, fps, (frames[0].shape[1], frames[0].shape[0]),
+    )
+    for frame in frames:
+        writer.write(frame)
+    writer.release()
+
+    if audio_np is not None:
+        try:
+            import soundfile as sf
+            # Per-frame windows overlap by audio_context_frames on each side;
+            # take the center chunk to avoid duplicating samples across frames.
+            samples_per_frame = audio_np.shape[1] // 5
+            center_offset = samples_per_frame * 2
+            audio_full = np.concatenate([
+                audio_np[t, center_offset:center_offset + samples_per_frame]
+                for t in range(T)
+            ])
+
+            tmp_audio = tempfile.NamedTemporaryFile(suffix=".wav", delete=False)
+            tmp_audio_path = tmp_audio.name
+            tmp_audio.close()
+            sf.write(tmp_audio_path, audio_full, 16000)
+
+            subprocess.run([
+                "ffmpeg", "-y", "-loglevel", "error",
+                "-i", tmp_video_path,
+                "-i", tmp_audio_path,
+                "-c:v", "libx264", "-crf", "23",
+                "-c:a", "aac", "-b:a", "128k",
+                "-shortest",
+                str(path),
+            ], check=True)
+            os.unlink(tmp_video_path)
+            os.unlink(tmp_audio_path)
+            return
+        except Exception:
+            pass
+
+    shutil.move(tmp_video_path, str(path))
+
+
+def make_grid_tensor(rows_data: List[np.ndarray]) -> torch.Tensor:
+    """Build a (3, N*H, n*W) uint8 tensor for tensorboard `add_image`."""
+    T = rows_data[0].shape[0]
+    n_show = min(T, 8)
+    indices = np.linspace(0, T - 1, n_show, dtype=int)
+
+    rows = []
+    for imgs in rows_data:
+        frames = [imgs[idx] for idx in indices]
+        rows.append(np.concatenate(frames, axis=2))
+    return torch.tensor(np.concatenate(rows, axis=1), dtype=torch.uint8)
+
+
+def _to_device(batch, device):
+    out = {}
+    for k, v in batch.items():
+        if isinstance(v, torch.Tensor):
+            out[k] = v.to(device)
+        elif isinstance(v, dict):
+            out[k] = {
+                kk: vv.to(device) if isinstance(vv, torch.Tensor) else vv
+                for kk, vv in v.items()
+            }
+        else:
+            out[k] = v
+    return out
+
+
+class VisualizationCallback(Callback):
+    """Periodic same-identity DDIM reconstructions on the val set.
+
+    Fires every `vis_every_n_steps` steps (rank 0 only, DDP-safe via explicit
+    barriers). For each of `n_vis_samples` val samples:
+      - Runs `model.sample_video` over the T gen slots (ref lives in the
+        separate frozen ref UNet, not in the time axis).
+      - Builds a 4-row labeled grid [Reference | Ground Truth | Driver Deform
+        | Generated], saved as both a PNG grid and an audio-muxed mp4.
+      - Logs the grid to tensorboard as a single image.
+    """
+
+    def __init__(self, cfg, val_loader, output_dir, vis_every_n_steps=2000,
+                 n_vis_samples=8, vis_ddim_steps=20):
+        super().__init__()
+        self.cfg = cfg
+        self.val_loader = val_loader
+        self.output_dir = Path(output_dir) / "visualizations"
+        self.output_dir.mkdir(parents=True, exist_ok=True)
+        self.vis_every_n_steps = vis_every_n_steps
+        self.n_vis_samples = n_vis_samples
+        self.vis_ddim_steps = vis_ddim_steps
+        self._vis_call_count = 0
+
+    def on_train_batch_end(self, trainer, pl_module, outputs, batch, batch_idx):
+        if trainer.global_step == 0:
+            return
+        if trainer.global_step % self.vis_every_n_steps != 0:
+            return
+
+        # DDP: every rank participates in viz in parallel, each handling its
+        # own disjoint slice of `n_vis_samples`. The pre-barrier syncs entry
+        # (everyone starts sampling together); the post-barrier syncs exit
+        # (fast ranks wait for slow ones before returning to training so no
+        # rank races ahead into the next step's all-reduce and blows NCCL).
+        #
+        # The try/except around `_generate_samples` is LOAD-BEARING for DDP:
+        # if one rank crashed during viz without reaching the post-barrier,
+        # every other rank would hang forever. Catch everything, print, and
+        # still hit the barrier.
+        if trainer.world_size > 1:
+            torch.distributed.barrier()
+
+        try:
+            self._generate_samples(trainer, pl_module)
+        except Exception as e:
+            import traceback
+            print(f"  [rank {trainer.global_rank}] visualization failed: {e}")
+            traceback.print_exc()
+
+        if trainer.world_size > 1:
+            torch.distributed.barrier()
+
+    @torch.no_grad()
+    def _generate_samples(self, trainer, pl_module):
+        model = pl_module.model
+        model.eval()
+        device = pl_module.device
+        step = trainer.global_step
+        fps = self.cfg.get("train_dataset", {}).get("params", {}).get("fps", 25.0)
+
+        val_params = self.cfg.get("val_dataset", {}).get("params", {})
+        resolution = val_params.get("resolution", 512)
+
+        step_dir = self.output_dir / f"step_{step:06d}"
+        step_dir.mkdir(parents=True, exist_ok=True)
+
+        cfg_scale = self.cfg.inference.get("cfg_scale", 2.0)
+
+        # Per-call starting position inside the val set: skip past the
+        # samples that previous fires of this callback already consumed.
+        n_skip_call = self._vis_call_count * self.n_vis_samples
+        self._vis_call_count += 1
+
+        # Shard this fire's `n_vis_samples` across ranks. First `rem` ranks
+        # get one extra so integer division can't drop samples. Ranks whose
+        # share is 0 (when n_vis_samples < world_size, e.g. n_vis_samples=1
+        # on 4 GPUs) short-circuit without touching the val DataLoader and
+        # fall through to the post-barrier in the caller.
+        world_size = max(trainer.world_size, 1)
+        rank       = trainer.global_rank
+        base, rem  = divmod(self.n_vis_samples, world_size)
+        counts     = [base + (1 if r < rem else 0) for r in range(world_size)]
+        my_count   = counts[rank]
+        my_start   = sum(counts[:rank])                 # absolute offset in this fire
+        n_skip     = n_skip_call + my_start             # skip to MY first sample
+
+        if my_count == 0:
+            model.train()
+            return
+
+        n_generated = 0
+        n_skipped   = 0
+        for batch in self.val_loader:
+            if n_generated >= my_count:
+                break
+            if n_skipped < n_skip:
+                n_skipped += batch[model.first_stage_key].shape[0]
+                continue
+
+            batch = _to_device(batch, device)
+
+            gen_z, cond = model.get_input(batch, model.first_stage_key, force_conditional=True)
+            ctrl     = cond['c_concat'][0]
+            c_uncond = cond['c_uncond'][0]
+
+            b = gen_z.shape[0]
+            for i in range(b):
+                if n_generated >= my_count:
+                    break
+                abs_idx = my_start + n_generated    # global index into this fire's samples
+
+                ctrl_i   = {k: (v[[i]] if v is not None else None) for k, v in ctrl.items()}
+                uncond_i = {k: (v[[i]] if v is not None else None) for k, v in c_uncond.items()}
+
+                try:
+                    gen_latents = model.sample_video(
+                        control=ctrl_i, control_uncond=uncond_i,
+                        n_frames=gen_z.shape[1],
+                        latent_shape=tuple(gen_z.shape[2:]),
+                        n_ddim_steps=self.vis_ddim_steps,
+                        cfg_scale=cfg_scale,
+                    )
+
+                    gen_imgs = model.decode_first_stage(gen_latents.unsqueeze(0)).squeeze(0)
+                    gen_imgs = ((gen_imgs.clamp(-1, 1) + 1) / 2 * 255).byte().cpu().numpy()
+
+                    gt_imgs = model.decode_first_stage(gen_z[i:i+1]).squeeze(0)
+                    gt_imgs = ((gt_imgs.clamp(-1, 1) + 1) / 2 * 255).byte().cpu().numpy()
+
+                    # Row 3 of the panel previews a 3-channel slice of
+                    # spatial_cond — which channels and what to call the row
+                    # are declared by the active cond_stage module, so viz is
+                    # ablation-agnostic.
+                    cond_stage = model.cond_stage_model
+                    ch_start, ch_end = cond_stage.VIZ_SLICE
+                    spatial_cond_i = ctrl_i["spatial_cond"][0]
+                    cond_vis = slice_cond_rgb(
+                        spatial_cond_i, ch_start, resolution,
+                        n_channels=ch_end - ch_start,
+                    )
+
+                    # Static reference row: decode the ref latent from control
+                    # and broadcast across T for grid alignment.
+                    ref_z_i = ctrl_i["ref_z"]
+                    ref_img = model.decode_first_stage(ref_z_i.unsqueeze(1)).squeeze(0)
+                    ref_u8  = ((ref_img.clamp(-1, 1) + 1) / 2 * 255).byte().cpu().numpy()[0]
+                    T_gen   = gen_z.shape[1]
+                    ref_row = np.broadcast_to(ref_u8[None], (T_gen, *ref_u8.shape)).copy()
+
+                    rows_data = [ref_row, gt_imgs, cond_vis, gen_imgs]
+                    labels = ["Reference", "Ground Truth", cond_stage.VIZ_LABEL, "Generated"]
+                    title = f"Same-Identity Reconstruction | Step {step}"
+
+                    save_labeled_grid(
+                        rows_data, labels,
+                        step_dir / f"sample_{abs_idx:02d}.png", title=title,
+                    )
+
+                    # Only mux audio into the viz mp4 if the model actually
+                    # consumes it. The audio-off arm still receives audio in
+                    # the batch (dataset stays uniform across ablations), but
+                    # surfacing it in the viz would misrepresent what the
+                    # model had access to.
+                    if model.audio_encoder is not None:
+                        audio_i = batch.get("audio", None)
+                        audio_np = audio_i[i].cpu().numpy() if audio_i is not None else None
+                    else:
+                        audio_np = None
+                    save_video_with_audio(
+                        rows_data, labels, audio_np,
+                        step_dir / f"sample_{abs_idx:02d}.mp4",
+                        fps=fps, title=title,
+                    )
+
+                    # TB event files are not safe to write concurrently from
+                    # multiple ranks, so only rank 0 logs to TB. PNG/mp4 on
+                    # disk is the full set across all ranks.
+                    if trainer.global_rank == 0 and trainer.logger is not None:
+                        grid = make_grid_tensor(rows_data)
+                        trainer.logger.experiment.add_image(
+                            f"vis/sample_{abs_idx}", grid, global_step=step,
+                        )
+                except Exception as e:
+                    import traceback
+                    print(f"  [rank {trainer.global_rank}] visualization failed "
+                          f"for sample {abs_idx}: {e}")
+                    traceback.print_exc()
+
+                n_generated += 1
+
+        model.train()
+        if trainer.global_rank == 0:
+            print(f"  Saved {self.n_vis_samples} visualization(s) "
+                  f"(sharded across {world_size} rank(s)) to {step_dir}")
