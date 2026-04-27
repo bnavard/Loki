@@ -70,6 +70,20 @@ def parse_args():
                         "temporal coverage as Marionette's 16-frame panel. "
                         "Set to 0 (or any non-positive int) for tool-native "
                         "length. Default 16.")
+    p.add_argument("--output-dir", type=Path, default=None,
+                   help="Where to write metrics.jsonl + metrics_summary.json + "
+                        "the FVD staging tree. Default: inside the run dir "
+                        "(--run-dir). Set this to redirect artifacts away "
+                        "from the inference run dir — e.g. for Marionette "
+                        "evaluation, point at "
+                        "outputs/test_metric/metrics/marionette/<dataset>/<protocol>/ "
+                        "so outputs/marionette_eval/<run_dir>/ stays clean.")
+    p.add_argument("--fvd-only", action="store_true",
+                   help="Skip the per-sample loop. Load the existing "
+                        "metrics_summary.json, compute only FVD on top, "
+                        "merge it in, and rewrite. Use when the per-sample "
+                        "work is already done and you're adding FVD after "
+                        "the fact. Errors if no existing summary is found.")
     p.set_defaults(face_crop=True)
     return p.parse_args()
 
@@ -87,7 +101,10 @@ def main():
         n_frames         = args.n_frames if args.n_frames > 0 else None,
         face_crop_margin = args.face_crop_margin,
     )
-    summary = evaluate(args.run_dir, cfg, skip_fvd=args.skip_fvd)
+    summary = evaluate(args.run_dir, cfg,
+                       skip_fvd=args.skip_fvd,
+                       output_dir=args.output_dir,
+                       fvd_only=args.fvd_only)
     print(json.dumps(summary, indent=2))
 
 

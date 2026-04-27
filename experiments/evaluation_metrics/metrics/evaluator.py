@@ -405,14 +405,25 @@ def _stage_fvd_dirs(meta: RunMetadata, fvd_root: Path, cfg: EvalConfig,
                     detect_fn=None) -> tuple[Path, Path, int, int]:
     """Stage `<fvd_root>/{pred,ref}/` for cdfvd's video-folder loader.
 
-    With `cfg.face_crop` on (the default), **both** pred and GT are
-    loaded, face-cropped via the same `face_crop_around_detection`
-    routine used for per-sample metrics, and re-encoded as fresh mp4s.
-    FVD then compares the same face-region distribution on both sides.
+    Every staged mp4 is **truncated to the first `cfg.fvd_seq_len` (= 16)
+    frames** on both pred and GT sides. This eliminates a sampling
+    asymmetry inside cdfvd: its `VideoDataset` splits each video into
+    non-overlapping 16-frame chunks via `torchvision.VideoClips` and
+    picks one *at random* per video. Marionette's 16-frame panel has
+    exactly one chunk; SOTA's 75–125-frame panels have 4–7 chunks → the
+    random pick lands on different mid-clip windows for SOTA but is
+    forced to the first 16 frames for Marionette. Capping at staging
+    time means every video has exactly one possible chunk, so cdfvd's
+    randomness collapses and every baseline is scored on the same
+    first-16-frame window — matching the per-sample metrics
+    (PSNR/SSIM/LPIPS/LMD/id_cosine), which already cap pred to
+    `cfg.n_frames=16` at load time.
 
-    With `cfg.face_crop` off, pred is symlinked from each sample's
-    `panel.mp4` and GT is symlinked from the manifest path (variable
-    resolution; framing mismatch will bias the FVD number).
+    With `cfg.face_crop` on (the default), both sides are face-cropped
+    via the same `face_crop_around_detection` routine used for per-sample
+    metrics and re-encoded as fresh mp4s. With `cfg.face_crop` off, raw
+    mp4s are symlinked (cdfvd's `sequence_length=16` will then truncate
+    at decode time — which is fine since there's nothing else to align).
 
     Samples whose face detection fails on either side are skipped from
     FVD staging entirely. Returns `(pred_dir, ref_dir, n_staged, n_skipped)`.
@@ -437,10 +448,11 @@ def _stage_fvd_dirs(meta: RunMetadata, fvd_root: Path, cfg: EvalConfig,
             for p in (pred_dst, ref_dst):
                 if p.is_symlink() or p.exists():
                     p.unlink()
-            pred_video = load_video(sample.pred_path, cfg.fps, resolution=None)
+            pred_video = load_video(sample.pred_path, cfg.fps, resolution=None,
+                                    max_frames=cfg.fvd_seq_len)
             ref_video  = load_video(Path(sample.ref_clip["video_path"]),
                                     cfg.fps, resolution=None,
-                                    max_frames=pred_video.shape[0])
+                                    max_frames=cfg.fvd_seq_len)
             pred_crop = face_crop_around_detection(
                 pred_video, detect_fn, margin=cfg.face_crop_margin,
                 target_resolution=cfg.resolution,
@@ -455,7 +467,6 @@ def _stage_fvd_dirs(meta: RunMetadata, fvd_root: Path, cfg: EvalConfig,
             _save_video_mp4(pred_crop, pred_dst, fps=cfg.fps)
             _save_video_mp4(ref_crop,  ref_dst,  fps=cfg.fps)
         else:
-            # Symlink raw mp4s (variable resolution).
             for dst, src in [(pred_dst, sample.pred_path),
                              (ref_dst,  Path(sample.ref_clip["video_path"]))]:
                 if dst.is_symlink() or dst.exists():
@@ -467,29 +478,39 @@ def _stage_fvd_dirs(meta: RunMetadata, fvd_root: Path, cfg: EvalConfig,
     return pred_dir, ref_dir, n_staged, n_skipped
 
 
-def _compute_fvd(meta: RunMetadata, cfg: EvalConfig) -> dict[str, float | bool | int]:
+def _compute_fvd(meta: RunMetadata, cfg: EvalConfig,
+                 staging_root: Path) -> dict[str, float | bool | int]:
     """Run every backbone in `cfg.fvd_models` once. Stages a temp tree
-    under `<run_dir>/_fvd/` (face-cropped mp4s for both pred and GT
-    when `cfg.face_crop` is on)."""
+    under `<staging_root>/_fvd/` (face-cropped 16-frame mp4s for both
+    pred and GT when `cfg.face_crop` is on), then removes it after the
+    backbone forward passes finish — the central metrics output stays
+    clean of the intermediate staging artifacts.
+    """
+    import shutil
     from .fvd import FVD
 
     detect_fn = _build_face_detector(cfg.device) if cfg.face_crop else None
-    fvd_root = meta.run_dir / "_fvd"
-    pred_dir, ref_dir, n, n_skipped = _stage_fvd_dirs(meta, fvd_root, cfg, detect_fn=detect_fn)
-    out: dict[str, float | bool | int] = {
-        "n_clips":     n,
-        "n_skipped":   n_skipped,
-        "low_sample":  n < FVD_LOW_SAMPLE_THRESHOLD,
-        "face_crop": cfg.face_crop,
-    }
-    for backbone in cfg.fvd_models:
-        fvd = FVD(
-            model           = backbone,
-            resolution      = cfg.fvd_resolution,
-            sequence_length = cfg.fvd_seq_len,
-            device          = cfg.device,
+    fvd_root  = staging_root / "_fvd"
+    try:
+        pred_dir, ref_dir, n, n_skipped = _stage_fvd_dirs(
+            meta, fvd_root, cfg, detect_fn=detect_fn,
         )
-        out[f"fvd_{backbone}"] = fvd.compute(pred_dir, ref_dir)
+        out: dict[str, float | bool | int] = {
+            "n_clips":    n,
+            "n_skipped":  n_skipped,
+            "low_sample": n < FVD_LOW_SAMPLE_THRESHOLD,
+            "face_crop":  cfg.face_crop,
+        }
+        for backbone in cfg.fvd_models:
+            fvd = FVD(
+                model           = backbone,
+                resolution      = cfg.fvd_resolution,
+                sequence_length = cfg.fvd_seq_len,
+                device          = cfg.device,
+            )
+            out[f"fvd_{backbone}"] = fvd.compute(pred_dir, ref_dir)
+    finally:
+        shutil.rmtree(fvd_root, ignore_errors=True)
     return out
 
 
@@ -499,21 +520,54 @@ def _compute_fvd(meta: RunMetadata, cfg: EvalConfig) -> dict[str, float | bool |
 
 
 def evaluate(
-    run_dir:  Path,
-    cfg:      Optional[EvalConfig] = None,
-    skip_fvd: bool = False,
+    run_dir:    Path,
+    cfg:        Optional[EvalConfig] = None,
+    skip_fvd:   bool = False,
+    output_dir: Optional[Path] = None,
+    fvd_only:   bool = False,
 ) -> dict:
-    """Evaluate one run dir end-to-end. Writes:
-      * `<run_dir>/metrics.jsonl`         — one row per sample
-      * `<run_dir>/metrics_summary.json`  — aggregates + FVD
+    """Evaluate one run dir end-to-end.
+
+    Writes (defaults — when `output_dir` is None, into the run dir):
+      * `<output_dir>/metrics.jsonl`         — one row per sample
+      * `<output_dir>/metrics_summary.json`  — aggregates + FVD
+      * `<output_dir>/_fvd/`                 — staging tree (only with FVD on)
+
+    `output_dir` lets callers redirect every metric artifact away from
+    the inference run dir. The Marionette runner uses this to send
+    metric outputs to `outputs/test_metric/metrics/marionette/<dataset>/<protocol>/`
+    so the model's `outputs/marionette_eval/<run_dir>/` tree stays clean.
+
+    `fvd_only=True` is the cheap path: load an existing
+    `metrics_summary.json`, compute only FVD (skip the per-sample loop),
+    merge the result back in, and rewrite the summary. Useful when the
+    expensive per-sample work is already done and FVD is being added
+    after the fact. Implies `skip_fvd=False`.
 
     Returns the summary dict (also written to disk).
     """
     cfg  = cfg or EvalConfig()
     meta = load_run_metadata(run_dir)
 
-    metrics_path = meta.run_dir / "metrics.jsonl"
-    summary_path = meta.run_dir / "metrics_summary.json"
+    if output_dir is None:
+        out_dir = meta.run_dir       # already exists by virtue of load_run_metadata
+    else:
+        out_dir = Path(output_dir)
+        out_dir.mkdir(parents=True, exist_ok=True)
+
+    metrics_path = out_dir / "metrics.jsonl"
+    summary_path = out_dir / "metrics_summary.json"
+
+    if fvd_only:
+        if not summary_path.is_file():
+            raise FileNotFoundError(
+                f"--fvd-only requires an existing summary at {summary_path}. "
+                f"Run a full evaluation first."
+            )
+        summary = json.loads(summary_path.read_text())
+        summary["fvd"] = _compute_fvd(meta, cfg, staging_root=out_dir)
+        summary_path.write_text(json.dumps(summary, indent=2))
+        return summary
 
     if meta.protocol == "same_identity_reconstruction":
         per_sample = _eval_same_identity(meta, cfg, metrics_path)
@@ -564,8 +618,16 @@ def evaluate(
         "metrics":      aggregates,
     }
 
-    if not skip_fvd:
-        summary["fvd"] = _compute_fvd(meta, cfg)
+    # FVD is only meaningful for same-id reconstruction. Cross-id pred is
+    # identity-A's face doing identity-B's motion; the GT we'd compare
+    # against is identity-A's natural video (the ref clip). The
+    # distribution mismatch this would measure is dominated by the
+    # motion swap — not by anything the model is actually being judged
+    # on (identity preservation, which `id_cosine` covers properly).
+    # So FVD is unconditionally skipped for cross-identity, regardless
+    # of `skip_fvd`.
+    if not skip_fvd and meta.protocol == "same_identity_reconstruction":
+        summary["fvd"] = _compute_fvd(meta, cfg, staging_root=out_dir)
 
     summary_path.write_text(json.dumps(summary, indent=2))
     return summary
