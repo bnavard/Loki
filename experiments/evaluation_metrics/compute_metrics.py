@@ -64,6 +64,12 @@ def parse_args():
                         "raw-framing numbers.")
     p.add_argument("--face-crop-margin", type=float, default=1.3,
                    help="Padding multiplier around the raw RetinaFace bbox.")
+    p.add_argument("--n-frames", type=int, default=16,
+                   help="Cap pred (and therefore GT) to this many frames so "
+                        "SOTA's 75–125 frame outputs are scored on the same "
+                        "temporal coverage as Marionette's 16-frame panel. "
+                        "Set to 0 (or any non-positive int) for tool-native "
+                        "length. Default 16.")
     p.set_defaults(face_crop=True)
     return p.parse_args()
 
@@ -78,6 +84,7 @@ def main():
         fvd_seq_len      = args.fvd_seq_len,
         lpips_chunk_size = args.lpips_chunk,
         face_crop        = args.face_crop,
+        n_frames         = args.n_frames if args.n_frames > 0 else None,
         face_crop_margin = args.face_crop_margin,
     )
     summary = evaluate(args.run_dir, cfg, skip_fvd=args.skip_fvd)

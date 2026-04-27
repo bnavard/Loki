@@ -122,6 +122,11 @@ class EvalConfig:
     lpips_chunk_size: int   = 64
     face_crop:        bool  = True   # crop pred AND GT to face-only squares
     face_crop_margin: float = DEFAULT_FACE_CROP_MARGIN
+    # Cap pred (and therefore GT) to N frames so SOTA's 75–125 frame
+    # outputs are scored on the same temporal coverage as Marionette's
+    # 16-frame panel. Default 16 = `cfg.inference.n_frames` in
+    # `marionette/configs/base.yaml`. Set to None for tool-native length.
+    n_frames:         Optional[int] = 16
 
 
 # ---------------------------------------------------------------------------
@@ -208,7 +213,8 @@ def _eval_same_identity(
             # Load both at native resolution; the face-crop step does the
             # final 512×512 resize. Skipping the early resize keeps the
             # detected face bbox at full source-pixel precision.
-            pred = load_video(sample.pred_path,     cfg.fps, resolution=None)
+            pred = load_video(sample.pred_path,     cfg.fps, resolution=None,
+                              max_frames=cfg.n_frames)
             ref  = load_video(sample.gt_video_path, cfg.fps, resolution=None,
                               max_frames=pred.shape[0])
 
@@ -356,7 +362,8 @@ def _eval_cross_identity(
             if prior is None:
                 continue   # ref-side detection had failed earlier; row already logged
 
-            gen = load_video(sample.pred_path, cfg.fps, cfg.resolution)
+            gen = load_video(sample.pred_path, cfg.fps, cfg.resolution,
+                             max_frames=cfg.n_frames)
             cos, det = id_metric.score(gen, prior)
 
             row = {

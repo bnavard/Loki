@@ -16,8 +16,10 @@
 # The per-sample `metrics.jsonl` and `metrics_summary.json` also stay at
 # the original `<run_dir>/` so per-run drilldown is still trivial.
 #
-# Per-worker logs land at `outputs/test_metric/metrics/_worker_<gpu>.log`
-# so you can tail any worker's progress independently of the others.
+# All workers stream to the launching shell's stdout/stderr (output across
+# workers is interleaved — prefix every line with `[gpu N]` to keep them
+# distinguishable). Redirect the whole script to a file if you want a
+# durable log.
 #
 # GPU memory: each worker loads LPIPS (AlexNet ~250 MB) + InsightFace
 # buffalo_l (~330 MB) + MediaPipe (CPU). ~600 MB per worker — comfortable
@@ -43,11 +45,11 @@
 #
 #   GPUS="0 2 4 6" bash experiments/evaluation_metrics/run_eval_metrics_on_sota.sh
 #
-# Background + log tail:
+# Run in background with a single combined log file:
 #
 #   bash experiments/evaluation_metrics/run_eval_metrics_on_sota.sh \
 #       > outputs/test_metric/metrics/_batch.log 2>&1 &
-#   tail -f outputs/test_metric/metrics/_worker_0.log
+#   tail -f outputs/test_metric/metrics/_batch.log
 # =============================================================================
 
 set -u
@@ -152,10 +154,11 @@ for gpu in "${GPU_LIST[@]}"; do
     if [[ -z "${dirs_str}" ]]; then
         continue
     fi
-    log="${OUT_ROOT}/_worker_${gpu}.log"
-    worker "${gpu}" "${dirs_str}" > "${log}" 2>&1 &
+    # Stream worker output straight through; lines are prefixed with
+    # `[gpu N]` so interleaved output across workers stays readable.
+    worker "${gpu}" "${dirs_str}" &
     pids+=($!)
-    echo "[batch] launched worker pid=$! on GPU ${gpu} → ${log}"
+    echo "[batch] launched worker pid=$! on GPU ${gpu}"
 done
 
 # Wait for all workers; tally exit codes.
@@ -171,7 +174,7 @@ echo "============================================================"
 if (( fail == 0 )); then
     echo "[batch] all workers finished cleanly."
 else
-    echo "[batch] ${fail} worker(s) reported a failure — see _worker_<gpu>.log."
+    echo "[batch] ${fail} worker(s) reported a failure — re-scan stdout for [FAIL] lines."
 fi
 echo "[batch] central summaries under ${OUT_ROOT}/"
 echo "============================================================"
