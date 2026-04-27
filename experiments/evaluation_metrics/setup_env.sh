@@ -117,13 +117,57 @@ echo ""
 # =============================================================================
 # Triggers the auto-download into ~/.insightface/ so the first metrics run
 # doesn't surprise the user with a long blocking download.
-echo "===== Step 3: warm InsightFace buffalo_l ====="
+echo "===== Step 3b: warm InsightFace buffalo_l ====="
 python - <<'PY'
 from insightface.app import FaceAnalysis
 app = FaceAnalysis(name="buffalo_l", providers=["CPUExecutionProvider"])
 app.prepare(ctx_id=-1, det_size=(640, 640))
 print("buffalo_l ready.")
 PY
+echo ""
+
+# =============================================================================
+# Step 3c: patch cdfvd's VideoMAE-v2 loader
+# =============================================================================
+# Upstream cdfvd hardcodes a download URL (pjlab-gvm-data on Aliyun OSS)
+# that's been taken down — `requests.get` saves the 404 HTML body as a
+# .pth, `torch.load` then dies with `invalid load key, '<'`. Our patch
+# at `patches/cdfvd_videomaev2_utils.py` redirects to the HuggingFace
+# mirror at `OpenGVLab/VideoMAE2/mae-g/` (ungated, identical filename).
+# We copy the patch over the installed file so the fix lives in code,
+# not just on-disk state.
+echo "===== Step 3c: patch cdfvd VideoMAEv2 loader ====="
+CDFVD_VMAE_DIR="$(python -c 'import cdfvd, os; print(os.path.join(os.path.dirname(cdfvd.__file__), "third_party", "VideoMAEv2"))')"
+PATCH_SRC="${HERE}/patches/cdfvd_videomaev2_utils.py"
+PATCH_DST="${CDFVD_VMAE_DIR}/utils.py"
+if [[ ! -f "${PATCH_SRC}" ]]; then
+    echo "ERROR: patch source missing at ${PATCH_SRC}"
+    exit 1
+fi
+if cmp -s "${PATCH_SRC}" "${PATCH_DST}"; then
+    echo "SKIP: ${PATCH_DST} already matches the patched version."
+else
+    cp "${PATCH_SRC}" "${PATCH_DST}"
+    echo "patched ${PATCH_DST}"
+fi
+echo ""
+
+# =============================================================================
+# Step 3d: pre-download VideoMAE-v2 SSv2-finetuned giant (~1.9 GB)
+# =============================================================================
+# Backbone for the cdfvd VideoMAE-v2 FVD path. Pre-staging it here means
+# the first FVD run doesn't block on a 2 GB download. Skipped if already
+# present.
+echo "===== Step 3d: download VideoMAE-v2 SSv2-ft checkpoint ====="
+VMAE_PATH="${CDFVD_VMAE_DIR}/vit_g_hybrid_pt_1200e_ssv2_ft.pth"
+VMAE_URL="https://huggingface.co/OpenGVLab/VideoMAE2/resolve/main/mae-g/vit_g_hybrid_pt_1200e_ssv2_ft.pth"
+if [[ -f "${VMAE_PATH}" ]] && [[ "$(stat -c '%s' "${VMAE_PATH}")" -gt 1000000000 ]]; then
+    echo "SKIP: ${VMAE_PATH} already present ($(du -h "${VMAE_PATH}" | cut -f1))."
+else
+    rm -f "${VMAE_PATH}"   # clear any stub / partial / HTML-disguised-as-pth
+    wget --progress=bar:force -O "${VMAE_PATH}" "${VMAE_URL}"
+    echo "downloaded ${VMAE_PATH}"
+fi
 echo ""
 
 # =============================================================================
