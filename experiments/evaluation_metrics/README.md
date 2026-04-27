@@ -76,38 +76,49 @@ PYTHONPATH=. python experiments/evaluation_metrics/compute_metrics.py \
     --fvd-models videomae i3d
 ```
 
-### Sweep all SOTA runs (multi-GPU)
+### Unified sweep — Marionette + every SOTA baseline (multi-GPU)
 
-`run_eval_metrics_on_sota.sh` walks every
-`outputs/sota_comparison/<baseline>/<dataset>/<protocol>/run_*/` and
-round-robin assigns the run dirs across the available GPUs (default 8).
-Each GPU gets its own worker process; per-worker logs land at
-`outputs/test_metric/metrics/_worker_<gpu>.log`. Every
-`metrics_summary.json` is mirrored into a centralized tree under
-`outputs/test_metric/metrics/<baseline>/<dataset>/<protocol>/`:
+`run_eval_metrics.sh` walks both
+`outputs/marionette_eval/<dataset>/<protocol>/run_*/` and
+`outputs/sota_comparison/<baseline>/<dataset>/<protocol>/run_*/` into a
+single round-robin queue across the available GPUs (default 8). Every
+artifact lands in a centralized tree under
+`outputs/test_metric/metrics/<bucket>/<dataset>/<protocol>/`, where
+`<bucket>` is `marionette` or one of the SOTA baseline names — a single
+glob `outputs/test_metric/metrics/*/<dataset>/<protocol>/metrics_summary.json`
+picks up every model uniformly for comparison.
 
 ```bash
-# All 8 GPUs (default):
-bash experiments/evaluation_metrics/run_eval_metrics_on_sota.sh
+# All 8 GPUs (default), per-sample metrics only:
+bash experiments/evaluation_metrics/run_eval_metrics.sh
 
-# Override GPU count:
-NUM_GPUS=4 bash experiments/evaluation_metrics/run_eval_metrics_on_sota.sh
+# Add FVD on top of cached per-sample numbers (--fvd-only path):
+WITH_FVD=1 bash experiments/evaluation_metrics/run_eval_metrics.sh
 
-# Pin to specific GPU indices:
-GPUS="0 2 4 6" bash experiments/evaluation_metrics/run_eval_metrics_on_sota.sh
+# Force recomputation, ignore caches:
+FRESH=1 bash experiments/evaluation_metrics/run_eval_metrics.sh
 
-# Background + tail one worker:
-bash experiments/evaluation_metrics/run_eval_metrics_on_sota.sh \
+# Override GPU count or pin to specific GPUs:
+NUM_GPUS=4    bash experiments/evaluation_metrics/run_eval_metrics.sh
+GPUS="0 2 4 6" bash experiments/evaluation_metrics/run_eval_metrics.sh
+
+# Background + log:
+bash experiments/evaluation_metrics/run_eval_metrics.sh \
     > outputs/test_metric/metrics/_batch.log 2>&1 &
-tail -f outputs/test_metric/metrics/_worker_0.log
+tail -f outputs/test_metric/metrics/_batch.log
 ```
 
-Wall-clock for the full 20-run sweep with `--skip-fvd`: ~20–30 min on
-8 GPUs (vs ~2–3 hours sequential). GPU memory per worker is ~600 MB
-(LPIPS AlexNet + InsightFace `buffalo_l` + MediaPipe).
+Wall-clock for the full 24-run sweep (4 Marionette + 20 SOTA) with
+`--skip-fvd`: ~20–30 min on 8 GPUs. With FVD on top: ~5–10 min more
+since each dir runs a 16-frame VideoMAE-v2 forward pass. GPU memory per
+worker is ~600 MB (LPIPS AlexNet + InsightFace `buffalo_l` + MediaPipe).
 
-Idempotent: any run dir whose `metrics_summary.json` already exists
-both locally and centrally is skipped on re-run.
+Idempotent: any run dir whose central `metrics_summary.json` already
+exists is skipped on re-run. With `WITH_FVD=1` the runner additionally
+checks for the `fvd` field — if it's missing on an existing summary, it
+re-runs that dir with `--fvd-only` so only FVD is computed on top of the
+cached per-sample numbers. Pass `FRESH=1` to ignore caches and recompute
+everything from scratch.
 
 ## Metrics
 
@@ -189,7 +200,7 @@ experiments/evaluation_metrics/
 ├── env.yml                               # python 3.11 + cuda + torch
 ├── requirements.txt                      # pip-installable libs
 ├── compute_metrics.py                    # CLI — auto-routes by protocol
-├── run_eval_metrics_on_sota.sh           # sweep every outputs/sota_comparison/**/run_*/
+├── run_eval_metrics.sh                   # unified multi-GPU sweep (Marionette + SOTA)
 ├── metrics/
 │   ├── __init__.py
 │   ├── io.py                             # decode + manifest GT resolution + face crop

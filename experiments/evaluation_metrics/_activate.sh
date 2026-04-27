@@ -2,7 +2,7 @@
 # expose `PYTHON` pointing at the env's interpreter.
 #
 # Sourced by:
-#   - run_eval_metrics_on_sota.sh
+#   - run_eval_metrics.sh
 #   - sanity_check/visualize_batch.sh
 #
 # Both scripts run on different boxes where the env can live at any of
