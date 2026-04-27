@@ -95,6 +95,26 @@ def _extract_frame(video_path: Path, frame_idx: int, out_png: Path) -> None:
         cap.release()
 
 
+def _trim_driver_video(src: Path, out_mp4: Path, duration_s: float) -> None:
+    """Save the first `duration_s` of the driver clip as `driver.mp4`. EchoMimic
+    itself doesn't read this — the model is audio-only (whisper-tiny features).
+    We write it so the scratch dir matches the on-disk shape of the visual
+    baselines (hunyuan, xportrait), which lets evaluation tooling glob
+    `*/scratch/<id>/driver.mp4` uniformly across every SOTA wrapper."""
+    out_mp4.parent.mkdir(parents=True, exist_ok=True)
+    subprocess.run(
+        ["ffmpeg", "-y", "-loglevel", "error",
+         "-t", str(duration_s),
+         "-i", str(src),
+         "-an",
+         "-c:v", "libx264",
+         "-preset", "ultrafast",
+         "-pix_fmt", "yuv420p",
+         str(out_mp4)],
+        check=True,
+    )
+
+
 def _extract_audio(src: Path, out_wav: Path, duration_s: float) -> None:
     """Extract first `duration_s` of `src` as mono-16 kHz WAV. ffmpeg
     accepts both video containers (HDTF muxed) and standalone .wav
@@ -213,6 +233,7 @@ def run_one(
     Layout:
         scratch/<sample_id>/source.png       # ref frame
         scratch/<sample_id>/audio.wav        # driver audio, 16 kHz mono
+        scratch/<sample_id>/driver.mp4       # driver_clip video, same trim
         scratch/<sample_id>/animation.yaml   # patched test_cases config
         impl/output/<date>/<…>/*.mp4         # EchoMimic raw output
         output_dir/samples/<sample_id>/panel.mp4
@@ -226,12 +247,18 @@ def run_one(
     work        = scratch / sample.sample_id
     source_png  = work / "source.png"
     audio_wav   = work / "audio.wav"
+    driver_mp4  = work / "driver.mp4"
     patched_cfg = work / "animation.yaml"
 
     _extract_frame(sample.ref_clip.video_path, ref_frame_idx, source_png)
 
     audio_src = sample.driver_clip.audio_path or sample.driver_clip.video_path
     _extract_audio(audio_src, audio_wav, sample.clip_duration_s)
+    # `driver.mp4` is a co-output for downstream eval — EchoMimic reads only
+    # `audio.wav` (whisper-tiny features). Always sourced from the driver's
+    # *video* path so we get a proper mp4 even on TalkVid where audio lives
+    # separately as .wav.
+    _trim_driver_video(sample.driver_clip.video_path, driver_mp4, sample.clip_duration_s)
 
     _make_patched_config(
         upstream_config = impl_dir / upstream_config,
