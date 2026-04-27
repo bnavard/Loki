@@ -34,16 +34,23 @@ Per sample (`run_one(sample: EvalSample, ref_frame_idx, ...)`):
      Skip the whole audio branch if the checkpoint has no audio encoder
      (the audio_off arm of condition_ablation).
   7. `model.sample_video(...)` — DDIM with classifier-free guidance.
-  8. VAE-decode + write `panel.png` (4-row labeled grid) and `panel.mp4`
-     (audio-muxed if available).
+  8. VAE-decode and write the on-disk artifacts in the SOTA-wrapper shape:
+       samples/<sample_id>/panel.mp4    -- 512×512 generation, no audio
+       scratch/<sample_id>/source.png   -- ref frame
+       scratch/<sample_id>/driver.mp4   -- 512×512 driver row, no audio
 
-Output goes to `<output_dir>/samples/<sample.sample_id>/{panel.png, panel.mp4}`.
+Output goes to `<output_dir>/samples/<sample.sample_id>/panel.mp4` plus a
+sibling `<output_dir>/scratch/<sample.sample_id>/{source.png, driver.mp4}`
+mirroring how every `experiments/sota_comparison/<baseline>/` adapter
+writes its files.
 """
 from __future__ import annotations
 
+import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
+import cv2
 import numpy as np
 import torch
 from omegaconf import DictConfig
@@ -53,14 +60,44 @@ from marionette.flame.flame import CAP4DFlameSkinner
 from marionette.retargeting import (
     prepare_driver_frames, prepare_reference, retarget_driver_verts,
 )
-from marionette.utils import (
-    SAMPLE_RATE, frame_window, load_audio_mono,
-    save_labeled_grid, save_video_with_audio, slice_cond_rgb,
-)
+from marionette.utils import SAMPLE_RATE, frame_window, load_audio_mono
 from experiments.sota_comparison.dataset.pairing import EvalSample
 
 
 HEAD_VERT_PATH = "data/assets/flame/head_vertices.txt"
+
+
+def _encode_h264(out_mp4: Path, frames_chw_u8: np.ndarray, fps: float) -> None:
+    """Pipe `(T, 3, H, W)` uint8 RGB frames into ffmpeg and encode as
+    libx264-ultrafast no-audio mp4. Matches the SOTA wrappers' driver.mp4 /
+    panel.mp4 encoding profile so the marionette_eval output is byte-shape
+    indistinguishable from any baseline run on disk."""
+    out_mp4.parent.mkdir(parents=True, exist_ok=True)
+    T, _, H, W = frames_chw_u8.shape
+    proc = subprocess.Popen(
+        ["ffmpeg", "-y", "-loglevel", "error",
+         "-f", "rawvideo",
+         "-vcodec", "rawvideo",
+         "-pix_fmt", "rgb24",
+         "-s", f"{W}x{H}",
+         "-r", str(fps),
+         "-i", "-",
+         "-an",
+         "-c:v", "libx264",
+         "-preset", "ultrafast",
+         "-pix_fmt", "yuv420p",
+         str(out_mp4)],
+        stdin=subprocess.PIPE,
+    )
+    try:
+        for t in range(T):
+            # rgb24 expects (H, W, 3) bytes per frame.
+            proc.stdin.write(frames_chw_u8[t].transpose(1, 2, 0).tobytes())
+    finally:
+        proc.stdin.close()
+        rc = proc.wait()
+    if rc != 0:
+        raise RuntimeError(f"ffmpeg encode failed (rc={rc}) for {out_mp4}")
 
 
 def _load_fit(path: Path) -> dict:
@@ -262,32 +299,28 @@ class Evaluator:
         imgs = self.model.decode_first_stage(latents.unsqueeze(0)).squeeze(0)
         imgs = ((imgs.clamp(-1, 1) + 1) / 2 * 255).byte().cpu().numpy()   # (T, 3, H, W)
 
-        # 4-row panel: Reference (static) | Driver Video | <cond preview> | Generated
+        # On-disk shape mirrors the SOTA wrappers' layout exactly so cross-
+        # baseline tooling (compute_metrics, populate_drivers, glob walks)
+        # treats marionette_eval and any sota_comparison/<baseline>/ run
+        # uniformly.
+        #
+        #   samples/<sample_id>/panel.mp4    -- 512×512 generation, no audio
+        #   scratch/<sample_id>/source.png   -- ref frame (static across T)
+        #   scratch/<sample_id>/driver.mp4   -- 512×512 driver row, no audio
         ref_rgb_u8 = ((ref_img_norm + 1) / 2 * 255).clip(0, 255).astype(np.uint8)
-        ref_row = np.broadcast_to(
-            ref_rgb_u8.transpose(2, 0, 1)[None],
-            (n_frames, 3, self.resolution, self.resolution),
-        ).copy()
-        driver_row = driver_frames.transpose(0, 3, 1, 2).copy()
+        driver_chw = driver_frames.transpose(0, 3, 1, 2).copy()   # (T, 3, H, W)
 
-        # Row 3 preview owned by the active cond_stage's class attrs.
-        ch_start, ch_end = self.cond_module.VIZ_SLICE
-        cond_row = slice_cond_rgb(
-            c_cond["spatial_cond"][0], ch_start, self.resolution,
-            n_channels=ch_end - ch_start,
-        )
-
-        rows   = [ref_row, driver_row, cond_row, imgs]
-        labels = ["Reference", "Driver Video", self.cond_module.VIZ_LABEL, "Generated"]
-
-        sample_dir = output_dir / "samples" / sample.sample_id
+        sample_dir  = output_dir / "samples" / sample.sample_id
+        scratch_dir = output_dir / "scratch" / sample.sample_id
         sample_dir.mkdir(parents=True, exist_ok=True)
-        panel_png = sample_dir / "panel.png"
-        panel_mp4 = sample_dir / "panel.mp4"
+        scratch_dir.mkdir(parents=True, exist_ok=True)
 
-        save_labeled_grid(rows, labels, panel_png, title=title)
-        save_video_with_audio(
-            rows, labels, audio_windows,
-            panel_mp4, fps=self.fps, title=title,
-        )
+        panel_mp4  = sample_dir  / "panel.mp4"
+        source_png = scratch_dir / "source.png"
+        driver_mp4 = scratch_dir / "driver.mp4"
+
+        # cv2.imwrite expects BGR; ref_rgb_u8 is RGB.
+        cv2.imwrite(str(source_png), cv2.cvtColor(ref_rgb_u8, cv2.COLOR_RGB2BGR))
+        _encode_h264(panel_mp4,  imgs,       fps=self.fps)
+        _encode_h264(driver_mp4, driver_chw, fps=self.fps)
         return panel_mp4
