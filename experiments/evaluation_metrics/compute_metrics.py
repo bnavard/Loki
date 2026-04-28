@@ -4,13 +4,16 @@ Auto-detects protocol + dataset from `<run_dir>/config_resolved.json`
 and computes the metric set appropriate for that protocol:
 
   * `same_identity_reconstruction`:
-        pixel  (PSNR / SSIM / LPIPS)
-        lmd    (LMD-F / LMD-M)
-        head_orientation (yaw/pitch/roll L1 in degrees, vs driver=GT)
-        fvd    (videomae backbone, distribution-level)
+        pixel       (PSNR / SSIM / LPIPS)
+        lmd         (LMD-F / LMD-M)
+        head_rot    (geodesic angular distance over FLAME `rot · neck_rot`
+                     deltas, vs driver=GT)
+        expression  (FLAME deformation-map L2, pose-disentangled vs driver=GT)
+        fvd         (videomae backbone, distribution-level)
   * `cross_identity`:
-        head_orientation (vs driver clip)
-        id     (ArcFace cosine vs ref-clip prior)
+        head_rot    (vs driver clip's FLAME fit)
+        expression  (vs driver clip's FLAME fit)
+        id          (ArcFace cosine vs ref-clip prior)
 
 Outputs at `<output_dir>/metrics.jsonl` (per-sample) and
 `<output_dir>/metrics_summary.json` (aggregates + fvd).
@@ -23,7 +26,7 @@ Metric-mode semantics (`--metrics MODE`)
                       preserved by merging.
 * `all`              — recompute every group available for the protocol;
                       every existing field is overwritten.
-* explicit list      — comma-separated, e.g. `--metrics head_orientation,fvd`.
+* explicit list      — comma-separated, e.g. `--metrics head_rot,fvd`.
                       Recompute only those, overwrite their fields, leave
                       every other group's existing fields alone.
 
@@ -34,9 +37,9 @@ Usage
     PYTHONPATH=. python experiments/evaluation_metrics/compute_metrics.py \
         --run-dir outputs/sota_comparison/sadtalker/talkvid/same_identity_reconstruction/run_<ts>/
 
-    # Add head-orientation to a run that already has pixel/lmd/fvd:
+    # Add head_rot + expression to a run that already has pixel/lmd/fvd:
     PYTHONPATH=. python experiments/evaluation_metrics/compute_metrics.py \
-        --run-dir <…> --metrics head_orientation
+        --run-dir <…> --metrics head_rot,expression
 
     # Full overwrite:
     PYTHONPATH=. python experiments/evaluation_metrics/compute_metrics.py \
@@ -86,7 +89,7 @@ def parse_args():
     p.add_argument("--metrics", default="auto", type=_parse_metrics_mode,
                    help="`auto` (default — top up missing groups), `all` "
                         "(full overwrite), or comma-separated group names "
-                        "from {pixel, lmd, head_orientation, id, fvd}.")
+                        "from {pixel, lmd, head_rot, expression, id, fvd}.")
     p.add_argument("--device",           default="cuda")
     p.add_argument("--fps",              type=int, default=25,
                    help="Target fps for paired-metric frame alignment.")
