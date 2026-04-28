@@ -77,8 +77,8 @@ from .io import (
     detect_face_bbox_xyxy, face_crop_around_detection, face_crop_video,
     load_run_metadata, iter_samples, load_video, truncate_to_match,
 )
-from .psnr import psnr_video
-from .ssim import ssim_video
+from .src.psnr import psnr_video
+from .src.ssim import ssim_video
 
 
 FVD_LOW_SAMPLE_THRESHOLD = 2000
@@ -288,14 +288,14 @@ def _eval_same_identity(
     lpips_m  = lmd_obj = hoe = None
     detect_fn = None
     if "pixel" in groups:
-        from .lpips_metric import LPIPSMetric
+        from .src.lpips_metric import LPIPSMetric
         lpips_m = LPIPSMetric(net="alex", device=cfg.device,
                               chunk_size=cfg.lpips_chunk_size)
     if "lmd" in groups:
-        from .lmd import LMD, landmark_distance_pair  # noqa: F401  (used below)
+        from .src.lmd import LMD, landmark_distance_pair  # noqa: F401  (used below)
         lmd_obj = LMD(normalize_by_iod=cfg.lmd_normalize)
     if "head_orientation" in groups:
-        from .head_orientation import HeadOrientationEstimator
+        from .src.head_orientation import HeadOrientationEstimator
         hoe = HeadOrientationEstimator(device=cfg.device)
     if needs_face_crop and cfg.face_crop:
         detect_fn = _build_face_detector(cfg.device)
@@ -372,7 +372,7 @@ def _eval_same_identity(
             results["lpips"].append(lpips)
 
         if "lmd" in groups:
-            from .lmd import landmark_distance_pair
+            from .src.lmd import landmark_distance_pair
             lmd_f_per, lmd_m_per = [], []
             for t in range(T):
                 pl = lmd_obj.extract(_frame_to_uint8(pred[t]))
@@ -450,10 +450,10 @@ def _eval_cross_identity(
     id_metric = hoe = None
     detect_fn = None
     if "id" in groups:
-        from .id_sim import IDSimilarity
+        from .src.id_sim import IDSimilarity
         id_metric = IDSimilarity(device=cfg.device)
     if "head_orientation" in groups:
-        from .head_orientation import HeadOrientationEstimator
+        from .src.head_orientation import HeadOrientationEstimator
         hoe = HeadOrientationEstimator(device=cfg.device)
         if cfg.face_crop:
             detect_fn = _build_face_detector(cfg.device)
@@ -671,7 +671,7 @@ def _compute_fvd(meta: RunMetadata, cfg: EvalConfig,
     pred and GT when `cfg.face_crop` is on), then removes it after the
     backbone forward passes finish."""
     import shutil
-    from .fvd import FVD
+    from .src.fvd import FVD
 
     detect_fn = _build_face_detector(cfg.device) if cfg.face_crop else None
     fvd_root  = staging_root / "_fvd"
