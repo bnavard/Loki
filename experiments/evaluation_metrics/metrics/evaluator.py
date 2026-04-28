@@ -90,8 +90,8 @@ FVD_LOW_SAMPLE_THRESHOLD = 2000
 
 
 GROUPS_BY_PROTOCOL: dict[str, list[str]] = {
-    "same_identity_reconstruction": ["pixel", "lmd", "head_orientation", "fvd"],
-    "cross_identity":               ["head_orientation", "id"],
+    "same_identity_reconstruction": ["pixel", "lmd", "head_orientation", "expression", "fvd"],
+    "cross_identity":               ["head_orientation", "expression", "id"],
 }
 
 # Detect "missing in summary" via these headline keys. fvd is special-
@@ -100,6 +100,7 @@ GROUP_HEADLINE_METRIC: dict[str, str] = {
     "pixel":            "psnr",
     "lmd":              "lmd_f",
     "head_orientation": "head_orientation_axis_mean_l1",
+    "expression":       "expression_l2",
     "id":               "id_cosine",
 }
 
@@ -113,6 +114,7 @@ WEIGHTED_METRICS: dict[str, str] = {
     "head_orientation_pitch_l1":      "_pose_weights",
     "head_orientation_roll_l1":       "_pose_weights",
     "head_orientation_axis_mean_l1":  "_pose_weights",
+    "expression_l2":                  "_expression_weights",
 }
 
 
@@ -232,6 +234,53 @@ def _read_existing_rows(metrics_path: Path) -> dict[str, dict]:
     return out
 
 
+# ---------------------------------------------------------------------------
+# Expression group — paths + per-sample helper
+# ---------------------------------------------------------------------------
+
+
+def _derive_bucket(run_dir: Path) -> str:
+    """Recover the baseline name (= "bucket") from a run-dir path.
+    `outputs/marionette_eval/...` → "marionette".
+    `outputs/sota_comparison/<baseline>/...` → "<baseline>"."""
+    parts = run_dir.parts
+    if "marionette_eval" in parts:
+        return "marionette"
+    if "sota_comparison" in parts:
+        return parts[parts.index("sota_comparison") + 1]
+    raise ValueError(f"cannot infer bucket from run_dir={run_dir}")
+
+
+def _gt_fit_root(dataset: str) -> Path:
+    """Where ground-truth FLAME fits live, per dataset."""
+    if dataset == "hdtf":
+        return Path("data/benchmark/hdtf/flame_tracking/flowface")
+    if dataset == "talkvid":
+        return Path("data/flame_tracking/flowface")
+    raise ValueError(f"unknown dataset: {dataset!r}")
+
+
+def _pred_fit_path(run_dir: Path, dataset: str, protocol: str,
+                   sample_id: str) -> Path:
+    return (Path("data/flame_tracking/preds") / _derive_bucket(run_dir)
+            / dataset / protocol / sample_id / "fit.npz")
+
+
+def _compute_expression_pair(pred_fit_path: Path, target_fit_path: Path,
+                             expr_metric, n_frames: int):
+    """Returns (l2, weight). Weight = T_used / n_frames in [0, 1]; l2 is
+    None and weight is 0 when either fit file is missing or empty."""
+    if not pred_fit_path.is_file() or not target_fit_path.is_file():
+        return None, 0.0
+    pred_fit   = dict(np.load(str(pred_fit_path)))
+    target_fit = dict(np.load(str(target_fit_path)))
+    if pred_fit["expr"].shape[0] == 0 or target_fit["expr"].shape[0] == 0:
+        return None, 0.0
+    out = expr_metric.compute_pair(pred_fit, target_fit, n_frames=n_frames)
+    weight = out["n_frames"] / max(n_frames, 1)
+    return out["l2"], float(weight)
+
+
 def _compute_head_orientation_pair(pred, target, hoe, T):
     """Per-frame |yaw|, |pitch|, |roll| (degrees) over the `T` paired
     frames where 6DRepNet produced a pose for both sides. Returns
@@ -297,6 +346,12 @@ def _eval_same_identity(
     if "head_orientation" in groups:
         from .src.head_orientation import HeadOrientationEstimator
         hoe = HeadOrientationEstimator(device=cfg.device)
+    expr_metric = None
+    if "expression" in groups:
+        from .src.expression import ExpressionDeformationDiff
+        expr_metric = ExpressionDeformationDiff(
+            image_size=cfg.resolution, device=cfg.device,
+        )
     if needs_face_crop and cfg.face_crop:
         detect_fn = _build_face_detector(cfg.device)
 
@@ -314,6 +369,11 @@ def _eval_same_identity(
             "head_orientation_axis_mean_l1": [],
             "head_orientation_detect_rate":  [],
             "_pose_weights":                 [],
+        })
+    if "expression" in groups:
+        results.update({
+            "expression_l2":       [],
+            "_expression_weights": [],
         })
 
     samples = list(iter_samples(meta))
@@ -416,6 +476,20 @@ def _eval_same_identity(
             new_fields["head_orientation_axis_mean_l1"]  = axis_l1
             new_fields["head_orientation_detect_rate"]   = pdr
 
+        if "expression" in groups:
+            # Same-id: target FLAME fit = GT clip's fit (= ref clip's fit).
+            target_fit = _gt_fit_root(meta.dataset) / sample.ref_clip["clip_id"] / "fit.npz"
+            pred_fit   = _pred_fit_path(meta.run_dir, meta.dataset, meta.protocol,
+                                        sample.sample_id)
+            l2, w = _compute_expression_pair(
+                pred_fit, target_fit, expr_metric,
+                n_frames=cfg.n_frames or 16,
+            )
+            if l2 is not None:
+                results["expression_l2"]      .append(l2)
+                results["_expression_weights"].append(w)
+            new_fields["expression_l2"] = l2
+
         # Merge: existing ∪ new (new overrides). If we successfully computed
         # any group, drop a stale `skipped` flag.
         merged = {**existing, **new_fields}
@@ -457,6 +531,12 @@ def _eval_cross_identity(
         hoe = HeadOrientationEstimator(device=cfg.device)
         if cfg.face_crop:
             detect_fn = _build_face_detector(cfg.device)
+    expr_metric = None
+    if "expression" in groups:
+        from .src.expression import ExpressionDeformationDiff
+        expr_metric = ExpressionDeformationDiff(
+            image_size=cfg.resolution, device=cfg.device,
+        )
 
     results: dict[str, list] = {}
     if "id" in groups:
@@ -469,6 +549,11 @@ def _eval_cross_identity(
             "head_orientation_axis_mean_l1": [],
             "head_orientation_detect_rate":  [],
             "_pose_weights":                 [],
+        })
+    if "expression" in groups:
+        results.update({
+            "expression_l2":       [],
+            "_expression_weights": [],
         })
 
     prior_cache: dict = {}
@@ -560,6 +645,20 @@ def _eval_cross_identity(
             new_fields["head_orientation_axis_mean_l1"] = axis_l1
             new_fields["head_orientation_detect_rate"]  = pdr
 
+        # ---- Expression: pred fit vs driver fit (motion source). ----
+        if "expression" in groups:
+            target_fit = _gt_fit_root(meta.dataset) / sample.driver_clip["clip_id"] / "fit.npz"
+            pred_fit   = _pred_fit_path(meta.run_dir, meta.dataset, meta.protocol,
+                                        sample.sample_id)
+            l2, w = _compute_expression_pair(
+                pred_fit, target_fit, expr_metric,
+                n_frames=cfg.n_frames or 16,
+            )
+            if l2 is not None:
+                results["expression_l2"]      .append(l2)
+                results["_expression_weights"].append(w)
+            new_fields["expression_l2"] = l2
+
         merged = {**existing, **new_fields}
         # Stale skip flag should drop only if we successfully computed
         # something *new* for this sample. For cross-id, both id and
@@ -569,6 +668,8 @@ def _eval_cross_identity(
             ("id" in groups and merged.get("id_cosine") is not None)
             or ("head_orientation" in groups
                 and merged.get("head_orientation_yaw_l1") is not None)
+            or ("expression" in groups
+                and merged.get("expression_l2") is not None)
         ):
             merged.pop("skipped", None)
         out_rows.append(merged)
