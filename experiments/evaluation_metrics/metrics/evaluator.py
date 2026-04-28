@@ -6,8 +6,8 @@ to its protocol:
 
 | Protocol                          | Metric groups                       |
 |-----------------------------------|-------------------------------------|
-| `same_identity_reconstruction`    | pixel, lmd, head_orientation, fvd   |
-| `cross_identity`                  | head_orientation, id                |
+| `same_identity_reconstruction`    | pixel, lmd, head_rot, expression, fvd |
+| `cross_identity`                  | head_rot, expression, id              |
 
 Per-sample metrics land at `<output_dir>/metrics.jsonl` (one JSON row per
 sample); aggregates + FVD at `<output_dir>/metrics_summary.json`.
@@ -20,20 +20,21 @@ Metric modes (`cfg.metrics_mode`)
   fields are overwritten.
 * `"all"` — recompute every group available for the protocol, overwriting
   every existing field.
-* explicit `set[str]`, e.g. `{"head_orientation", "fvd"}` — recompute only
+* explicit `set[str]`, e.g. `{"head_rot", "fvd"}` — recompute only
   those groups, overwrite their fields, leave others alone.
 
 Group → headline metric mapping (`GROUP_HEADLINE_METRIC`) drives the
 `auto`-mode missing-detection check. FVD is special-cased: detected by
 the presence of `summary["fvd"]`, not a key under `summary["metrics"]`.
 
-Face-region cropping (used by pixel / lmd / head_orientation)
--------------------------------------------------------------
-Each video is independently cropped to a face-only square via
-`face_crop_around_detection` (1.3× margin → 512×512). Both pred and
-target (= driver clip) go through the same routine, so the metric
-isolates pure face-region quality with no framing asymmetry. Disable
-via `cfg.face_crop=False`.
+Face-region cropping (used by pixel / lmd)
+------------------------------------------
+Pixel and lmd metrics independently crop each video to a face-only
+square via `face_crop_around_detection` (1.3× margin → 512×512). Both
+pred and target go through the same routine, so the metric isolates
+pure face-region quality with no framing asymmetry. Disable via
+`cfg.face_crop=False`. Head-rot and expression read FLAME fits directly
+and don't need a face crop.
 
 Per-frame handling
 ------------------
@@ -41,17 +42,21 @@ Pixel metrics (PSNR/SSIM/LPIPS) run on **every** paired frame — no
 detection gate; broken pred frames produce bad numbers and naturally
 penalize the tool.
 
-Landmark / orientation / identity metrics need per-frame face / pose /
-arcface detection: a frame contributes only when both sides detect.
-Per-sample number is the mean over hits; per-sample `*_detect_rate` is
-recorded so failure density is visible.
+Landmark / identity metrics need per-frame face / arcface detection: a
+frame contributes only when both sides detect. Per-sample number is the
+mean over hits; per-sample `*_detect_rate` records failure density.
+
+Head-rot / expression read FLAME parameters from `fit.npz`; a sample
+contributes when both pred and target fits exist with ≥2 frames, and
+`*_track_rate = T_used / n_frames` records how much of the requested
+window was usable.
 
 Run-level aggregation
 ---------------------
-Pixel metrics use a plain arithmetic mean across samples. Detection-
-gated metrics (lmd_f, lmd_m, head_orientation_*_l1, id_cosine) use a
-**weighted** mean with each sample's detect rate as the weight, so
-a sample whose number was computed on 5/16 frames contributes
+Pixel metrics use a plain arithmetic mean across samples. Gated metrics
+(lmd_f, lmd_m, id_cosine, head_rot_dist, expression_l2) use a
+**weighted** mean with each sample's detect / track rate as the weight,
+so a sample whose number was computed on 5/16 frames contributes
 proportionally less than one computed on 16/16.
 
 FVD on small samples
@@ -90,31 +95,28 @@ FVD_LOW_SAMPLE_THRESHOLD = 2000
 
 
 GROUPS_BY_PROTOCOL: dict[str, list[str]] = {
-    "same_identity_reconstruction": ["pixel", "lmd", "head_orientation", "expression", "fvd"],
-    "cross_identity":               ["head_orientation", "expression", "id"],
+    "same_identity_reconstruction": ["pixel", "lmd", "head_rot", "expression", "fvd"],
+    "cross_identity":               ["head_rot", "expression", "id"],
 }
 
 # Detect "missing in summary" via these headline keys. fvd is special-
 # cased — it lives under summary["fvd"], not summary["metrics"].
 GROUP_HEADLINE_METRIC: dict[str, str] = {
-    "pixel":            "psnr",
-    "lmd":              "lmd_f",
-    "head_orientation": "head_orientation_axis_mean_l1",
-    "expression":       "expression_l2",
-    "id":               "id_cosine",
+    "pixel":      "psnr",
+    "lmd":        "lmd_f",
+    "head_rot":   "head_rot_dist",
+    "expression": "expression_l2",
+    "id":         "id_cosine",
 }
 
 # Run-level aggregation: which metrics use a weighted mean and which
 # per-sample list supplies the weights.
 WEIGHTED_METRICS: dict[str, str] = {
-    "lmd_f":                          "_lmd_weights",
-    "lmd_m":                          "_lmd_weights",
-    "id_cosine":                      "_id_weights",
-    "head_orientation_yaw_l1":        "_pose_weights",
-    "head_orientation_pitch_l1":      "_pose_weights",
-    "head_orientation_roll_l1":       "_pose_weights",
-    "head_orientation_axis_mean_l1":  "_pose_weights",
-    "expression_l2":                  "_expression_weights",
+    "lmd_f":          "_lmd_weights",
+    "lmd_m":          "_lmd_weights",
+    "id_cosine":      "_id_weights",
+    "head_rot_dist":  "_head_rot_weights",
+    "expression_l2":  "_expression_weights",
 }
 
 
@@ -281,31 +283,20 @@ def _compute_expression_pair(pred_fit_path: Path, target_fit_path: Path,
     return out["l2"], float(weight)
 
 
-def _compute_head_orientation_pair(pred, target, hoe, T):
-    """Per-frame |yaw|, |pitch|, |roll| (degrees) over the `T` paired
-    frames where 6DRepNet produced a pose for both sides. Returns
-    `(yaw_l1, pitch_l1, roll_l1, axis_mean_l1, detect_rate)` with all
-    four l1 values being `None` if no frame produced a hit."""
-    yaw_per, pitch_per, roll_per = [], [], []
-    for t in range(T):
-        p_u8 = _frame_to_uint8(pred[t])
-        g_u8 = _frame_to_uint8(target[t])
-        p_pose = hoe.extract(p_u8)
-        g_pose = hoe.extract(g_u8)
-        if p_pose is None or g_pose is None:
-            continue
-        yaw_per.  append(abs(p_pose[0] - g_pose[0]))
-        pitch_per.append(abs(p_pose[1] - g_pose[1]))
-        roll_per. append(abs(p_pose[2] - g_pose[2]))
-    n_hits = len(yaw_per)
-    detect_rate = (n_hits / T) if T > 0 else 0.0
-    if n_hits == 0:
-        return None, None, None, None, detect_rate
-    yaw_l1   = float(np.mean(yaw_per))
-    pitch_l1 = float(np.mean(pitch_per))
-    roll_l1  = float(np.mean(roll_per))
-    axis_l1  = (yaw_l1 + pitch_l1 + roll_l1) / 3.0
-    return yaw_l1, pitch_l1, roll_l1, axis_l1, detect_rate
+def _compute_head_rot_pair(pred_fit_path: Path, target_fit_path: Path,
+                           n_frames: int):
+    """Returns (dist, weight). Weight = T_used / n_frames in [0, 1]; dist
+    is None and weight is 0 when either fit is missing or has < 2
+    frames. dist is the geodesic angular distance between pred's and
+    target's frame-0-anchored pose-trajectory deltas, in degrees,
+    averaged over the available frames — see head_rot.py for details."""
+    if not pred_fit_path.is_file() or not target_fit_path.is_file():
+        return None, 0.0
+    pred_fit   = dict(np.load(str(pred_fit_path)))
+    target_fit = dict(np.load(str(target_fit_path)))
+    from .src.head_rot import compute_head_rot_pair
+    out = compute_head_rot_pair(pred_fit, target_fit, n_frames=n_frames)
+    return out["dist"], float(out["track_rate"])
 
 
 def _resize_to_square(video, resolution):
@@ -332,9 +323,9 @@ def _eval_same_identity(
     preserved when we rewrite `metrics.jsonl`. Returns per-metric value
     lists for newly-computed groups (used for run-level aggregation).
     """
-    needs_face_crop = bool({"pixel", "lmd", "head_orientation"} & groups)
+    needs_face_crop = bool({"pixel", "lmd"} & groups)
 
-    lpips_m  = lmd_obj = hoe = None
+    lpips_m  = lmd_obj = None
     detect_fn = None
     if "pixel" in groups:
         from .src.lpips_metric import LPIPSMetric
@@ -343,9 +334,6 @@ def _eval_same_identity(
     if "lmd" in groups:
         from .src.lmd import LMD, landmark_distance_pair  # noqa: F401  (used below)
         lmd_obj = LMD(normalize_by_iod=cfg.lmd_normalize)
-    if "head_orientation" in groups:
-        from .src.head_orientation import HeadOrientationEstimator
-        hoe = HeadOrientationEstimator(device=cfg.device)
     expr_metric = None
     if "expression" in groups:
         from .src.expression import ExpressionDeformationDiff
@@ -361,14 +349,11 @@ def _eval_same_identity(
     if "lmd" in groups:
         results.update({"lmd_f": [], "lmd_m": [], "lmd_detect_rate": [],
                         "_lmd_weights": []})
-    if "head_orientation" in groups:
+    if "head_rot" in groups:
         results.update({
-            "head_orientation_yaw_l1":       [],
-            "head_orientation_pitch_l1":     [],
-            "head_orientation_roll_l1":      [],
-            "head_orientation_axis_mean_l1": [],
-            "head_orientation_detect_rate":  [],
-            "_pose_weights":                 [],
+            "head_rot_dist":       [],
+            "head_rot_track_rate": [],
+            "_head_rot_weights":   [],
         })
     if "expression" in groups:
         results.update({
@@ -385,6 +370,11 @@ def _eval_same_identity(
         existing = existing_rows.get(sample.sample_id, {})
         new_fields: dict = {"sample_id": sample.sample_id}
 
+        # Pixel + lmd need face-cropped video. head_rot + expression don't —
+        # they read FLAME fits directly. So a face-crop failure only gates
+        # pixel/lmd; we still run the FLAME-side metrics for this sample.
+        face_crop_ok = False
+        pred = ref = None; T = 0
         if needs_face_crop:
             pred = load_video(sample.pred_path,     cfg.fps, resolution=None,
                               max_frames=cfg.n_frames)
@@ -402,23 +392,21 @@ def _eval_same_identity(
                 )
                 if pred_cropped is None or ref_cropped is None:
                     skipped_face_crop += 1
-                    # Merge with existing — drop computed groups' old values
-                    # since we just failed to recompute, but keep groups we
-                    # never touched (e.g. fvd doesn't apply here).
-                    merged = dict(existing)
-                    merged["sample_id"] = sample.sample_id
-                    merged["skipped"]   = "face_detection_failed_clip"
-                    out_rows.append(merged)
-                    continue
-                pred, ref = pred_cropped, ref_cropped
+                    new_fields["face_crop_failed"] = True
+                else:
+                    pred, ref = pred_cropped, ref_cropped
+                    face_crop_ok = True
             else:
                 pred = _resize_to_square(pred, cfg.resolution)
                 ref  = _resize_to_square(ref,  cfg.resolution)
-            pred, ref = truncate_to_match(pred, ref)
-            T = pred.shape[0]
-            new_fields["n_frames"] = T
+                face_crop_ok = True
 
-        if "pixel" in groups:
+            if face_crop_ok:
+                pred, ref = truncate_to_match(pred, ref)
+                T = pred.shape[0]
+                new_fields["n_frames"] = T
+
+        if face_crop_ok and "pixel" in groups:
             pred_d = pred.unsqueeze(0).to(cfg.device)
             ref_d  = ref .unsqueeze(0).to(cfg.device)
             psnr  = float(psnr_video(pred_d, ref_d).item())
@@ -431,7 +419,7 @@ def _eval_same_identity(
             results["ssim"] .append(ssim)
             results["lpips"].append(lpips)
 
-        if "lmd" in groups:
+        if face_crop_ok and "lmd" in groups:
             from .src.lmd import landmark_distance_pair
             lmd_f_per, lmd_m_per = [], []
             for t in range(T):
@@ -459,25 +447,21 @@ def _eval_same_identity(
             new_fields["lmd_m"]            = lmd_m
             new_fields["lmd_detect_rate"]  = ldr
 
-        if "head_orientation" in groups:
-            yaw_l1, pitch_l1, roll_l1, axis_l1, pdr = _compute_head_orientation_pair(
-                pred, ref, hoe, T,
-            )
-            if yaw_l1 is not None:
-                results["head_orientation_yaw_l1"]      .append(yaw_l1)
-                results["head_orientation_pitch_l1"]    .append(pitch_l1)
-                results["head_orientation_roll_l1"]     .append(roll_l1)
-                results["head_orientation_axis_mean_l1"].append(axis_l1)
-                results["_pose_weights"]                .append(pdr)
-            results["head_orientation_detect_rate"].append(pdr)
-            new_fields["head_orientation_yaw_l1"]        = yaw_l1
-            new_fields["head_orientation_pitch_l1"]      = pitch_l1
-            new_fields["head_orientation_roll_l1"]       = roll_l1
-            new_fields["head_orientation_axis_mean_l1"]  = axis_l1
-            new_fields["head_orientation_detect_rate"]   = pdr
+        if "head_rot" in groups:
+            # Same-id: target FLAME fit = GT clip's fit (= ref clip's fit).
+            target_fit = _gt_fit_root(meta.dataset) / sample.ref_clip["clip_id"] / "fit.npz"
+            pred_fit   = _pred_fit_path(meta.run_dir, meta.dataset, meta.protocol,
+                                        sample.sample_id)
+            dist, w = _compute_head_rot_pair(pred_fit, target_fit,
+                                             n_frames=cfg.n_frames or 16)
+            if dist is not None:
+                results["head_rot_dist"]    .append(dist)
+                results["_head_rot_weights"].append(w)
+            results["head_rot_track_rate"].append(w)
+            new_fields["head_rot_dist"]       = dist
+            new_fields["head_rot_track_rate"] = w
 
         if "expression" in groups:
-            # Same-id: target FLAME fit = GT clip's fit (= ref clip's fit).
             target_fit = _gt_fit_root(meta.dataset) / sample.ref_clip["clip_id"] / "fit.npz"
             pred_fit   = _pred_fit_path(meta.run_dir, meta.dataset, meta.protocol,
                                         sample.sample_id)
@@ -518,19 +502,12 @@ def _eval_cross_identity(
     groups:        set[str],
     existing_rows: dict[str, dict],
 ) -> dict[str, list]:
-    """For cross-id: id_cosine uses the ref clip's video (identity prior),
-    head_orientation uses the driver clip's video (motion source).
-    Different videos, different face crops; gated independently per group."""
-    id_metric = hoe = None
-    detect_fn = None
+    """For cross-id: id_cosine uses the ref clip's video (identity prior);
+    head_rot and expression read FLAME fits (no video / face crop needed)."""
+    id_metric = None
     if "id" in groups:
         from .src.id_sim import IDSimilarity
         id_metric = IDSimilarity(device=cfg.device)
-    if "head_orientation" in groups:
-        from .src.head_orientation import HeadOrientationEstimator
-        hoe = HeadOrientationEstimator(device=cfg.device)
-        if cfg.face_crop:
-            detect_fn = _build_face_detector(cfg.device)
     expr_metric = None
     if "expression" in groups:
         from .src.expression import ExpressionDeformationDiff
@@ -541,14 +518,11 @@ def _eval_cross_identity(
     results: dict[str, list] = {}
     if "id" in groups:
         results.update({"id_cosine": [], "id_detect_rate": [], "_id_weights": []})
-    if "head_orientation" in groups:
+    if "head_rot" in groups:
         results.update({
-            "head_orientation_yaw_l1":       [],
-            "head_orientation_pitch_l1":     [],
-            "head_orientation_roll_l1":      [],
-            "head_orientation_axis_mean_l1": [],
-            "head_orientation_detect_rate":  [],
-            "_pose_weights":                 [],
+            "head_rot_dist":       [],
+            "head_rot_track_rate": [],
+            "_head_rot_weights":   [],
         })
     if "expression" in groups:
         results.update({
@@ -558,7 +532,6 @@ def _eval_cross_identity(
 
     prior_cache: dict = {}
     out_rows: list[dict] = []
-    skipped_face_crop = 0
     desc = f"cross-id ({','.join(sorted(groups))})"
 
     for sample in tqdm(list(iter_samples(meta)), desc=desc):
@@ -580,7 +553,7 @@ def _eval_cross_identity(
             prior = prior_cache[ref_id]
             if prior is None:
                 # Couldn't build identity prior — record skip-style data
-                # for `id` only; head_orientation can still try below.
+                # for `id` only; head_rot / expression can still try below.
                 new_fields["id_cosine"]      = None
                 new_fields["id_detect_rate"] = 0.0
             else:
@@ -595,55 +568,19 @@ def _eval_cross_identity(
                     results["id_cosine"]   .append(cos_val)
                     results["_id_weights"] .append(float(det))
 
-        # ---- Head orientation: pred vs driver clip's video. ----
-        if "head_orientation" in groups:
-            pred = load_video(sample.pred_path, cfg.fps, resolution=None,
-                              max_frames=cfg.n_frames)
-            target = load_video(
-                Path(sample.driver_clip["video_path"]), cfg.fps,
-                resolution=None, max_frames=pred.shape[0],
-            )
-            if cfg.face_crop:
-                pred_cropped = face_crop_around_detection(
-                    pred, detect_fn, margin=cfg.face_crop_margin,
-                    target_resolution=cfg.resolution,
-                )
-                target_cropped = face_crop_around_detection(
-                    target, detect_fn, margin=cfg.face_crop_margin,
-                    target_resolution=cfg.resolution,
-                )
-                if pred_cropped is None or target_cropped is None:
-                    skipped_face_crop += 1
-                    pdr = 0.0
-                    yaw_l1 = pitch_l1 = roll_l1 = axis_l1 = None
-                else:
-                    pred, target = pred_cropped, target_cropped
-                    pred, target = truncate_to_match(pred, target)
-                    T = pred.shape[0]
-                    yaw_l1, pitch_l1, roll_l1, axis_l1, pdr = (
-                        _compute_head_orientation_pair(pred, target, hoe, T)
-                    )
-            else:
-                pred   = _resize_to_square(pred,   cfg.resolution)
-                target = _resize_to_square(target, cfg.resolution)
-                pred, target = truncate_to_match(pred, target)
-                T = pred.shape[0]
-                yaw_l1, pitch_l1, roll_l1, axis_l1, pdr = (
-                    _compute_head_orientation_pair(pred, target, hoe, T)
-                )
-
-            if yaw_l1 is not None:
-                results["head_orientation_yaw_l1"]      .append(yaw_l1)
-                results["head_orientation_pitch_l1"]    .append(pitch_l1)
-                results["head_orientation_roll_l1"]     .append(roll_l1)
-                results["head_orientation_axis_mean_l1"].append(axis_l1)
-                results["_pose_weights"]                .append(pdr)
-            results["head_orientation_detect_rate"].append(pdr)
-            new_fields["head_orientation_yaw_l1"]       = yaw_l1
-            new_fields["head_orientation_pitch_l1"]     = pitch_l1
-            new_fields["head_orientation_roll_l1"]      = roll_l1
-            new_fields["head_orientation_axis_mean_l1"] = axis_l1
-            new_fields["head_orientation_detect_rate"]  = pdr
+        # ---- Head rotation: pred fit vs driver fit (motion source). ----
+        if "head_rot" in groups:
+            target_fit = _gt_fit_root(meta.dataset) / sample.driver_clip["clip_id"] / "fit.npz"
+            pred_fit   = _pred_fit_path(meta.run_dir, meta.dataset, meta.protocol,
+                                        sample.sample_id)
+            dist, w = _compute_head_rot_pair(pred_fit, target_fit,
+                                             n_frames=cfg.n_frames or 16)
+            if dist is not None:
+                results["head_rot_dist"]    .append(dist)
+                results["_head_rot_weights"].append(w)
+            results["head_rot_track_rate"].append(w)
+            new_fields["head_rot_dist"]       = dist
+            new_fields["head_rot_track_rate"] = w
 
         # ---- Expression: pred fit vs driver fit (motion source). ----
         if "expression" in groups:
@@ -661,13 +598,13 @@ def _eval_cross_identity(
 
         merged = {**existing, **new_fields}
         # Stale skip flag should drop only if we successfully computed
-        # something *new* for this sample. For cross-id, both id and
-        # head_orientation can independently fail; we only clear the
-        # flag if at least one group succeeded.
+        # something *new* for this sample. For cross-id, all three groups
+        # can independently fail; we only clear the flag if at least one
+        # succeeded.
         if (
             ("id" in groups and merged.get("id_cosine") is not None)
-            or ("head_orientation" in groups
-                and merged.get("head_orientation_yaw_l1") is not None)
+            or ("head_rot" in groups
+                and merged.get("head_rot_dist") is not None)
             or ("expression" in groups
                 and merged.get("expression_l2") is not None)
         ):
@@ -675,9 +612,6 @@ def _eval_cross_identity(
         out_rows.append(merged)
 
     metrics_path.write_text("\n".join(json.dumps(r) for r in out_rows) + "\n")
-
-    if skipped_face_crop:
-        print(f"[metrics] {skipped_face_crop} samples: head-orientation face crop failed")
     return results
 
 
@@ -806,7 +740,7 @@ def _compute_fvd(meta: RunMetadata, cfg: EvalConfig,
 
 def _aggregate(per_sample: dict[str, list]) -> dict[str, dict[str, float]]:
     """Per-metric aggregation. Detection-gated metrics
-    (lmd_*, id_cosine, head_orientation_*_l1) use a weighted mean with
+    (lmd_*, id_cosine, head_rot_dist, expression_l2) use a weighted mean with
     each sample's detect rate as the weight; everything else is a plain
     arithmetic mean."""
     aggregates: dict[str, dict[str, float]] = {}

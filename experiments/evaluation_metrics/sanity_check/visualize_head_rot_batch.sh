@@ -1,6 +1,6 @@
 #!/bin/bash
 # =============================================================================
-# Sanity-check batch driver for the head-orientation visualizer.
+# Sanity-check batch driver for the head-rotation visualizer.
 #
 # Picks N (default 5) sample IDs per `(dataset, protocol)` cell from the
 # 6-way intersection of "samples Marionette + every SOTA baseline produced",
@@ -8,11 +8,11 @@
 # every model. Default seed = 42.
 #
 # Per (baseline, sample) pair, calls
-# `sanity_check/visualize_head_orientation.py` and lands the output at:
+# `sanity_check/visualize_head_rot.py` and lands the output at:
 #
-#   outputs/test_metric/head_pose_sanity/<bucket>/<dataset>/<protocol>/<sample_id>/
-#       ├── overlay.mp4    # pred ‖ target with axes drawn per frame
-#       └── overlay.json   # per-frame y/p/r + per-axis L1 (°) + summary
+#   outputs/test_metric/head_rot_sanity/<bucket>/<dataset>/<protocol>/<sample_id>/
+#       ├── overlay.mp4    # pred ‖ target with FLAME axes drawn per frame
+#       └── overlay.json   # per-frame geodesic distance + summary
 #
 # Round-robin across GPUs (default 8). Idempotent: any (sample, baseline)
 # pair with an existing overlay.mp4 is skipped.
@@ -23,10 +23,10 @@
 #
 # Usage (from repo root):
 #
-#   bash experiments/evaluation_metrics/sanity_check/visualize_head_orientation_batch.sh
+#   bash experiments/evaluation_metrics/sanity_check/visualize_head_rot_batch.sh
 #
-#   N_SAMPLES=10 bash experiments/evaluation_metrics/sanity_check/visualize_head_orientation_batch.sh
-#   SEED=7 NUM_GPUS=4 bash experiments/evaluation_metrics/sanity_check/visualize_head_orientation_batch.sh
+#   N_SAMPLES=10 bash experiments/evaluation_metrics/sanity_check/visualize_head_rot_batch.sh
+#   SEED=7 NUM_GPUS=4 bash experiments/evaluation_metrics/sanity_check/visualize_head_rot_batch.sh
 # =============================================================================
 
 set -u
@@ -38,8 +38,8 @@ source "$(dirname "${BASH_SOURCE[0]}")/../_activate.sh"
 N_SAMPLES="${N_SAMPLES:-5}"
 SEED="${SEED:-42}"
 NUM_GPUS="${NUM_GPUS:-8}"
-VIZ="experiments/evaluation_metrics/sanity_check/visualize_head_orientation.py"
-OUT_ROOT="outputs/test_metric/head_pose_sanity"
+VIZ="experiments/evaluation_metrics/sanity_check/visualize_head_rot.py"
+OUT_ROOT="outputs/test_metric/head_rot_sanity"
 
 # -----------------------------------------------------------------------------
 # Build the work queue. Pure-python for set intersection + seeded sampling;

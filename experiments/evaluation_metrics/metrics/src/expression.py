@@ -13,9 +13,9 @@ image-space pixels by construction — identical mesh layout — so the
 per-pixel difference between the two deformation maps is purely an
 expression difference.
 
-Pose error is measured separately by the head-orientation metric
-(6DRepNet on the rendered videos), so we deliberately do not try to
-capture pose mismatch here.
+Pose error is measured separately by the head-rot metric (geodesic
+angular distance over FLAME `rot · neck_rot`), so we deliberately do
+not try to capture pose mismatch here.
 
 L2 reduction: per-pixel RMSE across the 3 deform channels, then mean
 over on-mesh pixels (mask-aware — background pixels would otherwise

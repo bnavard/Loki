@@ -127,21 +127,6 @@ PY
 echo ""
 
 # =============================================================================
-# Step 3b2: pre-warm 6DRepNet head-pose weights (~150 MB)
-# =============================================================================
-# Triggers `sixdrepnet`'s auto-download into ~/.cache/torch/hub so the
-# first metrics run doesn't block on it. The checkpoint is the official
-# 6DRepNet_300W_LP_AFLW2000.pth.
-echo "===== Step 3b2: warm sixdrepnet (6DRepNet weights) ====="
-python - <<'PY'
-import warnings; warnings.filterwarnings("ignore")
-from sixdrepnet import SixDRepNet
-SixDRepNet()                       # downloads weights on first construct
-print("sixdrepnet ready.")
-PY
-echo ""
-
-# =============================================================================
 # Step 3c: patch cdfvd's VideoMAE-v2 loader
 # =============================================================================
 # Upstream cdfvd hardcodes a download URL (pjlab-gvm-data on Aliyun OSS)

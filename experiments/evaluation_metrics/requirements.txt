@@ -10,11 +10,10 @@ cd-fvd                     # content-debiased FVD; ships I3D + VideoMAE backbone
                            # (renamed to `av.error.FFmpegError`).
 mediapipe>=0.10            # FaceMesh w/ refine_landmarks (attention mesh)
 insightface>=0.7.3         # buffalo_l: RetinaFace + ArcFace R100
-sixdrepnet                 # head pose (yaw/pitch/roll). Pulls 6DRepNet weights
-                           # to ~/.cache/torch/hub on first import.
 onnxruntime-gpu==1.16.3    # last release with CUDA 11.8 + cuDNN 8 support
 decord                     # fast random-access video decode
 imageio[ffmpeg]            # decode fallback when decord isn't available
+scipy                      # quaternion math for head_rot's geodesic distance
 scikit-image               # tests cross-check PSNR/SSIM against this
 numpy<2                    # mediapipe + insightface + several torchmetrics
                            # ext modules are still compiled against numpy 1.x.

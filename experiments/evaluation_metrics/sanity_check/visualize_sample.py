@@ -58,12 +58,12 @@ from experiments.evaluation_metrics.metrics.io import (
     face_crop_around_detection,
     iter_samples, load_run_metadata, load_video, truncate_to_match,
 )
-from experiments.evaluation_metrics.metrics.lmd import (
+from experiments.evaluation_metrics.metrics.src.lmd import (
     LMD, LEFT_EYE_OUTER, MOUTH_LANDMARKS, RIGHT_EYE_OUTER,
 )
-from experiments.evaluation_metrics.metrics.lpips_metric import LPIPSMetric
-from experiments.evaluation_metrics.metrics.psnr import psnr_video
-from experiments.evaluation_metrics.metrics.ssim import ssim_video
+from experiments.evaluation_metrics.metrics.src.lpips_metric import LPIPSMetric
+from experiments.evaluation_metrics.metrics.src.psnr import psnr_video
+from experiments.evaluation_metrics.metrics.src.ssim import ssim_video
 
 
 # ---------------------------------------------------------------------------
@@ -252,7 +252,7 @@ def _build_cross_id_overlay(sample, pred: torch.Tensor, device: str,
     """Per-frame pred (with ArcFace bbox + cosine score) ‖ ref-clip mean
     face thumbnail (with bbox). Cosine is computed against an averaged
     identity prior built from the ref clip."""
-    from experiments.evaluation_metrics.metrics.id_sim import IDSimilarity
+    from experiments.evaluation_metrics.metrics.src.id_sim import IDSimilarity
     id_metric = IDSimilarity(device=device)
 
     print("[viz] loading reference clip for identity prior…")
