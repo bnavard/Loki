@@ -38,7 +38,7 @@ class PosEncOnlyConditioning(nn.Module):
     FLAME vertex positions. Shape `(B, T, H, W, 42)`.
 
     Consumes `hint["driver_verts"]` (for pos_enc rasterization) and ignores
-    `driver_deform` and `driver_video`.
+    `driver_deform`.
     """
 
     N_CHANNELS = 42

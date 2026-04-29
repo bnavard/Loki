@@ -26,8 +26,8 @@ class DeformOnlyConditioning(nn.Module):
     """Rasterize only the 3-channel per-vertex expression deformation.
 
     Consumes `hint["driver_verts"]` (for the triangle rasterization target)
-    and `hint["driver_deform"]` (the prop being rasterized). Ignores
-    `driver_video`. Emits `spatial_cond` at `(B, T, H, W, 3)`.
+    and `hint["driver_deform"]` (the prop being rasterized). Emits
+    `spatial_cond` at `(B, T, H, W, 3)`.
     """
 
     N_CHANNELS = 3
