@@ -13,8 +13,6 @@ Per-sample output:
                                     in [-1, 1]. Slot 0 feeds the frozen
                                     RefFeatureExtractor; slots 1..T are the
                                     ε-MSE loss target for the gen UNet.
-    audio        : (T, W_audio)    per-frame audio windows for the T gen
-                                    slots only (no audio for the ref slot).
     hint:
         driver_verts  : (T, V, 3)  driver (= target) FLAME verts per gen slot,
                                     in pytorch3d NDC relative to the per-slot
@@ -24,17 +22,6 @@ Per-sample output:
         driver_deform : (T, V, 3)  per-vertex expression deformation, rasterized
                                     alongside the vert-position prop to yield
                                     the 3ch deform map in spatial_cond.
-        driver_video  : (T, H, W, 3) driver-frame pixels in [-1, 1], face-cropped
-                                    using the driver's own FLAME-derived head
-                                    bbox (identical recipe to slots 1..T of
-                                    target_video — in fact shares storage with
-                                    target_video[1:]). Not used by the default
-                                    SpatialConditioning (which reads only
-                                    driver_verts / driver_deform); it exists
-                                    so `experiments/condition_ablation/`
-                                    variants that swap FLAME for natural
-                                    driver-video pixels can read it without
-                                    any dataset flag.
 
 NDC = Normalized Device Coordinates — pytorch3d's convention: +x=left, +y=up,
 visible content in [-1, 1] per axis.
@@ -51,7 +38,6 @@ from marionette.flame.flame import CAP4DFlameSkinner, compute_flame
 from marionette.utils import (
     load_frame, crop_image, rescale_image,
     get_bbox_from_verts, verts_to_pytorch3d,
-    SAMPLE_RATE, load_audio_mono, frame_window,
 )
 
 
@@ -64,7 +50,6 @@ class TalkingHeadDataset(Dataset):
         clip_list_path       : JSON list of clip IDs (produced by
                                `scripts/manifest/partition_dataset.py`).
         video_root           : root dir for videos ({video_root}/{id}.mp4).
-        audio_root           : root dir for audio  ({audio_root}/{id}.wav).
         flame_root           : root dir for FLAME  ({flame_root}/{id}/fit.npz).
         n_frames             : number of gen target frames per sample. The ref
                                slot is added on top, so each returned sample
@@ -72,9 +57,7 @@ class TalkingHeadDataset(Dataset):
                                `target_video`.
         resolution           : image resolution (default 512).
         downsample_ratio     : VAE downsampling factor (default 8).
-        fps                  : video frame rate (used for audio alignment).
-        audio_context_frames : number of frames on each side of the current
-                               frame to include in the audio window.
+        fps                  : video frame rate.
         add_mouth            : include mouth vertices in the FLAME skinner.
         ref_sampling_seed    : base seed for per-sample ref draws. Combined
                                with sample index so two workers / epochs
@@ -85,28 +68,22 @@ class TalkingHeadDataset(Dataset):
         self,
         clip_list_path: str,
         video_root: str,
-        audio_root: str,
         flame_root: str,
         n_frames: int = 16,
         resolution: int = 512,
         downsample_ratio: int = 8,
         fps: float = 25.0,
-        audio_context_frames: int = 2,
         add_mouth: bool = True,
         ref_sampling_seed: int = 0,
     ):
         self.video_root = Path(video_root)
-        self.audio_root = Path(audio_root)
         self.flame_root = Path(flame_root)
 
-        self.n_frames             = n_frames
-        self.resolution           = resolution
-        self.latent_res           = resolution // downsample_ratio
-        self.fps                  = fps
-        self.samples_per_frame    = int(SAMPLE_RATE / fps)
-        self.audio_context_frames = audio_context_frames
-        self.audio_window_samples = self.samples_per_frame * (1 + 2 * audio_context_frames)
-        self.ref_sampling_seed    = ref_sampling_seed
+        self.n_frames          = n_frames
+        self.resolution        = resolution
+        self.latent_res        = resolution // downsample_ratio
+        self.fps               = fps
+        self.ref_sampling_seed = ref_sampling_seed
 
         self.flame_skinner = CAP4DFlameSkinner(
             add_mouth=add_mouth,
@@ -191,13 +168,8 @@ class TalkingHeadDataset(Dataset):
             range(window_start, window_start + self.n_frames)
         )
 
-        audio_full = load_audio_mono(
-            self.audio_root / f"{clip_id}.wav",
-            expected_len=n_total * self.samples_per_frame,
-        )
-
-        imgs, verts_list, offsets_list, audio_windows = [], [], [], []
-        for t_idx, t_frame in enumerate(frame_ids):
+        imgs, verts_list, offsets_list = [], [], []
+        for t_frame in frame_ids:
             img, verts, offsets = self._load_and_process_frame(
                 clip_id, fit, t_frame, cam_id=0,
             )
@@ -205,31 +177,14 @@ class TalkingHeadDataset(Dataset):
             verts_list.append(verts)
             offsets_list.append(offsets)
 
-            # Audio is aligned with gen slots only (skip slot 0 = ref).
-            if t_idx >= 1:
-                audio_windows.append(
-                    frame_window(
-                        audio_full, t_frame, n_total,
-                        self.samples_per_frame, self.audio_context_frames,
-                    )
-                )
+        imgs    = np.stack(imgs,             axis=0)   # (T+1, H, W, 3)
+        verts   = np.stack(verts_list[1:],   axis=0)   # (T, V, 3) gen only
+        offsets = np.stack(offsets_list[1:], axis=0)   # (T, V, 3) gen only
 
-        imgs    = np.stack(imgs,              axis=0)   # (T+1, H, W, 3)
-        verts   = np.stack(verts_list[1:],    axis=0)   # (T, V, 3) gen only
-        offsets = np.stack(offsets_list[1:],  axis=0)   # (T, V, 3) gen only
-        audio   = np.stack(audio_windows,     axis=0)   # (T, W_audio)
-
-        target_video = torch.from_numpy(imgs)                  # (T+1, H, W, 3)
         return {
-            "target_video": target_video,
-            "audio":        torch.from_numpy(audio),
+            "target_video": torch.from_numpy(imgs),
             "hint": {
                 "driver_verts":  torch.from_numpy(verts),
                 "driver_deform": torch.from_numpy(offsets),
-                # Shares storage with `target_video[1:]` — zero memory overhead,
-                # single source of truth for the driver-slot pixels. Variants in
-                # `experiments/condition_ablation/` that condition on natural
-                # video read this key.
-                "driver_video":  target_video[1:],
             },
         }

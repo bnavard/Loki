@@ -1,15 +1,16 @@
 """
 Config composition utilities for the Marionette training pipeline.
 
-Configs are composed from a base YAML plus a sequence of overlay YAMLs.
-Overlays are partial configs that modify only the fields they care about.
+Configs are composed from a base YAML plus an optional sequence of overlay
+YAMLs. Overlays are partial configs that modify only the fields they care
+about.
 
 Experiment-side usage:
 
     # experiments/<name>/configs/variant.yaml
     base: marionette/configs/base.yaml
     overlays:
-      - marionette/configs/overlays/audio/off.yaml
+      - <optional overlay yamls>
 
     # optional inline overrides (applied last) go here
 

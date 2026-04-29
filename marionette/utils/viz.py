@@ -2,10 +2,10 @@
 
 Hosts:
   - Pure image helpers (`slice_cond_rgb`, `add_label`, `save_labeled_grid`,
-    `save_video_with_audio`, `make_grid_tensor`) used by both live-training
-    viz and offline inspection. `add_label` writes row labels VERTICALLY
-    (rotated 90° CCW) in a narrow strip so they don't clip into frame
-    content the way horizontal labels did.
+    `save_video`, `make_grid_tensor`) used by both live-training viz and
+    offline inspection. `add_label` writes row labels VERTICALLY (rotated
+    90° CCW) in a narrow strip so they don't clip into frame content the
+    way horizontal labels did.
   - `VisualizationCallback`, the Lightning callback that periodically runs
     same-identity DDIM reconstructions on the val set and writes mp4s /
     labeled grids / TensorBoard images.
@@ -27,10 +27,6 @@ Multi-rank behavior of `VisualizationCallback`:
 """
 from __future__ import annotations
 
-import os
-import shutil
-import subprocess
-import tempfile
 from pathlib import Path
 from typing import List, Optional
 
@@ -91,7 +87,7 @@ def add_label(row_img: np.ndarray, label: str,
 
     `label_w` must be the same across every row of a composite so vertical
     concatenation still aligns; the default applies to both the PNG grid
-    and the audio-muxed mp4 rendered by the VisualizationCallback.
+    and the mp4 rendered by the VisualizationCallback.
     """
     H, W = row_img.shape[:2]
 
@@ -160,19 +156,17 @@ def save_labeled_grid(
     cv2.imwrite(str(path), grid)
 
 
-def save_video_with_audio(
+def save_video(
     rows_data: List[np.ndarray],
     labels: List[str],
-    audio_np: Optional[np.ndarray],
     path: Path,
     fps: float = 25.0,
     title: Optional[str] = None,
 ):
-    """Write a stacked labeled video (rows stacked vertically) with optional muxed audio.
+    """Write a stacked labeled video (rows stacked vertically) as silent mp4.
 
     Args:
         rows_data: list of (T, 3, H, W) uint8 arrays.
-        audio_np:  (T, window_samples) float32 per-frame audio windows, or None.
         path:      output .mp4 path.
     """
     T = rows_data[0].shape[0]
@@ -198,51 +192,14 @@ def save_video_with_audio(
             composite = np.concatenate([title_bar, composite], axis=0)
         frames.append(composite)
 
-    tmp_video = tempfile.NamedTemporaryFile(suffix=".mp4", delete=False)
-    tmp_video_path = tmp_video.name
-    tmp_video.close()
-
+    path.parent.mkdir(parents=True, exist_ok=True)
     fourcc = cv2.VideoWriter_fourcc(*"mp4v")
     writer = cv2.VideoWriter(
-        tmp_video_path, fourcc, fps, (frames[0].shape[1], frames[0].shape[0]),
+        str(path), fourcc, fps, (frames[0].shape[1], frames[0].shape[0]),
     )
     for frame in frames:
         writer.write(frame)
     writer.release()
-
-    if audio_np is not None:
-        try:
-            import soundfile as sf
-            # Per-frame windows overlap by audio_context_frames on each side;
-            # take the center chunk to avoid duplicating samples across frames.
-            samples_per_frame = audio_np.shape[1] // 5
-            center_offset = samples_per_frame * 2
-            audio_full = np.concatenate([
-                audio_np[t, center_offset:center_offset + samples_per_frame]
-                for t in range(T)
-            ])
-
-            tmp_audio = tempfile.NamedTemporaryFile(suffix=".wav", delete=False)
-            tmp_audio_path = tmp_audio.name
-            tmp_audio.close()
-            sf.write(tmp_audio_path, audio_full, 16000)
-
-            subprocess.run([
-                "ffmpeg", "-y", "-loglevel", "error",
-                "-i", tmp_video_path,
-                "-i", tmp_audio_path,
-                "-c:v", "libx264", "-crf", "23",
-                "-c:a", "aac", "-b:a", "128k",
-                "-shortest",
-                str(path),
-            ], check=True)
-            os.unlink(tmp_video_path)
-            os.unlink(tmp_audio_path)
-            return
-        except Exception:
-            pass
-
-    shutil.move(tmp_video_path, str(path))
 
 
 def make_grid_tensor(rows_data: List[np.ndarray]) -> torch.Tensor:
@@ -281,7 +238,7 @@ class VisualizationCallback(Callback):
       - Runs `model.sample_video` over the T gen slots (ref lives in the
         separate frozen ref UNet, not in the time axis).
       - Builds a 4-row labeled grid [Reference | Ground Truth | Driver Deform
-        | Generated], saved as both a PNG grid and an audio-muxed mp4.
+        | Generated], saved as both a PNG grid and a silent mp4.
       - Logs the grid to tensorboard as a single image.
     """
 
@@ -432,18 +389,8 @@ class VisualizationCallback(Callback):
                         step_dir / f"sample_{abs_idx:02d}.png", title=title,
                     )
 
-                    # Only mux audio into the viz mp4 if the model actually
-                    # consumes it. The audio-off arm still receives audio in
-                    # the batch (dataset stays uniform across ablations), but
-                    # surfacing it in the viz would misrepresent what the
-                    # model had access to.
-                    if model.audio_encoder is not None:
-                        audio_i = batch.get("audio", None)
-                        audio_np = audio_i[i].cpu().numpy() if audio_i is not None else None
-                    else:
-                        audio_np = None
-                    save_video_with_audio(
-                        rows_data, labels, audio_np,
+                    save_video(
+                        rows_data, labels,
                         step_dir / f"sample_{abs_idx:02d}.mp4",
                         fps=fps, title=title,
                     )

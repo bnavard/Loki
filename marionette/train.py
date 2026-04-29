@@ -14,8 +14,8 @@ Two public entry points:
     `python marionette/train.py --config path/to/exp.yaml` still works for
     ad-hoc runs.
 
-Data paths (video_root, audio_root, flame_root, clip_list_path) are read from
-the YAML config; SD 2.1 pretrained init from `cfg.init_path`. Uses PyTorch
+Data paths (video_root, flame_root, clip_list_path) are read from the YAML
+config; SD 2.1 pretrained init from `cfg.init_path`. Uses PyTorch
 Lightning for the training loop, checkpointing (`th-<step>.ckpt` periodic +
 `th-best-...` on val/loss), and TensorBoard logging.
 
