@@ -32,13 +32,19 @@
 # pytorch3d rasterizer for the FLAME-derived metrics). Comfortable on
 # H200 / A6000 / 4090.
 #
+# Parallelism: every run dir launches as its own background process,
+# pinned to a GPU via `CUDA_VISIBLE_DEVICES = (item_index mod N_GPUS)`.
+# All processes run concurrently — no inner sequential loop. With
+# 12 HDTF run dirs and `NUM_GPUS=6` (default), each GPU hosts exactly
+# 2 concurrent processes (peak ≈ 1.2 GB GPU memory).
+#
 # Usage (from repo root):
 #
 #   bash experiments/evaluation_metrics/run_eval_metrics.sh
 #   METRICS=head_rot         bash experiments/evaluation_metrics/run_eval_metrics.sh
 #   METRICS=all              bash experiments/evaluation_metrics/run_eval_metrics.sh
 #   FRESH=1                  bash experiments/evaluation_metrics/run_eval_metrics.sh
-#   NUM_GPUS=4               bash experiments/evaluation_metrics/run_eval_metrics.sh
+#   NUM_GPUS=12              bash experiments/evaluation_metrics/run_eval_metrics.sh
 #   GPUS="0 2 4 6"           bash experiments/evaluation_metrics/run_eval_metrics.sh
 #
 # Background + log:
@@ -64,11 +70,13 @@ FRESH="${FRESH:-0}"
 mkdir -p "${OUT_ROOT}"
 
 # Resolve GPU list. `GPUS=...` (space-separated indices) wins over
-# `NUM_GPUS=N` (which expands to `0 1 ... N-1`). Default: 8 GPUs.
+# `NUM_GPUS=N` (which expands to `0 1 ... N-1`). Default: 6 GPUs —
+# the only round-robin split that lands every GPU with exactly 2 of
+# the 12 HDTF run dirs.
 if [[ -n "${GPUS:-}" ]]; then
     read -r -a GPU_LIST <<< "${GPUS}"
 else
-    NUM_GPUS="${NUM_GPUS:-8}"
+    NUM_GPUS="${NUM_GPUS:-6}"
     GPU_LIST=()
     for ((i=0; i<NUM_GPUS; i++)); do GPU_LIST+=("$i"); done
 fi
@@ -78,10 +86,10 @@ N_GPUS="${#GPU_LIST[@]}"
 # Build the unified work queue. Each entry is "<bucket>|<run_dir>".
 # -----------------------------------------------------------------------------
 WORK=()
-for d in "${MARIONETTE_ROOT}"/*/*/run_*/; do
+for d in "${MARIONETTE_ROOT}"/hdtf/*/run_*/; do
     [[ -d "$d" ]] && WORK+=("marionette|${d}")
 done
-for d in "${SOTA_ROOT}"/*/*/*/run_*/; do
+for d in "${SOTA_ROOT}"/*/hdtf/*/run_*/; do
     [[ -d "$d" ]] || continue
     rel="${d#${SOTA_ROOT}/}"
     rel="${rel%/}"
@@ -100,68 +108,47 @@ if (( N_TOTAL == 0 )); then
     exit 0
 fi
 
-# Round-robin assign to GPUs.
-declare -A bucket
-for ((i=0; i<N_TOTAL; i++)); do
-    gpu="${GPU_LIST[$(( i % N_GPUS ))]}"
-    bucket["$gpu"]+="${WORK[$i]}^"
-done
-
-# -----------------------------------------------------------------------------
-# Worker — sequential within a single GPU. Idempotency lives entirely in
-# `compute_metrics.py --metrics auto`: that side reads the existing
-# summary and computes only missing groups, so the worker just hands it
-# the run dir and the desired mode.
-# -----------------------------------------------------------------------------
-worker() {
+# Idempotency lives entirely in `compute_metrics.py --metrics auto`:
+# that side reads the existing summary and computes only missing groups,
+# so each task just hands it the run dir and the desired mode.
+run_one() {
     local gpu="$1"
-    local items_str="$2"
-    local n_done=0 n_failed=0
+    local item="$2"
+    local b="${item%%|*}"
+    local run_dir="${item#*|}"
 
-    IFS='^' read -r -a items <<< "${items_str%^}"
-    local n="${#items[@]}"
+    # Both trees end in `.../<dataset>/<protocol>/run_<ts>/`.
+    local rel="${run_dir%/}"
+    local protocol; protocol="$(basename "$(dirname "${rel}")")"
+    local dataset;  dataset="$(basename "$(dirname "$(dirname "${rel}")")")"
 
-    for item in "${items[@]}"; do
-        local b="${item%%|*}"
-        local run_dir="${item#*|}"
+    local out_dir="${OUT_ROOT}/${b}/${dataset}/${protocol}"
+    mkdir -p "${out_dir}"
+    if [[ "${FRESH}" == "1" ]]; then
+        rm -f "${out_dir}/metrics_summary.json" "${out_dir}/metrics.jsonl"
+    fi
 
-        # Both trees end in `.../<dataset>/<protocol>/run_<ts>/`.
-        local rel="${run_dir%/}"
-        local protocol; protocol="$(basename "$(dirname "${rel}")")"
-        local dataset;  dataset="$(basename "$(dirname "$(dirname "${rel}")")")"
-
-        local out_dir="${OUT_ROOT}/${b}/${dataset}/${protocol}"
-        mkdir -p "${out_dir}"
-
-        if [[ "${FRESH}" == "1" ]]; then
-            rm -f "${out_dir}/metrics_summary.json" "${out_dir}/metrics.jsonl"
-        fi
-
-        echo "[gpu ${gpu}] >>> ${b}/${dataset}/${protocol}  metrics=${METRICS}"
-        if CUDA_VISIBLE_DEVICES="${gpu}" PYTHONPATH=. \
-                "${PYTHON}" "${CLI}" \
-                    --run-dir    "${run_dir}" \
-                    --output-dir "${out_dir}" \
-                    --metrics    "${METRICS}" \
-                    2>&1 | tail -2; then
-            n_done=$((n_done + 1))
-        else
-            n_failed=$((n_failed + 1))
-            echo "[gpu ${gpu}] [FAIL] ${b}/${dataset}/${protocol}"
-        fi
-    done
-
-    echo ""
-    echo "[gpu ${gpu}] worker done  ok=${n_done}  fail=${n_failed}  /  total=${n}"
+    echo "[gpu ${gpu}] >>> ${b}/${dataset}/${protocol}  metrics=${METRICS}"
+    if CUDA_VISIBLE_DEVICES="${gpu}" PYTHONPATH=. \
+            "${PYTHON}" "${CLI}" \
+                --run-dir    "${run_dir}" \
+                --output-dir "${out_dir}" \
+                --metrics    "${METRICS}" \
+                2>&1 | tail -2; then
+        echo "[gpu ${gpu}] [OK]   ${b}/${dataset}/${protocol}"
+    else
+        echo "[gpu ${gpu}] [FAIL] ${b}/${dataset}/${protocol}"
+        return 1
+    fi
 }
 
+# Spawn one background process per run dir; round-robin pin to GPUs.
 pids=()
-for gpu in "${GPU_LIST[@]}"; do
-    items_str="${bucket[$gpu]:-}"
-    [[ -z "${items_str}" ]] && continue
-    worker "${gpu}" "${items_str}" &
+for ((i=0; i<N_TOTAL; i++)); do
+    gpu="${GPU_LIST[$(( i % N_GPUS ))]}"
+    run_one "${gpu}" "${WORK[$i]}" &
     pids+=($!)
-    echo "[batch] launched worker pid=$! on GPU ${gpu}"
+    echo "[batch] launched pid=$! on GPU ${gpu} for ${WORK[$i]%%|*}"
 done
 
 fail=0
@@ -172,9 +159,9 @@ done
 echo ""
 echo "============================================================"
 if (( fail == 0 )); then
-    echo "[batch] all workers finished cleanly."
+    echo "[batch] all ${N_TOTAL} run dirs finished cleanly."
 else
-    echo "[batch] ${fail} worker(s) reported a failure — re-scan stdout for [FAIL] lines."
+    echo "[batch] ${fail} run(s) failed — re-scan stdout for [FAIL] lines."
 fi
 echo "[batch] central summaries under ${OUT_ROOT}/"
 echo "============================================================"
