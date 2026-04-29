@@ -4,23 +4,17 @@ output a SOTA wrapper would, against a Marionette checkpoint instead of an
 external baseline.
 
 Aligned with `experiments/sota_comparison/<baseline>/run_inference.py`:
-  * Same pair list source (`load_by_dataset(args.dataset)` → curated
-    `experiments/sota_comparison/manifests/<dataset>.json`).
+  * Same pair list source (`load_by_dataset("hdtf")` → curated
+    `experiments/sota_comparison/manifests/hdtf.json`).
   * Same `EvalSample` shape and same `(protocol, seed, sample_id)` ref-frame
     selection policy — `id_0457_id_0009` here refers to the same identity
     pair as in any SOTA baseline's output tree.
-  * Same `samples/<sample_id>/panel.{png,mp4}` on-disk layout.
+  * Same `samples/<sample_id>/panel.mp4` on-disk layout.
 
 Key differences from a SOTA wrapper:
   * Marionette runs in-process — no `conda run` shell-out, so we don't loop
     a subprocess per sample. The `Evaluator` loads the model + cond_stage
     module once at startup and amortizes that cost across every sample.
-  * Both `--dataset talkvid` and `--dataset hdtf` are supported. The
-    per-dataset FLAME tracking root is read from `cfg.flame_roots[<dataset>]`
-    (TalkVid under `data/flame_tracking/`, HDTF under
-    `data/benchmark/hdtf/flame_tracking/`). Each clip needs `fit.npz` at
-    `<flame_root>/<clip_id>/fit.npz` — generate via `generate_exp_map/`
-    if it's missing for a dataset.
   * Marionette generates `cfg.inference.n_frames` frames per panel
     (default 16 = 0.64 s at 25 fps). SOTA panels are 5 s. The
     `<sample_id>` folder name aligns; `panel.mp4` durations don't.
@@ -28,42 +22,21 @@ Key differences from a SOTA wrapper:
     filter; it does NOT change Marionette's actual generation length.
 
 Usage (from repo root, `marionette` env). Build the curated manifest once
-via `experiments/sota_comparison/dataset/build_manifest.py --dataset talkvid`
-before running these.
+via `experiments/sota_comparison/dataset/build_manifest.py --dataset hdtf`
+before running these. HDTF clips are 81 frames (~3.24 s at 25 fps); pass
+`--clip_duration_s 3.0` so `build_samples`'s length filter doesn't drop
+everything.
 
-    # TalkVid — same-identity reconstruction (one panel per identity)
+    # Same-identity reconstruction (one panel per identity)
     PYTHONPATH=. python experiments/marionette_eval/run_inference.py \
-        --dataset talkvid \
-        --protocol same_identity_reconstruction \
-        --n_samples 125 \
-        --clip_duration_s 5.0 \
-        --seed 42 \
-        --checkpoint outputs/marionette_baseline/run_<ts>/checkpoints/<ckpt>.ckpt
-
-    # TalkVid — cross-identity (one panel per derangement pair)
-    PYTHONPATH=. python experiments/marionette_eval/run_inference.py \
-        --dataset talkvid \
-        --protocol cross_identity \
-        --n_samples 125 \
-        --clip_duration_s 5.0 \
-        --seed 42 \
-        --checkpoint outputs/marionette_baseline/run_<ts>/checkpoints/<ckpt>.ckpt
-
-    # HDTF — same-identity reconstruction (one panel per identity).
-    # Requires `fit.npz` under data/benchmark/hdtf/flame_tracking/flowface/<clip_id>/
-    # — see the README's HDTF prereq block for the one-time generation command.
-    PYTHONPATH=. python experiments/marionette_eval/run_inference.py \
-        --dataset hdtf \
         --protocol same_identity_reconstruction \
         --n_samples 212 \
         --clip_duration_s 3.0 \
         --seed 42 \
         --checkpoint outputs/marionette_baseline/run_<ts>/checkpoints/<ckpt>.ckpt
 
-    # HDTF — cross-identity (one panel per derangement pair). HDTF clips are
-    # ~3.24 s so use a 3.0 s filter (TalkVid's 5.0 s default would drop them).
+    # Cross-identity (one panel per derangement pair)
     PYTHONPATH=. python experiments/marionette_eval/run_inference.py \
-        --dataset hdtf \
         --protocol cross_identity \
         --n_samples 212 \
         --clip_duration_s 3.0 \
@@ -72,8 +45,8 @@ before running these.
 
     # Override CFG scale / DDIM steps on the fly:
     PYTHONPATH=. python experiments/marionette_eval/run_inference.py \
-        --dataset talkvid --protocol cross_identity \
-        --n_samples 125 --clip_duration_s 5.0 --seed 42 \
+        --protocol cross_identity \
+        --n_samples 212 --clip_duration_s 3.0 --seed 42 \
         --checkpoint outputs/marionette_baseline/run_<ts>/checkpoints/<ckpt>.ckpt \
         --cfg_scale 3.0 --n_ddim_steps 100
 """
@@ -99,21 +72,18 @@ from marionette.config_utils import load_experiment_config
 HERE        = Path(__file__).resolve().parent
 DEFAULT_CFG = HERE / "configs" / "eval.yaml"
 DEFAULT_OUT = Path("outputs/marionette_eval")
+DATASET     = "hdtf"
 
 
 def parse_args():
     p = argparse.ArgumentParser(
-        description="Run Marionette inference over a benchmark dataset.",
+        description="Run Marionette inference over the HDTF benchmark.",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
-    # Dataset / protocol — match SOTA wrappers' shape.
-    p.add_argument("--dataset",         default="talkvid", choices=["talkvid", "hdtf"],
-                   help="Both datasets need FLAME tracking on disk; the per-dataset "
-                        "`flame_root` is read from `cfg.flame_roots[<dataset>]`.")
     p.add_argument("--protocol",        default="cross_identity",
                    choices=["same_identity_reconstruction", "cross_identity"])
-    p.add_argument("--n_samples",       type=int,   default=125)
-    p.add_argument("--clip_duration_s", type=float, default=5.0,
+    p.add_argument("--n_samples",       type=int,   default=212)
+    p.add_argument("--clip_duration_s", type=float, default=3.0,
                    help="Used by `build_samples` to filter eligible clips. "
                         "Does NOT change Marionette's generation length — "
                         "that's `cfg.inference.n_frames` (16 by default).")
@@ -131,12 +101,12 @@ def parse_args():
 
     # Plumbing
     p.add_argument("--config",     type=Path, default=DEFAULT_CFG,
-                   help="Experiment config — base + inference knobs + flame_root.")
+                   help="Experiment config — base + inference knobs.")
     p.add_argument("--checkpoint", default=None,
                    help="Override `cfg.checkpoint`.")
     p.add_argument("--output_dir", type=Path, default=None,
                    help=f"Root for outputs. Default: "
-                        f"{DEFAULT_OUT}/<dataset>/<protocol>/run_<ts>/")
+                        f"{DEFAULT_OUT}/{DATASET}/<protocol>/run_<ts>/")
     p.add_argument("--device",     default="cuda")
     p.add_argument("--n_take",     type=int, default=None,
                    help="Cap pair list to this many samples (debug).")
@@ -163,19 +133,18 @@ def main():
 
     # Resolve output directory (timestamped per run, mirrors SOTA wrappers).
     # Layout: <root>/<dataset>/<protocol>/run_<ts>/ — matches every SOTA
-    # wrapper (e.g. sota_comparison/sadtalker/run_inference.py:124) so HDTF
-    # and TalkVid runs of the same protocol don't collide in one parent dir.
+    # wrapper so the metrics runner discovers all of them with one glob.
     if args.output_dir is None:
         ts  = datetime.now().strftime("%Y%m%d_%H%M%S")
         root = Path(cfg.output_dir) if "output_dir" in cfg else DEFAULT_OUT
-        out  = root / args.dataset / args.protocol / f"run_{ts}"
+        out  = root / DATASET / args.protocol / f"run_{ts}"
     else:
         out = args.output_dir
     out.mkdir(parents=True, exist_ok=True)
 
     # Curated manifest (UID-based identity pool shared with every SOTA wrapper).
-    clips, manifest_meta = load_by_dataset(args.dataset)
-    print(f"[marionette_eval] {args.dataset} manifest: {len(clips)} identities "
+    clips, manifest_meta = load_by_dataset(DATASET)
+    print(f"[marionette_eval] {DATASET} manifest: {len(clips)} identities "
           f"(cap={manifest_meta['n_samples_cap']}, seed={manifest_meta['seed']})")
 
     samples = build_samples(
@@ -201,6 +170,7 @@ def main():
     OmegaConf.save(cfg, out / "config_resolved.yaml")
     (out / "config_resolved.json").write_text(json.dumps({
         **vars(args),
+        "dataset":    DATASET,
         "config":     str(args.config),
         "checkpoint": str(checkpoint),
         "output_dir": str(out),
@@ -208,12 +178,7 @@ def main():
     }, indent=2, default=str))
 
     # Build evaluator (loads the model + cond_stage + FLAME skinner once).
-    # Per-dataset flame_root: TalkVid lives under `data/flame_tracking/` (the
-    # training-time layout); HDTF lives under `data/benchmark/hdtf/flame_tracking/`.
-    if "flame_roots" in cfg and args.dataset in cfg.flame_roots:
-        flame_root = Path(cfg.flame_roots[args.dataset])
-    else:
-        flame_root = Path(cfg.val_dataset.params.flame_root)
+    flame_root = Path(cfg.val_dataset.params.flame_root)
     evaluator = Evaluator(
         cfg        = cfg,
         checkpoint = checkpoint,
@@ -229,7 +194,6 @@ def main():
     print(f"[marionette_eval] n_frames:    {n_frames}")
     print(f"[marionette_eval] cfg_scale:   {cfg_scale}")
     print(f"[marionette_eval] DDIM steps:  {n_ddim_steps}")
-    print(f"[marionette_eval] audio path:  {'enabled' if evaluator.has_audio else 'disabled'}")
 
     # One seeded RNG drives ref-frame draws across the whole run.
     # Same seed schedule as every SOTA wrapper, so `(protocol, seed,

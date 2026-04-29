@@ -6,16 +6,14 @@ Differences from a true SOTA baseline adapter:
   * The model lives in-process (Marionette is local — no `conda run` shell-out
     to a foreign env). So `Evaluator` holds the loaded checkpoint + cond_stage
     module and reuses them across samples.
-  * Sample IDs come from the curated TalkVid manifest under
-    `experiments/sota_comparison/manifests/talkvid.json` (same UID pool every
+  * Sample IDs come from the curated HDTF manifest under
+    `experiments/sota_comparison/manifests/hdtf.json` (same UID pool every
     SOTA wrapper consumes), so a glob across baselines hits the same identity
     pair under the same `<sample_id>` folder.
 
 Per sample (`run_one(sample: EvalSample, ref_frame_idx, ...)`):
-  1. Load the ref clip's `fit.npz` from `<flame_root>/<clip_id>/fit.npz`.
-     `flame_root` is dataset-aware: the runner picks
-     `cfg.flame_roots[<dataset>]` so TalkVid reads from
-     `data/flame_tracking/flowface/` and HDTF reads from
+  1. Load the ref + driver clips' `fit.npz` from
+     `<flame_root>/<clip_id>/fit.npz` — for HDTF that's
      `data/benchmark/hdtf/flame_tracking/flowface/`.
   2. `prepare_reference(ref_fit, ref_frame_idx, …)` → face-cropped 512×512
      ref image in `[-1, 1]` + the ref's crop_box.
@@ -24,20 +22,12 @@ Per sample (`run_one(sample: EvalSample, ref_frame_idx, ...)`):
      deformation, computed as `β_ref + ψ_driver[t] + θ_driver[t]` under the
      reference's camera. `driver_start=0` matches the SOTA convention of
      "first N frames of the trimmed driver."
-  4. `prepare_driver_frames(driver_fit, …, driver_start=0)` → driver's own
-     face-cropped frames for the panel's "Driver Video" row + the
-     driver-video conditioning (used by no_flame / no_deform arms; ignored
-     by baseline).
-  5. Encode ref → `ref_z` via VAE.
-  6. If audio: read `sample.driver_clip.audio_path` (TalkVid sidecar WAV),
-     build per-frame ±context windows, encode via `model.audio_encoder`.
-     Skip the whole audio branch if the checkpoint has no audio encoder
-     (the audio_off arm of condition_ablation).
-  7. `model.sample_video(...)` — DDIM with classifier-free guidance.
-  8. VAE-decode and write the on-disk artifacts in the SOTA-wrapper shape:
-       samples/<sample_id>/panel.mp4    -- 512×512 generation, no audio
+  4. Encode ref → `ref_z` via VAE.
+  5. `model.sample_video(...)` — DDIM with classifier-free guidance.
+  6. VAE-decode and write the on-disk artifacts in the SOTA-wrapper shape:
+       samples/<sample_id>/panel.mp4    -- 512×512 generation
        scratch/<sample_id>/source.png   -- ref frame
-       scratch/<sample_id>/driver.mp4   -- 512×512 driver row, no audio
+       scratch/<sample_id>/driver.mp4   -- 512×512 driver row
 
 Output goes to `<output_dir>/samples/<sample.sample_id>/panel.mp4` plus a
 sibling `<output_dir>/scratch/<sample.sample_id>/{source.png, driver.mp4}`
@@ -57,10 +47,10 @@ from omegaconf import DictConfig
 
 from ldm_base.ldm.util import instantiate_from_config
 from marionette.flame.flame import CAP4DFlameSkinner
+from marionette.model.checkpoint_compat import strip_legacy_keys
 from marionette.retargeting import (
     prepare_driver_frames, prepare_reference, retarget_driver_verts,
 )
-from marionette.utils import SAMPLE_RATE, frame_window, load_audio_mono
 from experiments.sota_comparison.dataset.pairing import EvalSample
 
 
@@ -104,29 +94,6 @@ def _load_fit(path: Path) -> dict:
     return {k: v for k, v in np.load(str(path)).items()}
 
 
-def _load_audio_window_block(
-    audio_path: Path,
-    n_frames: int,
-    samples_per_frame: int,
-    audio_context_frames: int,
-    n_total_frames: int,
-) -> np.ndarray:
-    """Per-frame ±`audio_context_frames` centered windows over
-    `[0, n_frames)` of the driver. Zeros if the wav is missing — the audio
-    encoder still runs; the model sees silence for that sample."""
-    audio = (
-        load_audio_mono(audio_path, expected_len=n_total_frames * samples_per_frame)
-        if audio_path is not None and audio_path.exists() else None
-    )
-    return np.stack([
-        frame_window(
-            audio, t, n_total_frames,
-            samples_per_frame, audio_context_frames,
-        )
-        for t in range(n_frames)
-    ], axis=0)
-
-
 def _load_checkpoint_into(model, ckpt_path: str) -> None:
     """Strip the Lightning `model.` prefix and fail loud on any missing /
     unexpected keys, except under the frozen `ref_extractor.*` subtree
@@ -138,6 +105,7 @@ def _load_checkpoint_into(model, ckpt_path: str) -> None:
     missing, unexpected = model.load_state_dict(sd, strict=False)
     unexpected = [k for k in unexpected if not k.startswith("ref_extractor.")]
     missing    = [k for k in missing    if not k.startswith("ref_extractor.")]
+    unexpected = strip_legacy_keys(unexpected)
     if missing or unexpected:
         raise RuntimeError(
             f"Checkpoint load incomplete: {len(missing)} missing, "
@@ -178,19 +146,13 @@ class Evaluator:
         self.args       = args
 
         ds = cfg.train_dataset.params
-        self.resolution           = int(ds.resolution)
-        self.latent_res           = self.resolution // int(ds.downsample_ratio)
-        self.fps                  = float(ds.fps)
-        self.samples_per_frame    = int(SAMPLE_RATE / ds.fps)
-        self.audio_context_frames = int(ds.audio_context_frames)
+        self.resolution = int(ds.resolution)
+        self.latent_res = self.resolution // int(ds.downsample_ratio)
+        self.fps        = float(ds.fps)
 
         self.model = instantiate_from_config(cfg.model)
         _load_checkpoint_into(self.model, checkpoint)
         self.model.eval().to(device)
-        # One single runtime flag gates the entire audio path. If the training
-        # config sets `audio_encoder_config: null` (the audio_off arm of
-        # condition_ablation), this code keeps working unchanged.
-        self.has_audio = self.model.audio_encoder is not None
 
         # Dispatch on the config's `target` so condition_ablation arms load
         # their own cond_stage module without any change here. The 4-row
@@ -239,7 +201,6 @@ class Evaluator:
             )
         ref_fit = _load_fit(ref_fit_path)
         drv_fit = _load_fit(drv_fit_path)
-        drv_total = int(drv_fit["expr"].shape[0])
 
         ref_img_norm, _, crop_box = prepare_reference(
             ref_fit, ref_frame_idx, ref_clip.video_path,
@@ -250,19 +211,16 @@ class Evaluator:
             driver_start=0,
         )
 
-        # Driver's face-cropped frames — used for the viz panel AND as the
-        # natural-video conditioning signal read by no_flame / no_deform arms.
+        # Driver's face-cropped frames — used for the visual panel only.
         driver_frames = prepare_driver_frames(
             drv_fit, driver_clip.video_path,
             n_frames, self.resolution, self.flame_skinner, self.head_vert_ids,
             driver_start=0,
         )
-        driver_video_norm = (driver_frames.astype(np.float32) / 127.5) - 1.0
 
         hint = {
             "driver_verts":  torch.from_numpy(verts_np).unsqueeze(0).to(device),
             "driver_deform": torch.from_numpy(offsets_np).unsqueeze(0).to(device),
-            "driver_video":  torch.from_numpy(driver_video_norm).unsqueeze(0).to(device),
         }
         c_cond = self.cond_module(hint)
 
@@ -270,19 +228,6 @@ class Evaluator:
         c_cond["ref_z"] = self.model.get_first_stage_encoding(
             self.model.encode_first_stage(ref_tensor)
         )
-
-        audio_windows = None
-        if self.has_audio:
-            audio_windows = _load_audio_window_block(
-                driver_clip.audio_path,
-                n_frames,
-                self.samples_per_frame, self.audio_context_frames,
-                n_total_frames=drv_total,
-            )
-            audio_t = torch.from_numpy(audio_windows).unsqueeze(0).to(device)
-            c_cond["audio_context"] = self.model.audio_encoder(audio_t)
-        else:
-            c_cond["audio_context"] = None
 
         c_uncond = {
             k: (torch.zeros_like(v) if torch.is_tensor(v) else v)
@@ -304,9 +249,9 @@ class Evaluator:
         # treats marionette_eval and any sota_comparison/<baseline>/ run
         # uniformly.
         #
-        #   samples/<sample_id>/panel.mp4    -- 512×512 generation, no audio
+        #   samples/<sample_id>/panel.mp4    -- 512×512 generation
         #   scratch/<sample_id>/source.png   -- ref frame (static across T)
-        #   scratch/<sample_id>/driver.mp4   -- 512×512 driver row, no audio
+        #   scratch/<sample_id>/driver.mp4   -- 512×512 driver row
         ref_rgb_u8 = ((ref_img_norm + 1) / 2 * 255).clip(0, 255).astype(np.uint8)
         driver_chw = driver_frames.transpose(0, 3, 1, 2).copy()   # (T, 3, H, W)
 
