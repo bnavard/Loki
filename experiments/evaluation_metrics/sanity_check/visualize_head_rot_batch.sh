@@ -2,8 +2,8 @@
 # =============================================================================
 # Sanity-check batch driver for the head-rotation visualizer.
 #
-# Picks N (default 5) sample IDs per `(dataset, protocol)` cell from the
-# 6-way intersection of "samples Marionette + every SOTA baseline produced",
+# Picks N (default 5) sample IDs per `protocol` cell from the 6-way
+# intersection of "samples Marionette + every SOTA baseline produced",
 # so each chosen sample renders a comparable side-by-side overlay across
 # every model. Default seed = 42.
 #
@@ -17,9 +17,9 @@
 # Round-robin across GPUs (default 8). Idempotent: any (sample, baseline)
 # pair with an existing overlay.mp4 is skipped.
 #
-# Total work: 5 × 4 × 6 = 120 invocations. With model-load overhead per
-# subprocess (~5–10 s each) and 8 workers in parallel, expect ~3–5 min
-# total wall-clock.
+# Total work: N_SAMPLES × 2 protocols × 6 baselines invocations. With
+# model-load overhead per subprocess (~5–10 s each) and 8 workers in
+# parallel, expect ~3–5 min total wall-clock for N_SAMPLES=5.
 #
 # Usage (from repo root):
 #
@@ -52,16 +52,16 @@ from pathlib import Path
 
 BASELINES = ["marionette", "anitalker", "echomimic", "hunyuan_portrait",
              "sadtalker", "xportrait"]
-DATASETS  = ["talkvid", "hdtf"]
+DATASET   = "hdtf"
 PROTOCOLS = ["same_identity_reconstruction", "cross_identity"]
 
 def latest(p):
     runs = sorted([d for d in p.glob("run_*") if d.is_dir()])
     return runs[-1] if runs else None
 
-def discover(ds, pr, b):
-    root = (Path("outputs/marionette_eval") / ds / pr if b == "marionette"
-            else Path("outputs/sota_comparison") / b / ds / pr)
+def discover(pr, b):
+    root = (Path("outputs/marionette_eval") / DATASET / pr if b == "marionette"
+            else Path("outputs/sota_comparison") / b / DATASET / pr)
     run = latest(root)
     if run is None:
         return set()
@@ -71,16 +71,15 @@ def discover(ds, pr, b):
     return {d.name for d in sd.iterdir() if (d / "panel.mp4").is_file()}
 
 rng = random.Random(${SEED})
-for ds in DATASETS:
-    for pr in PROTOCOLS:
-        sets = [discover(ds, pr, b) for b in BASELINES]
-        inter = sorted(set.intersection(*sets)) if all(sets) else []
-        if not inter:
-            continue
-        picks = rng.sample(inter, min(${N_SAMPLES}, len(inter)))
-        for sid in sorted(picks):
-            for b in BASELINES:
-                print(f"{b}|{ds}|{pr}|{sid}")
+for pr in PROTOCOLS:
+    sets = [discover(pr, b) for b in BASELINES]
+    inter = sorted(set.intersection(*sets)) if all(sets) else []
+    if not inter:
+        continue
+    picks = rng.sample(inter, min(${N_SAMPLES}, len(inter)))
+    for sid in sorted(picks):
+        for b in BASELINES:
+            print(f"{b}|{DATASET}|{pr}|{sid}")
 PY
 )
 

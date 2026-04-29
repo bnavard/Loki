@@ -4,13 +4,13 @@ Walks one `<run_dir>` produced by the SOTA-comparison or marionette-eval
 runners and routes each prediction through the metric set appropriate
 to its protocol:
 
-| Protocol                          | Metric groups                       |
-|-----------------------------------|-------------------------------------|
-| `same_identity_reconstruction`    | pixel, lmd, head_rot, expression, fvd |
-| `cross_identity`                  | head_rot, expression, id              |
+| Protocol                          | Metric groups               |
+|-----------------------------------|-----------------------------|
+| `same_identity_reconstruction`    | head_rot, expression        |
+| `cross_identity`                  | head_rot, expression, id    |
 
 Per-sample metrics land at `<output_dir>/metrics.jsonl` (one JSON row per
-sample); aggregates + FVD at `<output_dir>/metrics_summary.json`.
+sample); aggregates at `<output_dir>/metrics_summary.json`.
 
 Metric modes (`cfg.metrics_mode`)
 ---------------------------------
@@ -20,55 +20,35 @@ Metric modes (`cfg.metrics_mode`)
   fields are overwritten.
 * `"all"` — recompute every group available for the protocol, overwriting
   every existing field.
-* explicit `set[str]`, e.g. `{"head_rot", "fvd"}` — recompute only
+* explicit `set[str]`, e.g. `{"head_rot", "expression"}` — recompute only
   those groups, overwrite their fields, leave others alone.
 
 Group → headline metric mapping (`GROUP_HEADLINE_METRIC`) drives the
-`auto`-mode missing-detection check. FVD is special-cased: detected by
-the presence of `summary["fvd"]`, not a key under `summary["metrics"]`.
-
-Face-region cropping (used by pixel / lmd)
-------------------------------------------
-Pixel and lmd metrics independently crop each video to a face-only
-square via `face_crop_around_detection` (1.3× margin → 512×512). Both
-pred and target go through the same routine, so the metric isolates
-pure face-region quality with no framing asymmetry. Disable via
-`cfg.face_crop=False`. Head-rot and expression read FLAME fits directly
-and don't need a face crop.
+`auto`-mode missing-detection check.
 
 Per-frame handling
 ------------------
-Pixel metrics (PSNR/SSIM/LPIPS) run on **every** paired frame — no
-detection gate; broken pred frames produce bad numbers and naturally
-penalize the tool.
-
-Landmark / identity metrics need per-frame face / arcface detection: a
-frame contributes only when both sides detect. Per-sample number is the
-mean over hits; per-sample `*_detect_rate` records failure density.
-
 Head-rot / expression read FLAME parameters from `fit.npz`; a sample
 contributes when both pred and target fits exist with ≥2 frames, and
 `*_track_rate = T_used / n_frames` records how much of the requested
 window was usable.
 
+Identity (cross-id only) needs per-frame ArcFace detection: a frame
+contributes only when both the ref-clip prior and the pred frame embed
+successfully. Per-sample number is the mean over hits;
+`id_detect_rate` records failure density.
+
 Run-level aggregation
 ---------------------
-Pixel metrics use a plain arithmetic mean across samples. Gated metrics
-(lmd_f, lmd_m, id_cosine, head_rot_dist, expression_l1) use a
-**weighted** mean with each sample's detect / track rate as the weight,
-so a sample whose number was computed on 5/16 frames contributes
-proportionally less than one computed on 16/16.
-
-FVD on small samples
---------------------
-The talking-head benchmarks here are 125 (TalkVid) / 212 (HDTF) clips.
-I3D / VideoMAE-2 FVD nominally wants ≥ 2k clips for stability, so the
-summary tags `low_sample = True` whenever the count is below that.
+All three metrics use a **weighted** mean — each sample's track rate
+(head_rot, expression) or detect rate (id) is the weight, so a sample
+whose number was computed on 5/16 frames contributes proportionally less
+than one computed on 16/16.
 """
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional, Union
 
@@ -77,16 +57,9 @@ import torch
 from tqdm import tqdm
 
 from .io import (
-    DEFAULT_FACE_CROP_MARGIN, DEFAULT_FPS, DEFAULT_RESOLUTION,
-    RunMetadata, SamplePair,
-    detect_face_bbox_xyxy, face_crop_around_detection, face_crop_video,
-    load_run_metadata, iter_samples, load_video, truncate_to_match,
+    DEFAULT_FPS, DEFAULT_RESOLUTION,
+    RunMetadata, load_run_metadata, iter_samples, load_video,
 )
-from .src.psnr import psnr_video
-from .src.ssim import ssim_video
-
-
-FVD_LOW_SAMPLE_THRESHOLD = 2000
 
 
 # ---------------------------------------------------------------------------
@@ -95,15 +68,12 @@ FVD_LOW_SAMPLE_THRESHOLD = 2000
 
 
 GROUPS_BY_PROTOCOL: dict[str, list[str]] = {
-    "same_identity_reconstruction": ["pixel", "lmd", "head_rot", "expression", "fvd"],
+    "same_identity_reconstruction": ["head_rot", "expression"],
     "cross_identity":               ["head_rot", "expression", "id"],
 }
 
-# Detect "missing in summary" via these headline keys. fvd is special-
-# cased — it lives under summary["fvd"], not summary["metrics"].
+# Detect "missing in summary" via these headline keys.
 GROUP_HEADLINE_METRIC: dict[str, str] = {
-    "pixel":      "psnr",
-    "lmd":        "lmd_f",
     "head_rot":   "head_rot_dist",
     "expression": "expression_l1",
     "id":         "id_cosine",
@@ -112,11 +82,9 @@ GROUP_HEADLINE_METRIC: dict[str, str] = {
 # Run-level aggregation: which metrics use a weighted mean and which
 # per-sample list supplies the weights.
 WEIGHTED_METRICS: dict[str, str] = {
-    "lmd_f":          "_lmd_weights",
-    "lmd_m":          "_lmd_weights",
-    "id_cosine":      "_id_weights",
-    "head_rot_dist":  "_head_rot_weights",
-    "expression_l1":  "_expression_weights",
+    "id_cosine":     "_id_weights",
+    "head_rot_dist": "_head_rot_weights",
+    "expression_l1": "_expression_weights",
 }
 
 
@@ -124,8 +92,6 @@ def _group_present(group: str, summary: dict) -> bool:
     """Whether `summary` already carries the headline value for `group`."""
     if not summary:
         return False
-    if group == "fvd":
-        return "fvd" in summary
     return GROUP_HEADLINE_METRIC[group] in summary.get("metrics", {})
 
 
@@ -157,62 +123,18 @@ def _resolve_groups(
 
 @dataclass
 class EvalConfig:
-    fps:              int   = DEFAULT_FPS
-    resolution:       int   = DEFAULT_RESOLUTION
-    device:           str   = "cuda"
-    fvd_models:       list[str] = field(default_factory=lambda: ["videomae"])
-    fvd_seq_len:      int   = 16
-    fvd_resolution:   int   = 224
-    lmd_normalize:    bool  = True
-    lpips_chunk_size: int   = 64
-    face_crop:        bool  = True
-    face_crop_margin: float = DEFAULT_FACE_CROP_MARGIN
-    n_frames:         Optional[int] = 16
+    fps:        int = DEFAULT_FPS
+    resolution: int = DEFAULT_RESOLUTION
+    device:     str = "cuda"
+    n_frames:   Optional[int] = 16
 
     # Metric mode: "auto" (default), "all", or a set[str] of group names.
-    metrics_mode:     Union[str, set[str]] = "auto"
-
-
-# ---------------------------------------------------------------------------
-# Shared face detector (built once per run)
-# ---------------------------------------------------------------------------
-
-
-def _build_face_detector(device: str):
-    """Multi-scale RetinaFace detector callable: `detect(img_bgr) -> list`.
-    InsightFace's anchor tuning means a face filling 90% of the frame
-    slips past det_size=640; the 320 fallback catches that case. Two
-    ONNX sessions, ~80 MB extra."""
-    from insightface.app import FaceAnalysis
-    providers = (
-        ["CUDAExecutionProvider", "CPUExecutionProvider"]
-        if device.startswith("cuda") else ["CPUExecutionProvider"]
-    )
-    ctx_id = 0 if device.startswith("cuda") else -1
-    apps = []
-    for det_size in ((640, 640), (320, 320)):
-        app = FaceAnalysis(name="buffalo_l", providers=providers,
-                           allowed_modules=["detection"])
-        app.prepare(ctx_id=ctx_id, det_size=det_size)
-        apps.append(app)
-
-    def detect(img_bgr):
-        for app in apps:
-            faces = app.get(img_bgr)
-            if faces:
-                return faces
-        return []
-    return detect
+    metrics_mode: Union[str, set[str]] = "auto"
 
 
 # ---------------------------------------------------------------------------
 # Per-sample helpers
 # ---------------------------------------------------------------------------
-
-
-def _frame_to_uint8(t_chw: torch.Tensor) -> np.ndarray:
-    """`(3, H, W)` float32 in `[0, 1]` → `(H, W, 3)` uint8 RGB."""
-    return (t_chw.permute(1, 2, 0).cpu().numpy() * 255).clip(0, 255).astype(np.uint8)
 
 
 def _read_existing_rows(metrics_path: Path) -> dict[str, dict]:
@@ -236,11 +158,6 @@ def _read_existing_rows(metrics_path: Path) -> dict[str, dict]:
     return out
 
 
-# ---------------------------------------------------------------------------
-# Expression group — paths + per-sample helper
-# ---------------------------------------------------------------------------
-
-
 def _derive_bucket(run_dir: Path) -> str:
     """Recover the baseline name (= "bucket") from a run-dir path.
     `outputs/marionette_eval/...` → "marionette".
@@ -253,13 +170,9 @@ def _derive_bucket(run_dir: Path) -> str:
     raise ValueError(f"cannot infer bucket from run_dir={run_dir}")
 
 
-def _gt_fit_root(dataset: str) -> Path:
-    """Where ground-truth FLAME fits live, per dataset."""
-    if dataset == "hdtf":
-        return Path("data/benchmark/hdtf/flame_tracking/flowface")
-    if dataset == "talkvid":
-        return Path("data/flame_tracking/flowface")
-    raise ValueError(f"unknown dataset: {dataset!r}")
+def _gt_fit_root() -> Path:
+    """Where ground-truth FLAME fits live."""
+    return Path("data/benchmark/hdtf/flame_tracking/flowface")
 
 
 def _pred_fit_path(run_dir: Path, dataset: str, protocol: str,
@@ -299,13 +212,6 @@ def _compute_head_rot_pair(pred_fit_path: Path, target_fit_path: Path,
     return out["dist"], float(out["track_rate"])
 
 
-def _resize_to_square(video, resolution):
-    return torch.nn.functional.interpolate(
-        video, size=(resolution, resolution),
-        mode="bilinear", align_corners=False,
-    )
-
-
 # ---------------------------------------------------------------------------
 # Same-identity per-sample loop
 # ---------------------------------------------------------------------------
@@ -318,37 +224,17 @@ def _eval_same_identity(
     groups:        set[str],
     existing_rows: dict[str, dict],
 ) -> dict[str, list]:
-    """Process every sample, computing only the requested `groups`. For
-    fields outside `groups`, values from `existing_rows[sample_id]` are
-    preserved when we rewrite `metrics.jsonl`. Returns per-metric value
-    lists for newly-computed groups (used for run-level aggregation).
-    """
-    needs_face_crop = bool({"pixel", "lmd"} & groups)
-
-    lpips_m  = lmd_obj = None
-    detect_fn = None
-    if "pixel" in groups:
-        from .src.lpips_metric import LPIPSMetric
-        lpips_m = LPIPSMetric(net="alex", device=cfg.device,
-                              chunk_size=cfg.lpips_chunk_size)
-    if "lmd" in groups:
-        from .src.lmd import LMD, landmark_distance_pair  # noqa: F401  (used below)
-        lmd_obj = LMD(normalize_by_iod=cfg.lmd_normalize)
+    """Same-identity: head_rot and expression both read FLAME fits — pred
+    fit vs the GT clip's fit (= ref clip's fit, since `ref_clip == driver_clip`
+    in this protocol). No video decode, no face crop."""
     expr_metric = None
     if "expression" in groups:
         from .src.expression import ExpressionDeformationDiff
         expr_metric = ExpressionDeformationDiff(
             image_size=cfg.resolution, device=cfg.device,
         )
-    if needs_face_crop and cfg.face_crop:
-        detect_fn = _build_face_detector(cfg.device)
 
     results: dict[str, list] = {}
-    if "pixel" in groups:
-        results.update({"psnr": [], "ssim": [], "lpips": []})
-    if "lmd" in groups:
-        results.update({"lmd_f": [], "lmd_m": [], "lmd_detect_rate": [],
-                        "_lmd_weights": []})
     if "head_rot" in groups:
         results.update({
             "head_rot_dist":       [],
@@ -361,95 +247,15 @@ def _eval_same_identity(
             "_expression_weights": [],
         })
 
-    samples = list(iter_samples(meta))
     out_rows: list[dict] = []
-    skipped_face_crop = 0
-
     desc = f"same-id ({','.join(sorted(groups))})"
-    for sample in tqdm(samples, desc=desc):
+
+    for sample in tqdm(list(iter_samples(meta)), desc=desc):
         existing = existing_rows.get(sample.sample_id, {})
         new_fields: dict = {"sample_id": sample.sample_id}
 
-        # Pixel + lmd need face-cropped video. head_rot + expression don't —
-        # they read FLAME fits directly. So a face-crop failure only gates
-        # pixel/lmd; we still run the FLAME-side metrics for this sample.
-        face_crop_ok = False
-        pred = ref = None; T = 0
-        if needs_face_crop:
-            pred = load_video(sample.pred_path,     cfg.fps, resolution=None,
-                              max_frames=cfg.n_frames)
-            ref  = load_video(sample.gt_video_path, cfg.fps, resolution=None,
-                              max_frames=pred.shape[0])
-
-            if cfg.face_crop:
-                pred_cropped = face_crop_around_detection(
-                    pred, detect_fn, margin=cfg.face_crop_margin,
-                    target_resolution=cfg.resolution,
-                )
-                ref_cropped = face_crop_around_detection(
-                    ref, detect_fn, margin=cfg.face_crop_margin,
-                    target_resolution=cfg.resolution,
-                )
-                if pred_cropped is None or ref_cropped is None:
-                    skipped_face_crop += 1
-                    new_fields["face_crop_failed"] = True
-                else:
-                    pred, ref = pred_cropped, ref_cropped
-                    face_crop_ok = True
-            else:
-                pred = _resize_to_square(pred, cfg.resolution)
-                ref  = _resize_to_square(ref,  cfg.resolution)
-                face_crop_ok = True
-
-            if face_crop_ok:
-                pred, ref = truncate_to_match(pred, ref)
-                T = pred.shape[0]
-                new_fields["n_frames"] = T
-
-        if face_crop_ok and "pixel" in groups:
-            pred_d = pred.unsqueeze(0).to(cfg.device)
-            ref_d  = ref .unsqueeze(0).to(cfg.device)
-            psnr  = float(psnr_video(pred_d, ref_d).item())
-            ssim  = float(ssim_video(pred_d, ref_d).item())
-            lpips = float(lpips_m   (pred_d, ref_d).item())
-            new_fields["psnr"]  = psnr
-            new_fields["ssim"]  = ssim
-            new_fields["lpips"] = lpips
-            results["psnr"] .append(psnr)
-            results["ssim"] .append(ssim)
-            results["lpips"].append(lpips)
-
-        if face_crop_ok and "lmd" in groups:
-            from .src.lmd import landmark_distance_pair
-            lmd_f_per, lmd_m_per = [], []
-            for t in range(T):
-                pl = lmd_obj.extract(_frame_to_uint8(pred[t]))
-                gl = lmd_obj.extract(_frame_to_uint8(ref [t]))
-                if pl is None or gl is None:
-                    continue
-                lf, lm = landmark_distance_pair(
-                    pl, gl, normalize_by_iod=cfg.lmd_normalize,
-                )
-                lmd_f_per.append(lf)
-                lmd_m_per.append(lm)
-            n_hits = len(lmd_f_per)
-            ldr    = (n_hits / T) if T > 0 else 0.0
-            if n_hits > 0:
-                lmd_f = float(np.mean(lmd_f_per))
-                lmd_m = float(np.mean(lmd_m_per))
-                results["lmd_f"]       .append(lmd_f)
-                results["lmd_m"]       .append(lmd_m)
-                results["_lmd_weights"].append(ldr)
-            else:
-                lmd_f = lmd_m = None
-            results["lmd_detect_rate"].append(ldr)
-            new_fields["lmd_f"]            = lmd_f
-            new_fields["lmd_m"]            = lmd_m
-            new_fields["lmd_detect_rate"]  = ldr
-
         if "head_rot" in groups:
-            # Same-id: target FLAME fit = GT clip's fit (= ref clip's fit).
-            target_fit = _gt_fit_root(meta.dataset) / sample.ref_clip["clip_id"] / "fit.npz"
+            target_fit = _gt_fit_root() / sample.ref_clip["clip_id"] / "fit.npz"
             pred_fit   = _pred_fit_path(meta.run_dir, meta.dataset, meta.protocol,
                                         sample.sample_id)
             dist, w = _compute_head_rot_pair(pred_fit, target_fit,
@@ -462,7 +268,7 @@ def _eval_same_identity(
             new_fields["head_rot_track_rate"] = w
 
         if "expression" in groups:
-            target_fit = _gt_fit_root(meta.dataset) / sample.ref_clip["clip_id"] / "fit.npz"
+            target_fit = _gt_fit_root() / sample.ref_clip["clip_id"] / "fit.npz"
             pred_fit   = _pred_fit_path(meta.run_dir, meta.dataset, meta.protocol,
                                         sample.sample_id)
             l1, w = _compute_expression_pair(
@@ -474,19 +280,11 @@ def _eval_same_identity(
                 results["_expression_weights"].append(w)
             new_fields["expression_l1"] = l1
 
-        # Merge: existing ∪ new (new overrides). If we successfully computed
-        # any group, drop a stale `skipped` flag.
         merged = {**existing, **new_fields}
         merged.pop("skipped", None)
         out_rows.append(merged)
 
-    if lmd_obj is not None:
-        lmd_obj.close()
-
     metrics_path.write_text("\n".join(json.dumps(r) for r in out_rows) + "\n")
-
-    if skipped_face_crop:
-        print(f"[metrics] {skipped_face_crop} samples skipped: clip-level face detection failed")
     return results
 
 
@@ -570,7 +368,7 @@ def _eval_cross_identity(
 
         # ---- Head rotation: pred fit vs driver fit (motion source). ----
         if "head_rot" in groups:
-            target_fit = _gt_fit_root(meta.dataset) / sample.driver_clip["clip_id"] / "fit.npz"
+            target_fit = _gt_fit_root() / sample.driver_clip["clip_id"] / "fit.npz"
             pred_fit   = _pred_fit_path(meta.run_dir, meta.dataset, meta.protocol,
                                         sample.sample_id)
             dist, w = _compute_head_rot_pair(pred_fit, target_fit,
@@ -584,7 +382,7 @@ def _eval_cross_identity(
 
         # ---- Expression: pred fit vs driver fit (motion source). ----
         if "expression" in groups:
-            target_fit = _gt_fit_root(meta.dataset) / sample.driver_clip["clip_id"] / "fit.npz"
+            target_fit = _gt_fit_root() / sample.driver_clip["clip_id"] / "fit.npz"
             pred_fit   = _pred_fit_path(meta.run_dir, meta.dataset, meta.protocol,
                                         sample.sample_id)
             l1, w = _compute_expression_pair(
@@ -616,133 +414,13 @@ def _eval_cross_identity(
 
 
 # ---------------------------------------------------------------------------
-# FVD staging (face-cropped on-disk mp4s)
-# ---------------------------------------------------------------------------
-
-
-def _save_video_mp4(video: torch.Tensor, path: Path, fps: int) -> None:
-    """Write `(T, 3, H, W)` float32 in `[0, 1]` to `path` as H.264 mp4."""
-    import imageio.v2 as iio_v2
-    arr = (video.permute(0, 2, 3, 1).cpu().numpy() * 255).clip(0, 255).astype(np.uint8)
-    writer = iio_v2.get_writer(str(path), fps=fps, codec="libx264",
-                               quality=8, macro_block_size=1)
-    try:
-        for frame in arr:
-            writer.append_data(frame)
-    finally:
-        writer.close()
-
-
-def _stage_fvd_dirs(meta: RunMetadata, fvd_root: Path, cfg: EvalConfig,
-                    detect_fn=None) -> tuple[Path, Path, int, int]:
-    """Stage `<fvd_root>/{pred,ref}/` for cdfvd's video-folder loader.
-
-    Every staged mp4 is truncated to `cfg.fvd_seq_len` (= 16) frames on
-    both pred and GT sides. This collapses cdfvd's random-clip-sampling
-    asymmetry — its `VideoDataset` would otherwise pick a random
-    16-frame chunk per video, and SOTA's 75–125-frame panels yield
-    mid-clip windows while Marionette's 16-frame panel is forced to
-    frames 0–15. Capping both sides to 16 frames means cdfvd has
-    exactly one possible chunk, and every baseline scores on the same
-    first-16-frame window.
-
-    With `cfg.face_crop` on, both sides are face-cropped via the same
-    routine used for per-sample metrics and re-encoded. With `cfg.face_crop`
-    off, raw mp4s are symlinked (cdfvd's `sequence_length=16` still
-    truncates at decode time).
-
-    Samples whose face detection fails on either side are skipped from
-    FVD staging entirely.
-    """
-    pred_dir = fvd_root / "pred"
-    ref_dir  = fvd_root / "ref"
-    pred_dir.mkdir(parents=True, exist_ok=True)
-    ref_dir.mkdir (parents=True, exist_ok=True)
-
-    n_staged, n_skipped = 0, 0
-
-    for sample in tqdm(list(iter_samples(meta)), desc="fvd staging"):
-        pred_dst = pred_dir / f"{sample.sample_id}.mp4"
-        ref_dst  = ref_dir  / f"{sample.sample_id}.mp4"
-
-        if cfg.face_crop and detect_fn is not None:
-            for p in (pred_dst, ref_dst):
-                if p.is_symlink() or p.exists():
-                    p.unlink()
-            pred_video = load_video(sample.pred_path, cfg.fps, resolution=None,
-                                    max_frames=cfg.fvd_seq_len)
-            ref_video  = load_video(Path(sample.ref_clip["video_path"]),
-                                    cfg.fps, resolution=None,
-                                    max_frames=cfg.fvd_seq_len)
-            pred_crop = face_crop_around_detection(
-                pred_video, detect_fn, margin=cfg.face_crop_margin,
-                target_resolution=cfg.resolution,
-            )
-            ref_crop = face_crop_around_detection(
-                ref_video, detect_fn, margin=cfg.face_crop_margin,
-                target_resolution=cfg.resolution,
-            )
-            if pred_crop is None or ref_crop is None:
-                n_skipped += 1
-                continue
-            _save_video_mp4(pred_crop, pred_dst, fps=cfg.fps)
-            _save_video_mp4(ref_crop,  ref_dst,  fps=cfg.fps)
-        else:
-            for dst, src in [(pred_dst, sample.pred_path),
-                             (ref_dst,  Path(sample.ref_clip["video_path"]))]:
-                if dst.is_symlink() or dst.exists():
-                    dst.unlink()
-                dst.symlink_to(src.resolve())
-
-        n_staged += 1
-
-    return pred_dir, ref_dir, n_staged, n_skipped
-
-
-def _compute_fvd(meta: RunMetadata, cfg: EvalConfig,
-                 staging_root: Path) -> dict[str, float | bool | int]:
-    """Run every backbone in `cfg.fvd_models` once. Stages a temp tree
-    under `<staging_root>/_fvd/` (face-cropped 16-frame mp4s for both
-    pred and GT when `cfg.face_crop` is on), then removes it after the
-    backbone forward passes finish."""
-    import shutil
-    from .src.fvd import FVD
-
-    detect_fn = _build_face_detector(cfg.device) if cfg.face_crop else None
-    fvd_root  = staging_root / "_fvd"
-    try:
-        pred_dir, ref_dir, n, n_skipped = _stage_fvd_dirs(
-            meta, fvd_root, cfg, detect_fn=detect_fn,
-        )
-        out: dict[str, float | bool | int] = {
-            "n_clips":    n,
-            "n_skipped":  n_skipped,
-            "low_sample": n < FVD_LOW_SAMPLE_THRESHOLD,
-            "face_crop":  cfg.face_crop,
-        }
-        for backbone in cfg.fvd_models:
-            fvd = FVD(
-                model           = backbone,
-                resolution      = cfg.fvd_resolution,
-                sequence_length = cfg.fvd_seq_len,
-                device          = cfg.device,
-            )
-            out[f"fvd_{backbone}"] = fvd.compute(pred_dir, ref_dir)
-    finally:
-        shutil.rmtree(fvd_root, ignore_errors=True)
-    return out
-
-
-# ---------------------------------------------------------------------------
 # Aggregation
 # ---------------------------------------------------------------------------
 
 
 def _aggregate(per_sample: dict[str, list]) -> dict[str, dict[str, float]]:
-    """Per-metric aggregation. Detection-gated metrics
-    (lmd_*, id_cosine, head_rot_dist, expression_l1) use a weighted mean with
-    each sample's detect rate as the weight; everything else is a plain
-    arithmetic mean."""
+    """Per-metric aggregation. All three headline metrics use a weighted
+    mean with each sample's detect / track rate as the weight."""
     aggregates: dict[str, dict[str, float]] = {}
     for name, vals in per_sample.items():
         if name.startswith("_"):
@@ -792,7 +470,7 @@ def evaluate(
       * `<output_dir>/metrics.jsonl`         — one row per sample (merged
                                                 with prior rows when not
                                                 fully recomputing)
-      * `<output_dir>/metrics_summary.json`  — aggregates + FVD
+      * `<output_dir>/metrics_summary.json`  — aggregates
 
     `output_dir` lets callers redirect every metric artifact away from
     the inference run dir. When None, artifacts go inside `meta.run_dir`.
@@ -846,18 +524,12 @@ def evaluate(
     aggregates.update(new_aggregates)
 
     summary: dict = {
-        "run_dir":      str(meta.run_dir),
-        "dataset":      meta.dataset,
-        "protocol":     meta.protocol,
-        "n_samples":    len(list(iter_samples(meta))),
-        "face_crop":    cfg.face_crop,
-        "metrics":      aggregates,
+        "run_dir":   str(meta.run_dir),
+        "dataset":   meta.dataset,
+        "protocol":  meta.protocol,
+        "n_samples": len(list(iter_samples(meta))),
+        "metrics":   aggregates,
     }
-
-    if "fvd" in groups:
-        summary["fvd"] = _compute_fvd(meta, cfg, staging_root=out_dir)
-    elif "fvd" in existing_summary and cfg.metrics_mode != "all":
-        summary["fvd"] = existing_summary["fvd"]
 
     summary_path.write_text(json.dumps(summary, indent=2))
     return summary

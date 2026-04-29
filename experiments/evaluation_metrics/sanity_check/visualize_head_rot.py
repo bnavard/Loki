@@ -22,7 +22,7 @@ Usage
 
     PYTHONPATH=. python experiments/evaluation_metrics/sanity_check/visualize_head_rot.py \
         --baseline marionette \
-        --dataset talkvid \
+        --dataset hdtf \
         --protocol cross_identity \
         --sample-id id_0042_id_0099
 
@@ -74,7 +74,7 @@ def parse_args():
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     p.add_argument("--baseline",  required=True)
-    p.add_argument("--dataset",   required=True, choices=["talkvid", "hdtf"])
+    p.add_argument("--dataset",   required=True, choices=["hdtf"])
     p.add_argument("--protocol",  required=True,
                    choices=["same_identity_reconstruction", "cross_identity"])
     p.add_argument("--sample-id", required=True)
@@ -229,7 +229,7 @@ def main():
 
     pred_fit_path = _pred_fit_path(run_dir, args.dataset, args.protocol,
                                    args.sample_id)
-    target_fit_path = _gt_fit_root(args.dataset) / target_clip_id / "fit.npz"
+    target_fit_path = _gt_fit_root() / target_clip_id / "fit.npz"
     if not pred_fit_path.is_file():
         raise SystemExit(f"pred FLAME fit missing: {pred_fit_path}")
     if not target_fit_path.is_file():

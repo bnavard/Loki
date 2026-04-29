@@ -5,7 +5,7 @@
 #
 #   outputs/test_metric/metrics/<bucket>/<dataset>/<protocol>/
 #       ├── metrics.jsonl            (one row per sample)
-#       └── metrics_summary.json     (aggregates + fvd)
+#       └── metrics_summary.json     (aggregates)
 #
 # `<bucket>` = `marionette` for `outputs/marionette_eval/` runs, the
 # baseline name for `outputs/sota_comparison/<baseline>/` runs. A single
@@ -15,30 +15,27 @@
 # Mode handling — by default (`METRICS=auto`), each invocation only
 # computes metric groups whose headline value isn't already in the
 # central summary, leaving everything else untouched. So this script
-# can be re-run safely after adding a new metric (e.g. head_rot):
-# already-evaluated dirs only get the new group on top of cached
-# per-sample numbers.
+# can be re-run safely after adding a new metric group: already-evaluated
+# dirs only get the new group on top of cached per-sample numbers.
 #
-#   METRICS=auto             (default) — top up missing groups
-#   METRICS=all                        — full overwrite
-#   METRICS=head_rot,fvd               — recompute only those groups
-#   FRESH=1                            — wipe summary + metrics.jsonl first,
-#                                        then `auto` will compute everything
+#   METRICS=auto                       (default) — top up missing groups
+#   METRICS=all                                  — full overwrite
+#   METRICS=head_rot                             — recompute only that group
+#   FRESH=1                                      — wipe summary + metrics.jsonl
+#                                                  first, then `auto` recomputes
 #
 # Frame coverage: every metric is computed on the **first 16 frames**
 # of each prediction, matching Marionette's `cfg.inference.n_frames=16`.
-# SOTA generations longer than 16 frames are silently truncated; cdfvd's
-# random-clip-sampling asymmetry is collapsed to "first 16" on both
-# pred and GT.
+# SOTA generations longer than 16 frames are silently truncated.
 #
-# Per-GPU memory: ~600 MB (LPIPS AlexNet + InsightFace buffalo_l +
-# MediaPipe + FLAME skinner + pytorch3d rasterizer for the FLAME-derived
-# metrics). Comfortable on H200 / A6000 / 4090.
+# Per-GPU memory: ~600 MB (InsightFace buffalo_l + FLAME skinner +
+# pytorch3d rasterizer for the FLAME-derived metrics). Comfortable on
+# H200 / A6000 / 4090.
 #
 # Usage (from repo root):
 #
 #   bash experiments/evaluation_metrics/run_eval_metrics.sh
-#   METRICS=head_rot   bash experiments/evaluation_metrics/run_eval_metrics.sh
+#   METRICS=head_rot         bash experiments/evaluation_metrics/run_eval_metrics.sh
 #   METRICS=all              bash experiments/evaluation_metrics/run_eval_metrics.sh
 #   FRESH=1                  bash experiments/evaluation_metrics/run_eval_metrics.sh
 #   NUM_GPUS=4               bash experiments/evaluation_metrics/run_eval_metrics.sh
@@ -137,8 +134,7 @@ worker() {
         mkdir -p "${out_dir}"
 
         if [[ "${FRESH}" == "1" ]]; then
-            rm -f  "${out_dir}/metrics_summary.json" "${out_dir}/metrics.jsonl"
-            rm -rf "${out_dir}/_fvd"
+            rm -f "${out_dir}/metrics_summary.json" "${out_dir}/metrics.jsonl"
         fi
 
         echo "[gpu ${gpu}] >>> ${b}/${dataset}/${protocol}  metrics=${METRICS}"
