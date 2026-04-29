@@ -3,17 +3,17 @@ r"""Render paper-ready Marionette-vs-SOTA comparison figures.
 Each figure has the layout:
 
                   ┌──────────────────────────────────────────────┐
-                  │ d_0 d_1 d_2 d_3 d_4 d_5 d_6 d_7   Driving Video
-                  │ m_0 m_1 m_2 m_3 m_4 m_5 m_6 m_7   Marionette
-  [Reference]     │ a_0 a_1 ...                       AniTalker
-                  │ e_0 e_1 ...                       EchoMimic
-                  │ h_0 h_1 ...                       HunyuanPortrait
-                  │ s_0 s_1 ...                       SadTalker
-                  │ x_0 x_1 ...                       X-Portrait
+                  │ d_0 d_3 d_7 d_15   Driving Video
+                  │ m_0 m_3 m_7 m_15   Marionette
+  [Reference]     │ a_0 a_3 a_7 a_15   AniTalker
+                  │ e_0 e_3 e_7 e_15   EchoMimic
+                  │ h_0 h_3 h_7 h_15   HunyuanPortrait
+                  │ s_0 s_3 s_7 s_15   SadTalker
+                  │ x_0 x_3 x_7 x_15   X-Portrait
                   └──────────────────────────────────────────────┘
 
   - The reference column spans every row.
-  - Each row shows 8 frames evenly spaced over its own time axis.
+  - Each row shows 4 frames at fixed indices (1st, 4th, 8th, 16th).
   - SadTalker (or any other baseline) appears even when the chosen sample
     isn't in its outputs; its cells are grey-filled placeholders so the
     figure stays structurally complete (paper-ready).
@@ -100,7 +100,9 @@ DISPLAY_NAMES = {
 ALL_DATASETS  = ["hdtf"]
 ALL_PROTOCOLS = ["same_identity_reconstruction", "cross_identity"]
 
-N_FRAMES_PER_ROW = 8
+# Explicit frame indices (0-based) sampled per row: 1st, 4th, 8th, 16th.
+SAMPLED_FRAME_INDICES = [0, 3, 7, 15]
+N_FRAMES_PER_ROW      = len(SAMPLED_FRAME_INDICES)
 
 SOTA_ROOT       = Path("outputs/sota_comparison")
 MARIONETTE_ROOT = Path("outputs/marionette_eval")
@@ -239,18 +241,12 @@ def _video_to_uint8_frames(video_tensor) -> np.ndarray:
     return (video_tensor.permute(0, 2, 3, 1).cpu().numpy() * 255).clip(0, 255).astype(np.uint8)
 
 
-def _stride_indices(T: int, n: int = N_FRAMES_PER_ROW) -> list[int]:
-    """Pick `n` frame indices with a constant stride starting at 0.
-
-    `stride = max(1, T // n)`. Picks `[0, stride, 2·stride, …]` clamped
-    to `T-1` for the very-short-clip case. This matches "every 2 frames
-    out of 16" for Marionette's default panel and generalizes if the
-    panel length changes (32 frames → stride 4, etc.).
-    """
+def _stride_indices(T: int) -> list[int]:
+    """Return the explicit `SAMPLED_FRAME_INDICES`, clamped to `T-1` for
+    short clips."""
     if T <= 0:
         return []
-    stride = max(1, T // n)
-    return [min(i * stride, T - 1) for i in range(n)]
+    return [min(i, T - 1) for i in SAMPLED_FRAME_INDICES]
 
 
 def _peek_marionette_panel_length(path: Path) -> int:
@@ -268,10 +264,10 @@ def _load_and_sample(
     """Load a clip, trim to `max_frames`, and return `n` stride-sampled
     uint8 frames as `(n, H, W, 3)`. Returns None if `path` is missing.
 
-    `max_frames` caps the time axis BEFORE the stride pick, so SOTA
-    panels (75–125 frames) get cut to Marionette's panel length first,
-    then 8 frames are taken at stride 2. Columns then align in
-    wall-clock content across rows.
+    `max_frames` caps the time axis BEFORE the index pick, so SOTA
+    panels (75–125 frames) get cut to Marionette's panel length (16)
+    first, then frames at the fixed `SAMPLED_FRAME_INDICES` are taken.
+    Columns then align in wall-clock content across rows.
 
     `crop=True` applies a center-square crop + resize for raw landscape
     clips (HDTF source); SOTA panels and `driver.mp4` already arrive
@@ -348,7 +344,7 @@ def render_figure(pick: FigurePick, out_path: Path) -> None:
         row_data.append((b, sota_grids.get(b)))
 
     # ------------- layout -------------
-    # Columns: [reference | gap | 8 frames | gap | label]
+    # Columns: [reference | gap | N frames | gap | label]
     width_ratios = [2.4, 0.25] + [1.0] * N_FRAMES_PER_ROW + [0.25, 0.85]
     fig_w = sum(width_ratios) * 0.85
     fig_h = n_rows * 1.0 * 0.85 * 1.02
