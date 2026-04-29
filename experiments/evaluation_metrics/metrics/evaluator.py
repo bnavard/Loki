@@ -54,7 +54,7 @@ window was usable.
 Run-level aggregation
 ---------------------
 Pixel metrics use a plain arithmetic mean across samples. Gated metrics
-(lmd_f, lmd_m, id_cosine, head_rot_dist, expression_l2) use a
+(lmd_f, lmd_m, id_cosine, head_rot_dist, expression_l1) use a
 **weighted** mean with each sample's detect / track rate as the weight,
 so a sample whose number was computed on 5/16 frames contributes
 proportionally less than one computed on 16/16.
@@ -105,7 +105,7 @@ GROUP_HEADLINE_METRIC: dict[str, str] = {
     "pixel":      "psnr",
     "lmd":        "lmd_f",
     "head_rot":   "head_rot_dist",
-    "expression": "expression_l2",
+    "expression": "expression_l1",
     "id":         "id_cosine",
 }
 
@@ -116,7 +116,7 @@ WEIGHTED_METRICS: dict[str, str] = {
     "lmd_m":          "_lmd_weights",
     "id_cosine":      "_id_weights",
     "head_rot_dist":  "_head_rot_weights",
-    "expression_l2":  "_expression_weights",
+    "expression_l1":  "_expression_weights",
 }
 
 
@@ -270,7 +270,7 @@ def _pred_fit_path(run_dir: Path, dataset: str, protocol: str,
 
 def _compute_expression_pair(pred_fit_path: Path, target_fit_path: Path,
                              expr_metric, n_frames: int):
-    """Returns (l2, weight). Weight = T_used / n_frames in [0, 1]; l2 is
+    """Returns (l1, weight). Weight = T_used / n_frames in [0, 1]; l1 is
     None and weight is 0 when either fit file is missing or empty."""
     if not pred_fit_path.is_file() or not target_fit_path.is_file():
         return None, 0.0
@@ -280,7 +280,7 @@ def _compute_expression_pair(pred_fit_path: Path, target_fit_path: Path,
         return None, 0.0
     out = expr_metric.compute_pair(pred_fit, target_fit, n_frames=n_frames)
     weight = out["n_frames"] / max(n_frames, 1)
-    return out["l2"], float(weight)
+    return out["l1"], float(weight)
 
 
 def _compute_head_rot_pair(pred_fit_path: Path, target_fit_path: Path,
@@ -357,7 +357,7 @@ def _eval_same_identity(
         })
     if "expression" in groups:
         results.update({
-            "expression_l2":       [],
+            "expression_l1":       [],
             "_expression_weights": [],
         })
 
@@ -465,14 +465,14 @@ def _eval_same_identity(
             target_fit = _gt_fit_root(meta.dataset) / sample.ref_clip["clip_id"] / "fit.npz"
             pred_fit   = _pred_fit_path(meta.run_dir, meta.dataset, meta.protocol,
                                         sample.sample_id)
-            l2, w = _compute_expression_pair(
+            l1, w = _compute_expression_pair(
                 pred_fit, target_fit, expr_metric,
                 n_frames=cfg.n_frames or 16,
             )
-            if l2 is not None:
-                results["expression_l2"]      .append(l2)
+            if l1 is not None:
+                results["expression_l1"]      .append(l1)
                 results["_expression_weights"].append(w)
-            new_fields["expression_l2"] = l2
+            new_fields["expression_l1"] = l1
 
         # Merge: existing ∪ new (new overrides). If we successfully computed
         # any group, drop a stale `skipped` flag.
@@ -526,7 +526,7 @@ def _eval_cross_identity(
         })
     if "expression" in groups:
         results.update({
-            "expression_l2":       [],
+            "expression_l1":       [],
             "_expression_weights": [],
         })
 
@@ -587,14 +587,14 @@ def _eval_cross_identity(
             target_fit = _gt_fit_root(meta.dataset) / sample.driver_clip["clip_id"] / "fit.npz"
             pred_fit   = _pred_fit_path(meta.run_dir, meta.dataset, meta.protocol,
                                         sample.sample_id)
-            l2, w = _compute_expression_pair(
+            l1, w = _compute_expression_pair(
                 pred_fit, target_fit, expr_metric,
                 n_frames=cfg.n_frames or 16,
             )
-            if l2 is not None:
-                results["expression_l2"]      .append(l2)
+            if l1 is not None:
+                results["expression_l1"]      .append(l1)
                 results["_expression_weights"].append(w)
-            new_fields["expression_l2"] = l2
+            new_fields["expression_l1"] = l1
 
         merged = {**existing, **new_fields}
         # Stale skip flag should drop only if we successfully computed
@@ -606,7 +606,7 @@ def _eval_cross_identity(
             or ("head_rot" in groups
                 and merged.get("head_rot_dist") is not None)
             or ("expression" in groups
-                and merged.get("expression_l2") is not None)
+                and merged.get("expression_l1") is not None)
         ):
             merged.pop("skipped", None)
         out_rows.append(merged)
@@ -740,7 +740,7 @@ def _compute_fvd(meta: RunMetadata, cfg: EvalConfig,
 
 def _aggregate(per_sample: dict[str, list]) -> dict[str, dict[str, float]]:
     """Per-metric aggregation. Detection-gated metrics
-    (lmd_*, id_cosine, head_rot_dist, expression_l2) use a weighted mean with
+    (lmd_*, id_cosine, head_rot_dist, expression_l1) use a weighted mean with
     each sample's detect rate as the weight; everything else is a plain
     arithmetic mean."""
     aggregates: dict[str, dict[str, float]] = {}

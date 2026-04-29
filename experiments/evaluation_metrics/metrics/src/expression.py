@@ -1,4 +1,4 @@
-"""Expression-error metric — pose-disentangled FLAME deformation-map L2.
+"""Expression-error metric — pose-disentangled FLAME deformation-map L1.
 
 Compares the rasterized expression-deformation map of a pred FLAME fit
 against a target fit (= GT fit for same-identity reconstruction; = driver
@@ -17,9 +17,11 @@ Pose error is measured separately by the head-rot metric (geodesic
 angular distance over FLAME `rot · neck_rot`), so we deliberately do
 not try to capture pose mismatch here.
 
-L2 reduction: per-pixel RMSE across the 3 deform channels, then mean
-over on-mesh pixels (mask-aware — background pixels would otherwise
-dilute the score).
+L1 reduction: per-pixel mean-absolute-deviation across the 3 deform
+channels, then mean over on-mesh pixels (mask-aware — background pixels
+would otherwise dilute the score). L1 is preferred over L2 here because
+its units are directly the average per-component deformation residual,
+which is more interpretable than an RMSE-across-channels.
 """
 from __future__ import annotations
 
@@ -105,11 +107,12 @@ class ExpressionDeformationDiff:
         return deform_map.cpu().numpy()[0], mask.cpu().numpy()[0]
 
     @staticmethod
-    def _masked_l2(pred_def: np.ndarray, tgt_def: np.ndarray,
+    def _masked_l1(pred_def: np.ndarray, tgt_def: np.ndarray,
                    mask_bool: np.ndarray) -> float:
-        """RMSE across the 3 deform channels per pixel, then mean over the
-        on-mesh pixels (mask=True). Returns 0.0 if the mask is empty."""
-        per_pixel = np.sqrt(((pred_def - tgt_def) ** 2).mean(axis=-1))
+        """Mean-absolute-deviation across the 3 deform channels per pixel,
+        then mean over the on-mesh pixels (mask=True). Returns 0.0 if the
+        mask is empty."""
+        per_pixel = np.abs(pred_def - tgt_def).mean(axis=-1)
         if not mask_bool.any():
             return 0.0
         return float(per_pixel[mask_bool].mean())
@@ -121,13 +124,13 @@ class ExpressionDeformationDiff:
         target_fit: dict,
         n_frames: int,
     ) -> dict:
-        """Compute the deformation-map L2 over the first `n_frames` of the
+        """Compute the deformation-map L1 over the first `n_frames` of the
         pred / target pair.
 
-        Returns ``{"l2": float, "n_frames": int}``.
+        Returns ``{"l1": float, "n_frames": int}``.
         """
         T = min(n_frames, pred_fit["expr"].shape[0], target_fit["expr"].shape[0])
-        l2s: list[float] = []
+        l1s: list[float] = []
 
         for t in range(T):
             item_target = _per_frame_fit(target_fit, t)
@@ -140,10 +143,10 @@ class ExpressionDeformationDiff:
             def_target, mask_target = self._rasterize(item_target, crop_target)
             def_swap,   _           = self._rasterize(item_swap,   crop_target)
 
-            l2s.append(self._masked_l2(def_swap, def_target,
+            l1s.append(self._masked_l1(def_swap, def_target,
                                        mask_target[..., 0] > 0))
 
         return {
-            "l2":       float(np.mean(l2s)) if l2s else 0.0,
+            "l1":       float(np.mean(l1s)) if l1s else 0.0,
             "n_frames": T,
         }
