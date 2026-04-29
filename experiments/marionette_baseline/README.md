@@ -2,17 +2,17 @@
 
 Full training run against the canonical recipe
 ([`marionette/configs/base.yaml`](../../marionette/configs/base.yaml)) — no
-overlays applied. Keep this experiment as the "point of truth" for what the
+overlays applied. This experiment is the "point of truth" for what the
 model does out of the box.
 
 ## Recipe in one line
 
 Same-identity self-supervised video diffusion: 45-channel FLAME spatial
-conditioning (`pos_enc + driver_deform`), wav2vec2 audio cross-attention, SD
-2.1 generation UNet with 3D spatiotemporal attention, and a frozen SD 2.1
-reference UNet whose per-layer self-attention features are injected as K/V
-tokens into the gen UNet. T=16 target frames per forward pass; the reference
-does not occupy a slot in the output.
+conditioning (`pos_enc + driver_deform`), SD 2.1 generation UNet with 3D
+spatiotemporal attention, and a frozen SD 2.1 reference UNet whose
+per-layer self-attention features are injected as K/V tokens into the gen
+UNet. T=16 target frames per forward pass; the reference does not occupy a
+slot in the output.
 
 ## Running
 
@@ -43,7 +43,7 @@ outputs/marionette_baseline/run_<timestamp>/
 └── visualizations/
     └── step_<step>/
         ├── sample_NN.png                          # 4-row grid (Reference | Ground Truth | <cond preview> | Generated)
-        └── sample_NN.mp4                          # same rows, with driver audio muxed in
+        └── sample_NN.mp4                          # same rows, silent mp4
 ```
 
 Row 3 of the panel ("`<cond preview>`") is named by the active cond_stage
@@ -92,9 +92,7 @@ Three independent periodic things fire during training:
       Baseline → `(42, 45)` ⇒ `"Driver Deform"`. Condition-ablation arms
       override per arm.
     - `Generated` — DDIM+CFG-sampled frames from `sample_video`.
-  - **MP4** — the same 4 rows stacked vertically, with the driver's audio
-    muxed in by ffmpeg if the model's audio encoder is active (silent mp4
-    otherwise).
+  - **MP4** — the same 4 rows stacked vertically, silent.
   - **TensorBoard image** — rank 0 only logs to `vis/sample_<abs_idx>` —
     TB event files aren't safe under multi-rank concurrent writes; PNG and
     mp4 on disk are the full set across ranks.
