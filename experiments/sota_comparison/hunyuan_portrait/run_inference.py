@@ -35,22 +35,6 @@ running these.
         --n_samples 200 \
         --clip_duration_s 3.0 \
         --seed 42
-
-    # TalkVid — same-identity reconstruction
-    PYTHONPATH=. python experiments/sota_comparison/hunyuan_portrait/run_inference.py \
-        --dataset talkvid \
-        --protocol same_identity_reconstruction \
-        --n_samples 125 \
-        --clip_duration_s 5.0 \
-        --seed 42
-
-    # TalkVid — cross-identity
-    PYTHONPATH=. python experiments/sota_comparison/hunyuan_portrait/run_inference.py \
-        --dataset talkvid \
-        --protocol cross_identity \
-        --n_samples 125 \
-        --clip_duration_s 5.0 \
-        --seed 42
 """
 from __future__ import annotations
 
@@ -81,14 +65,15 @@ def parse_args():
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     # Dataset / protocol
-    p.add_argument("--dataset",         default="talkvid", choices=["hdtf", "talkvid"])
+    p.add_argument("--dataset",         default="hdtf", choices=["hdtf"])
     p.add_argument("--protocol",        default="cross_identity",
                    choices=["same_identity_reconstruction", "cross_identity"])
-    p.add_argument("--n_samples",       type=int,   default=125)
-    p.add_argument("--clip_duration_s", type=float, default=5.0,
+    p.add_argument("--n_samples",       type=int,   default=212)
+    p.add_argument("--clip_duration_s", type=float, default=3.0,
                    help="Driver video is ffmpeg-trimmed to this many seconds. "
-                        "5.0 fits TalkVid (all val clips are exactly 5.0 s); "
-                        "HDTF's mirror is pre-chunked to ~3.24 s so pass 3.0.")
+                        "HDTF's mirror is pre-chunked to ~3.24 s so 3.0 keeps "
+                        "the full 81-frame window in scope of build_samples's "
+                        "length filter.")
     p.add_argument("--seed",            type=int,   default=42)
 
     # HunyuanPortrait knobs (→ HunyuanPortraitArgs; mirror upstream yaml)

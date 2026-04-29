@@ -109,15 +109,15 @@ the `marionette` env:
 ```bash
 conda activate marionette
 
-# TalkVid cross-identity (A's face + B's audio)
+# HDTF cross-identity (A's face + B's audio)
 PYTHONPATH=. python experiments/sota_comparison/anitalker/run_inference.py \
-    --dataset talkvid \
+    --dataset hdtf \
     --protocol cross_identity \
-    --n_samples 125 \
-    --clip_duration_s 5.0 \
+    --n_samples 200 \
+    --clip_duration_s 3.0 \
     --seed 42
 
-# HDTF needs --clip_duration_s 3.0 since the mirror's clips are ~3.24 s
+# Same-identity reconstruction
 PYTHONPATH=. python experiments/sota_comparison/anitalker/run_inference.py \
     --dataset hdtf \
     --protocol same_identity_reconstruction \
@@ -126,7 +126,7 @@ PYTHONPATH=. python experiments/sota_comparison/anitalker/run_inference.py \
     --seed 42
 ```
 
-All four `(dataset, protocol)` combos are in the runner's docstring.
+Both protocols are in the runner's docstring.
 
 ### Protocol notes
 
@@ -134,9 +134,10 @@ All four `(dataset, protocol)` combos are in the runner's docstring.
   adapter extracts `clip_duration_s` seconds of the driver's audio as
   mono 16 kHz WAV and hands it to AniTalker; the model synthesises lip +
   head motion from HuBERT features.
-- **Sidecar WAV preference.** TalkVid mp4s are silent → the adapter reads
-  `driver_clip.audio_path` (the sibling `.wav`). HDTF / VoxCeleb2 have
-  muxed audio → ffmpeg extracts it from the mp4. Same code path as SadTalker.
+- **Sidecar WAV preference.** When a dataset ships sidecar `.wav` files,
+  the adapter reads `driver_clip.audio_path`. HDTF and similar
+  muxed-audio datasets → ffmpeg extracts it from the mp4. Same code path
+  as SadTalker.
 - **Auto HuBERT feature extraction.** `demo.py` detects a missing
   `--test_hubert_path` and auto-extracts the `.npy` using
   `ckpts/chinese-hubert-large/` on the fly. Our adapter points
@@ -170,7 +171,7 @@ outputs/sota_comparison/anitalker/<dataset>/<protocol>/run_<timestamp>/
 - `cross_identity` → `id_0457_id_0009` (ref uid, driver uid)
 
 Identical naming to every other SOTA baseline → a single glob like
-`outputs/sota_comparison/*/talkvid/cross_identity/run_<ts>/samples/id_0457_id_0009/panel.mp4`
+`outputs/sota_comparison/*/hdtf/cross_identity/run_<ts>/samples/id_0457_id_0009/panel.mp4`
 gives every baseline's output for the same identity pair.
 
 ## 6. Knobs exposed on the CLI

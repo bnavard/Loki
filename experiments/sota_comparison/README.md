@@ -11,9 +11,10 @@ protocol)` triple.
   - `base.py`: `BenchmarkClip` dataclass (includes a curated-manifest `uid`
     field), `BenchmarkVideoDataset` ABC with a low-level probe cache
     (ffprobe once, JSON to `data/derived/<name>_manifest.json`).
-  - `hdtf.py`, `celebvhq.py`, `voxceleb2.py`, `talkvid.py` *(added as each
-    baseline needs them)*: walk dataset-specific on-disk layouts, emit
-    `(clip_id, identity_id, video_path)` triples.
+  - `hdtf.py`: walks the HDTF on-disk layout and emits
+    `(clip_id, identity_id, video_path)` triples. Add a sibling module
+    per future dataset; they all conform to the `BenchmarkVideoDataset`
+    ABC in `base.py`.
   - `benchmark_manifest.py`: builds a **curated manifest** — one clip per
     identity, capped at `--n_samples_cap`, tagged with stable `id_XXXX` UIDs.
     Produced once per dataset (`build_manifest.py`), written to
@@ -84,7 +85,7 @@ identity mismatch.
 | Baseline | Paper | Trained on | Paper eval | Input modality | Res / FPS | Wrapper | Commit pin |
 |---|---|---|---|---|---|---|---|
 | [SadTalker](sadtalker/README.md) | [CVPR 2023](https://arxiv.org/abs/2211.12194) | VoxCeleb | HDTF, first 8 s of 346 videos, same-identity | source image + driven audio | 512×512 / 25 fps | [sadtalker/](sadtalker/) | see `sadtalker/COMMIT_PIN.txt` after first clone |
-| [HunyuanPortrait](hunyuan_portrait/README.md) | [CVPR 2025](https://arxiv.org/abs/2503.18860) | multi-source portraits + SVD init | (various — see paper; we run on HDTF + TalkVid) | source image + driver video (motion-only; **no audio**) | 512×512 / driver's fps | [hunyuan_portrait/](hunyuan_portrait/) | see `hunyuan_portrait/COMMIT_PIN.txt` after first clone |
+| [HunyuanPortrait](hunyuan_portrait/README.md) | [CVPR 2025](https://arxiv.org/abs/2503.18860) | multi-source portraits + SVD init | (various — see paper; we run on HDTF) | source image + driver video (motion-only; **no audio**) | 512×512 / driver's fps | [hunyuan_portrait/](hunyuan_portrait/) | see `hunyuan_portrait/COMMIT_PIN.txt` after first clone |
 | [X-Portrait](xportrait/README.md) | [SIGGRAPH 2024](https://arxiv.org/abs/2403.15931) | (bytedance internal portrait data) | (cross-identity reenactment; paper uses a mix of HDTF + internal eval) | source image + driver video (motion-only; **no audio**) | 512×512 / driver's fps | [xportrait/](xportrait/) | see `xportrait/COMMIT_PIN.txt` after first clone |
 | [AniTalker](anitalker/README.md) | [ACM MM 2024](https://arxiv.org/abs/2405.03121) | VoxCeleb2 + HDTF (HuBERT audio-driven) | HDTF + custom eval, same-identity | source image + driven audio (WAV; HuBERT features) | 512×512 (via `--face_sr`) / 25 fps | [anitalker/](anitalker/) | see `anitalker/COMMIT_PIN.txt` after first clone |
 | [EchoMimic](echomimic/README.md) | [AAAI 2025](https://arxiv.org/abs/2407.08136) | (Ant Group internal portrait + audio data) | (custom eval; demo on a mix of Chinese / English / singing audio) | source image + driven audio (WAV; whisper-tiny features) | 512×512 / configurable fps (default 25) | [echomimic/](echomimic/) | see `echomimic/COMMIT_PIN.txt` after first clone |
@@ -99,9 +100,6 @@ dataset-mirror constraints (documented per baseline).
 | Dataset | Root | Clip layout | Identity grouping | Caveats |
 |---|---|---|---|---|
 | HDTF | `data/benchmark/hdtf/clips/` | Flat `<speaker>_<session>_<start>_<end>.mp4` | First N tokens before `_<session>_<start>_<end>` | Pre-chunked into ~3.24-s segments; paper's "first 8s" can't be replicated clip-by-clip. Use `clip_duration_s=3.0` or stitch adjacent chunks (follow-up). `RD_Radio*` clips are skipped — their naming is inconsistent. |
-| CelebV-HQ | `data/benchmark/celebvhq/` | Flat `<video_id>_<idx>.mp4` | Prefix before `_<idx>` | *Adapter pending — added when a baseline needs it.* |
-| VoxCeleb2 | `data/benchmark/voxceleb2/clips/<speaker>/<video>/<utt>.mp4` | Hierarchical | Top-level folder (`id00012`, …) | Audio partly in `.7z` archives under `audio/aac/` — unpack before use. *Adapter pending.* |
-| TalkVid (ours) | `data/talkvid/talkvid/*.mp4` + `data/talkvid/audio/*.wav`; clip list sourced from `data/derived/val_clips.json` (Marionette's val split) | Flat, our own preprocessing | Prefix before first `_NA_` (YouTube ID) | **Enumerates Marionette's val split**, NOT the full 10k-clip disk, so the SOTA manifest and `marionette_eval/` hit the same clip pool. **mp4s are silent** — audio lives as sibling `.wav` files under `data/talkvid/audio/`. `TalkVidDataset._audio_path_for` populates `BenchmarkClip.audio_path`; baseline adapters pull audio from that instead of the muxed video stream. Clips without an `_NA_` token (rare outliers) each become their own single-clip identity. |
 
 ## Building the benchmark manifest
 

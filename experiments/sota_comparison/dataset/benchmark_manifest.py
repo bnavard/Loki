@@ -5,7 +5,7 @@ per dataset, each entry tagged with a stable `id_XXXX` UID.
 Motivation
 ----------
 Raw dataset enumeration (via `BenchmarkVideoDataset.load`) gives every clip on
-disk — 15k+ for HDTF, 35k+ for CelebV-HQ. The actual paper comparison wants
+disk — 15k+ for HDTF. The actual paper comparison wants
 (a) one clip per identity so an identity is only evaluated once, and (b) a
 stable UID per identity so the same `id_0457` refers to the same physical
 person across every baseline's output tree on disk.
@@ -118,7 +118,7 @@ def build_benchmark_manifest(
         picked_clip = picked[ident]
         # BenchmarkClip is frozen — rebuild it with the uid field set while
         # forwarding every other field (audio_path included, for datasets
-        # like TalkVid where audio lives outside the mp4).
+        # where audio lives outside the mp4 container).
         clips_with_uid.append(BenchmarkClip(
             clip_id     = picked_clip.clip_id,
             identity_id = picked_clip.identity_id,

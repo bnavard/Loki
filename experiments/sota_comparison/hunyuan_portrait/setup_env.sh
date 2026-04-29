@@ -27,8 +27,8 @@
 #
 #   conda activate marionette
 #   PYTHONPATH=. python experiments/sota_comparison/hunyuan_portrait/run_inference.py \
-#       --dataset talkvid --protocol cross_identity --n_samples 125 \
-#       --clip_duration_s 5.0 --seed 42
+#       --dataset hdtf --protocol cross_identity --n_samples 200 \
+#       --clip_duration_s 3.0 --seed 42
 # =============================================================================
 
 set -euo pipefail
@@ -228,9 +228,9 @@ echo ""
 echo "Next steps (from repo root):"
 echo "  conda activate marionette"
 echo "  PYTHONPATH=. python experiments/sota_comparison/hunyuan_portrait/run_inference.py \\"
-echo "      --dataset talkvid \\"
+echo "      --dataset hdtf \\"
 echo "      --protocol cross_identity \\"
-echo "      --n_samples 125 \\"
-echo "      --clip_duration_s 5.0 \\"
+echo "      --n_samples 200 \\"
+echo "      --clip_duration_s 3.0 \\"
 echo "      --seed 42"
 echo "============================================================"

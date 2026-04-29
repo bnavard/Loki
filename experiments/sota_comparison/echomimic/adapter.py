@@ -8,10 +8,10 @@ Per sample:
      adapter — `(protocol, seed, sample_id)` reproduces the same frame
      across baselines.
   2. Get the driver's audio → `<scratch>/audio.wav`. Prefers
-     `driver_clip.audio_path` (TalkVid sidecar WAVs); falls back to
-     ffmpeg-extracting from the muxed video stream (HDTF, VoxCeleb2).
-     Output is mono 16 kHz — what EchoMimic's whisper-tiny audio encoder
-     expects (matching `--sample_rate 16000`).
+     `driver_clip.audio_path` when the dataset ships sidecar WAVs; falls
+     back to ffmpeg-extracting from the muxed video stream (HDTF). Output
+     is mono 16 kHz — what EchoMimic's whisper-tiny
+     audio encoder expects (matching `--sample_rate 16000`).
   3. Generate a per-sample patched config YAML at
      `<scratch>/animation.yaml` — copies upstream's
      `configs/prompts/animation.yaml` and replaces `test_cases` with a
@@ -59,7 +59,7 @@ class EchoMimicArgs:
     for ablation / sweep."""
     width:                  int   = 512        # -W
     height:                 int   = 512        # -H
-    fps:                    int   = 25         # --fps; matches TalkVid/HDTF
+    fps:                    int   = 25         # --fps; matches HDTF native
     cfg:                    float = 2.5        # --cfg
     steps:                  int   = 30         # --steps
     seed:                   int   = 420        # --seed (upstream demo default)
@@ -118,7 +118,7 @@ def _trim_driver_video(src: Path, out_mp4: Path, duration_s: float) -> None:
 def _extract_audio(src: Path, out_wav: Path, duration_s: float) -> None:
     """Extract first `duration_s` of `src` as mono-16 kHz WAV. ffmpeg
     accepts both video containers (HDTF muxed) and standalone .wav
-    (TalkVid sidecar)."""
+    sidecars."""
     out_wav.parent.mkdir(parents=True, exist_ok=True)
     cmd = [
         "ffmpeg", "-y", "-loglevel", "error",
@@ -256,8 +256,8 @@ def run_one(
     _extract_audio(audio_src, audio_wav, sample.clip_duration_s)
     # `driver.mp4` is a co-output for downstream eval — EchoMimic reads only
     # `audio.wav` (whisper-tiny features). Always sourced from the driver's
-    # *video* path so we get a proper mp4 even on TalkVid where audio lives
-    # separately as .wav.
+    # *video* path so we get a proper mp4 even when audio lives in a
+    # separate sidecar.
     _trim_driver_video(sample.driver_clip.video_path, driver_mp4, sample.clip_duration_s)
 
     _make_patched_config(

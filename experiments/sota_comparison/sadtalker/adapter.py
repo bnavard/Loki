@@ -99,10 +99,10 @@ def _trim_driver_video(src: Path, out_mp4: Path, duration_s: float) -> None:
 
 def _extract_audio(src: Path, out_wav: Path, duration_s: float) -> None:
     """Extract the first `duration_s` seconds of `src` as mono-16 kHz WAV.
-    `src` may be either a video with muxed audio (HDTF, VoxCeleb2, CelebV-HQ)
-    or a standalone wav (TalkVid's sidecar audio). Either way ffmpeg picks
-    the first audio stream and resamples/downmixes to 16 kHz mono — the
-    format SadTalker's wav2lip-based audio encoder expects."""
+    `src` may be either a video with muxed audio (HDTF and similar muxed-audio datasets)
+    or a standalone wav (datasets that ship sidecar audio). Either way
+    ffmpeg picks the first audio stream and resamples / downmixes to 16 kHz
+    mono — the format SadTalker's wav2lip-based audio encoder expects."""
     out_wav.parent.mkdir(parents=True, exist_ok=True)
     cmd = [
         "ffmpeg", "-y", "-loglevel", "error",
@@ -199,14 +199,14 @@ def run_one(
 
     _extract_frame(sample.ref_clip.video_path, ref_frame_idx, source_png)
     # Prefer the driver's sidecar audio_path when the dataset provides one
-    # (TalkVid: silent mp4s + sibling .wav files); fall back to the video
-    # itself when audio is muxed in (HDTF, VoxCeleb2, CelebV-HQ).
+    # (silent mp4s + sibling .wav files); fall back to the video itself
+    # when audio is muxed in (HDTF and similar muxed-audio datasets).
     audio_src = sample.driver_clip.audio_path or sample.driver_clip.video_path
     _extract_audio(audio_src, driven_wav, sample.clip_duration_s)
     # `driver.mp4` is a co-output for downstream eval — SadTalker reads only
     # `audio.wav`. Always sourced from the driver's *video* path (not
-    # `audio_path`) so the file is a proper mp4 even on TalkVid where audio
-    # lives separately as .wav.
+    # `audio_path`) so the file is a proper mp4 even when audio lives in a
+    # separate sidecar.
     _trim_driver_video(sample.driver_clip.video_path, driver_mp4, sample.clip_duration_s)
 
     raw_mp4 = _run_sadtalker_cli(

@@ -7,10 +7,10 @@ Per sample:
      `<scratch>/source.png`. Frame index comes from the caller's seeded
      RNG so every sample is reproducible under one top-level `--seed`.
   2. Get the driver's audio → `<scratch>/audio.wav`. If
-     `driver_clip.audio_path` is set (TalkVid's sidecar WAVs), we ffmpeg
-     it straight; otherwise we ffmpeg from the mp4's muxed audio stream
-     (HDTF, VoxCeleb2). Either way the output is mono 16 kHz WAV — the
-     format AniTalker's HuBERT feature extractor expects.
+     `driver_clip.audio_path` is set (datasets that ship sidecar WAVs), we
+     ffmpeg it straight; otherwise we ffmpeg from the mp4's muxed audio
+     stream (HDTF and similar muxed-audio datasets). Either way the output is mono 16 kHz WAV
+     — the format AniTalker's HuBERT feature extractor expects.
   3. Hand demo.py a placeholder `--test_hubert_path` pointing at a scratch
      `.npy` file that does NOT yet exist. AniTalker's demo.py detects the
      missing file and auto-extracts HuBERT features from the WAV on the
@@ -227,14 +227,14 @@ def run_one(
 
     _extract_frame(sample.ref_clip.video_path, ref_frame_idx, source_png)
 
-    # Prefer the driver's sidecar audio (TalkVid's silent mp4s + sibling
-    # .wav); fall back to the video's muxed audio (HDTF, VoxCeleb2).
+    # Prefer the driver's sidecar audio when the dataset provides one;
+    # fall back to the video's muxed audio (HDTF and similar muxed-audio datasets).
     audio_src = sample.driver_clip.audio_path or sample.driver_clip.video_path
     _extract_audio(audio_src, audio_wav, sample.clip_duration_s)
     # `driver.mp4` is a co-output for downstream eval — AniTalker reads only
     # `audio.wav` (HuBERT features). Always sourced from the driver's
-    # *video* path so we get a proper mp4 even on TalkVid where audio lives
-    # separately as .wav.
+    # *video* path so we get a proper mp4 even when audio lives in a
+    # separate sidecar.
     _trim_driver_video(sample.driver_clip.video_path, driver_mp4, sample.clip_duration_s)
 
     raw_mp4 = _run_anitalker_cli(

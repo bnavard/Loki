@@ -40,10 +40,8 @@ original source image). Reasons:
 
 Audio
 -----
-HunyuanPortrait is motion-driven only — the output mp4 is silent. For
-TalkVid's cross-identity protocol (where the "voice transfer" reading
-wants the driver's audio muxed in), the downstream metric runner can
-mux at analysis time. We don't mux here to keep the artefact identical
+HunyuanPortrait is motion-driven only — the output mp4 is silent. We
+don't mux any driver audio at write time so the artefact stays identical
 to what the model actually produced.
 """
 from __future__ import annotations
@@ -113,11 +111,10 @@ def _trim_video(src: Path, out_mp4: Path, duration_s: float) -> None:
         "ffmpeg", "-y", "-loglevel", "error",
         "-t", str(duration_s),
         "-i", str(src),
-        "-an",                           # drop audio — TalkVid mp4s are
-                                         # silent anyway, and HunyuanPortrait
-                                         # doesn't read audio. Keeping the
-                                         # stream would just confuse moviepy
-                                         # downstream.
+        "-an",                           # drop audio — HunyuanPortrait
+                                         # is motion-driven only; keeping
+                                         # the stream would just confuse
+                                         # moviepy downstream.
         "-c:v", "libx264",
         "-preset", "ultrafast",
         "-pix_fmt", "yuv420p",
