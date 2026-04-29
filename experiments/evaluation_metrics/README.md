@@ -40,10 +40,12 @@ sample); aggregates at `<output_dir>/metrics_summary.json`.
 
 ## Setup
 
-```bash
-bash experiments/evaluation_metrics/setup_env.sh
-conda activate evaluation_metrics
-```
+Runs in the `marionette` conda env — no separate environment to build.
+Head-rot and expression metrics share pytorch3d with model training;
+`id_cosine` uses `onnxruntime-gpu` (pinned in [`requirements.txt`](../../requirements.txt))
+against torch's bundled cuDNN 9. The launcher scripts source
+`_activate.sh` which prepends torch's cuDNN dir to `LD_LIBRARY_PATH` so
+onnxruntime-gpu's CUDAExecutionProvider can dlopen it.
 
 ## Usage
 
@@ -156,9 +158,7 @@ PYTHONPATH=. python experiments/evaluation_metrics/sanity_check/visualize_expres
 ```
 experiments/evaluation_metrics/
 ├── README.md
-├── setup_env.sh                          # creates `evaluation_metrics` conda env
-├── env.yml                               # python 3.11 + cuda + torch
-├── requirements.txt                      # pip-installable libs
+├── _activate.sh                          # sourced by launcher scripts; activates `marionette`
 ├── compute_metrics.py                    # CLI — auto-routes by protocol
 ├── run_eval_metrics.sh                   # unified multi-GPU sweep (Marionette + SOTA)
 ├── metrics/

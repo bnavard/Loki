@@ -1,16 +1,14 @@
-# Source-only helper: activate the `evaluation_metrics` conda env and
-# expose `PYTHON` pointing at the env's interpreter.
-#
-# Sourced by:
+# Source-only helper: activate the `marionette` conda env and expose
+# `PYTHON` pointing at the env's interpreter. Sourced by:
 #   - run_eval_metrics.sh
-#   - sanity_check/visualize_batch.sh
+#   - sanity_check/visualize_*.sh
 #
-# Both scripts run on different boxes where the env can live at any of
-# `/venv/`, `/opt/miniforge3/envs/`, `~/miniconda3/envs/`, etc., so we
-# can't bind-mount the python path. Instead we locate conda's profile
-# script (probing PATH first, then a few well-known prefixes), source
-# it, and `conda activate evaluation_metrics`. `PYTHON` is then just
-# `$(command -v python)`.
+# All evaluation metrics run inside the same env that trains and
+# generates the model — head-rot and expression need pytorch3d (already
+# in marionette), and id_cosine needs `onnxruntime-gpu` against torch's
+# bundled cuDNN 9. We prepend that cuDNN dir to `LD_LIBRARY_PATH` so
+# onnxruntime-gpu's CUDAExecutionProvider can dlopen
+# `libcudnn_*.so.9` at session-create time.
 
 # `find_conda_base`: print the conda installation root or return non-zero.
 find_conda_base() {
@@ -45,14 +43,17 @@ fi
 # shellcheck disable=SC1091
 source "${CONDA_BASE}/etc/profile.d/conda.sh"
 set +u
-conda activate evaluation_metrics
+conda activate marionette
 set -u
 
-# Now PATH points at the env. Resolve once so `PYTHON` is stable across
-# subshells (CUDA_VISIBLE_DEVICES propagation etc.).
 PYTHON="$(command -v python)"
 if [[ -z "${PYTHON}" ]]; then
-    echo "ERROR: \`python\` not on PATH after activating evaluation_metrics." >&2
-    echo "Did \`bash experiments/evaluation_metrics/setup_env.sh\` run?" >&2
+    echo "ERROR: \`python\` not on PATH after activating marionette." >&2
     exit 1
+fi
+
+# onnxruntime-gpu loads libcudnn_*.so.9 from torch's nvidia cudnn wheel.
+CUDNN_LIB="$("${PYTHON}" -c 'import os, nvidia.cudnn as c; print(os.path.join(os.path.dirname(c.__file__), "lib"))' 2>/dev/null || true)"
+if [[ -n "${CUDNN_LIB}" && -d "${CUDNN_LIB}" ]]; then
+    export LD_LIBRARY_PATH="${CUDNN_LIB}:${LD_LIBRARY_PATH:-}"
 fi
