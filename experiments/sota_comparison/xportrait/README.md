@@ -100,15 +100,15 @@ the `marionette` env:
 ```bash
 conda activate marionette
 
-# TalkVid cross-identity (A's face doing B's motion)
+# HDTF cross-identity (A's face doing B's motion)
 PYTHONPATH=. python experiments/sota_comparison/xportrait/run_inference.py \
-    --dataset talkvid \
+    --dataset hdtf \
     --protocol cross_identity \
-    --n_samples 125 \
-    --clip_duration_s 5.0 \
+    --n_samples 200 \
+    --clip_duration_s 3.0 \
     --seed 42
 
-# HDTF needs --clip_duration_s 3.0 since the mirror's clips are ~3.24 s
+# Same-identity reconstruction
 PYTHONPATH=. python experiments/sota_comparison/xportrait/run_inference.py \
     --dataset hdtf \
     --protocol same_identity_reconstruction \
@@ -117,7 +117,7 @@ PYTHONPATH=. python experiments/sota_comparison/xportrait/run_inference.py \
     --seed 42
 ```
 
-All four `(dataset, protocol)` combos are in the runner's docstring.
+Both protocols are in the runner's docstring.
 
 ### Protocol notes
 
@@ -137,11 +137,10 @@ All four `(dataset, protocol)` combos are in the runner's docstring.
   and X-Portrait.
 - **Driver trimming.** We ffmpeg-trim the driver to `clip_duration_s` then
   pass `--out_frames -1` so X-Portrait processes every trimmed frame.
-  25 fps × 5 s = 125 output frames.
+  25 fps × 3 s = 75 output frames on HDTF.
 - **`clip_duration_s` vs dataset pool length.** Same rule as the other
   runners: the pairing module filters out clips shorter than
-  `clip_duration_s`. TalkVid (5.0 s val clips) accepts 5.0. HDTF (~3.24 s
-  chunks) needs 3.0.
+  `clip_duration_s`. HDTF's mirror is pre-chunked to ~3.24 s — pass 3.0.
 
 ## 5. Output layout
 
@@ -162,7 +161,7 @@ outputs/sota_comparison/xportrait/<dataset>/<protocol>/run_<timestamp>/
 - `cross_identity` → `id_0457_id_0009` (ref uid, driver uid)
 
 Identical naming to SadTalker / HunyuanPortrait → a single
-`outputs/sota_comparison/*/talkvid/cross_identity/run_<ts>/samples/id_0457_id_0009/panel.mp4`
+`outputs/sota_comparison/*/hdtf/cross_identity/run_<ts>/samples/id_0457_id_0009/panel.mp4`
 glob gives you every baseline's output for the same identity pair.
 
 ## 6. Knobs exposed on the CLI

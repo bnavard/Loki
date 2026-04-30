@@ -2,12 +2,6 @@
 (`from marionette.utils import ...`) rather than reaching into the
 submodules directly — the internal layout can change, the public names
 should not."""
-from marionette.utils.audio import (
-    SAMPLE_RATE,
-    load_audio_mono,
-    frame_window,
-    load_clip_audio_windows,
-)
 from marionette.utils.video_io import FrameReader, load_frame
 from marionette.utils.image_ops import crop_image, rescale_image
 from marionette.utils.verts import (
@@ -21,14 +15,12 @@ from marionette.utils.viz import (
     slice_cond_rgb,
     add_label,
     save_labeled_grid,
-    save_video_with_audio,
+    save_video,
     make_grid_tensor,
 )
 from marionette.utils.log_tee import install_log_tee
 
 __all__ = [
-    # audio
-    "SAMPLE_RATE", "load_audio_mono", "frame_window", "load_clip_audio_windows",
     # video I/O
     "FrameReader", "load_frame",
     # image ops
@@ -37,7 +29,7 @@ __all__ = [
     "CROP_MARGIN", "verts_to_pytorch3d", "get_square_bbox", "get_bbox_from_verts",
     # viz
     "VisualizationCallback", "slice_cond_rgb", "add_label",
-    "save_labeled_grid", "save_video_with_audio", "make_grid_tensor",
+    "save_labeled_grid", "save_video", "make_grid_tensor",
     # log tee
     "install_log_tee",
 ]

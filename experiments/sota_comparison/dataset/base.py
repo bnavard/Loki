@@ -47,11 +47,10 @@ class BenchmarkClip:
     requires it to be non-None (raises otherwise).
 
     `audio_path` carries the source of audio for clips where it lives OUTSIDE
-    the video container (e.g. TalkVid, whose mp4s are silent and whose audio
-    sits as sibling `.wav` files under `data/talkvid/audio/<clip_id>.wav`).
+    the video container (sibling `.wav` files under a separate audio root).
     Baseline adapters that need audio (SadTalker, any audio-driven model)
     should prefer `audio_path` when set and fall back to `video_path` when
-    it is None (HDTF, VoxCeleb2, CelebV-HQ — audio muxed into the mp4).
+    it is None (HDTF and similar muxed-audio datasets).
     """
     clip_id:     str
     identity_id: str
@@ -70,10 +69,10 @@ class BenchmarkClip:
     def to_json_dict(self) -> dict:
         d = asdict(self)
         d["video_path"] = str(self.video_path)
-        # Only emit audio_path when set — keeps HDTF/VoxCeleb/CelebV-HQ
-        # manifests (audio muxed in mp4) free of noisy `"audio_path": null`
-        # lines, so the committed JSON diff stays minimal across dataset
-        # adapters that don't use the field.
+        # Only emit audio_path when set — keeps muxed-audio manifests
+        # (HDTF and similar) free of noisy `"audio_path": null` lines, so
+        # the committed JSON diff stays minimal across dataset adapters
+        # that don't use the field.
         if self.audio_path is None:
             d.pop("audio_path", None)
         else:
@@ -159,9 +158,9 @@ class BenchmarkVideoDataset(ABC):
 
     def _audio_path_for(self, clip_id: str, video_path: Path) -> Optional[Path]:
         """Return an external audio path for this clip, or None if audio is
-        muxed into the mp4. Default: None (HDTF / VoxCeleb2 / CelebV-HQ all
-        mux). Override in subclasses like TalkVid whose audio lives as
-        sibling `.wav` files."""
+        muxed into the mp4. Default: None (HDTF muxes audio in the mp4,
+        and so do most large talking-head datasets). Override in subclasses
+        whose audio lives as sibling `.wav` files alongside the video."""
         return None
 
     # ------------------------------------------------------------------

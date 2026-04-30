@@ -34,15 +34,13 @@ from experiments.sota_comparison.dataset.benchmark_manifest import (
     manifest_path,
     save_manifest,
 )
-from experiments.sota_comparison.dataset.hdtf    import HDTFDataset
-from experiments.sota_comparison.dataset.talkvid import TalkVidDataset
+from experiments.sota_comparison.dataset.hdtf import HDTFDataset
 
 
-# Registry of dataset-name → zero-arg constructor. Add entries here when new
-# dataset adapters land (celebvhq, voxceleb2).
+# Registry of dataset-name → zero-arg constructor. Add entries here when
+# new dataset adapters land.
 _DATASETS = {
-    "hdtf":    HDTFDataset,
-    "talkvid": TalkVidDataset,
+    "hdtf": HDTFDataset,
 }
 
 

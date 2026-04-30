@@ -4,7 +4,6 @@ Latent video diffusion model for talking-head generation.
 Wraps the SD 2.1 UNet in a training loop with:
   - Image → VAE latent encoding (frozen VAE).
   - FLAME spatial conditioning via SpatialConditioning (45ch: pos_enc + deform).
-  - Audio encoding via wav2vec2 (cross-attention context, optional).
   - ReferenceNet-style identity injection: a frozen SD 2.1 UNet processes the
     VAE-encoded reference frame once per sample; per-layer self-attention
     inputs are cached and concatenated to the gen UNet's self-attention K/V
@@ -20,8 +19,6 @@ Batch contract:
                                        reference frame from the clip; slots
                                        1..T are the contiguous generation
                                        target window.
-  "audio"        : (B, T, W_audio)     raw 16 kHz per-frame windows for the
-                                       T gen slots (no audio for the ref).
   "hint"         : dict                FLAME conditioning for the T gen slots
                                        (driver_verts, driver_deform).
 """
@@ -33,7 +30,7 @@ from functools import partial
 from einops import rearrange
 
 from ldm_base.ldm.models.diffusion.ddpm import LatentDiffusion
-from ldm_base.ldm.util import exists, default, instantiate_from_config
+from ldm_base.ldm.util import exists, default
 from ldm_base.ldm.modules.diffusionmodules.util import make_beta_schedule
 
 from marionette.model.utils import shift_schedule, enforce_zero_terminal_snr
@@ -48,8 +45,6 @@ class MarionetteDiffusion(LatentDiffusion):
         control_key: str,
         only_mid_control: bool,
         n_frames: int,
-        audio_key: str = "audio",
-        audio_encoder_config: dict = None,
         ref_unet_config: dict = None,
         *args,
         cfg_probability: float = 0.1,
@@ -69,25 +64,8 @@ class MarionetteDiffusion(LatentDiffusion):
         self.cfg_probability  = cfg_probability
         self.negative_shift   = negative_shift
         self.zero_snr_shift   = zero_snr_shift
-        self.audio_key        = audio_key
 
         super().__init__(*args, **kwargs)
-
-        self.audio_encoder = None
-        if audio_encoder_config is not None:
-            self.audio_encoder = instantiate_from_config(audio_encoder_config)
-
-        unet_wants_audio = getattr(self.model.diffusion_model, "use_context", True)
-        if unet_wants_audio and self.audio_encoder is None:
-            raise ValueError(
-                "MarionetteDiffusion: UNet has use_audio_context=True but no "
-                "audio_encoder was configured."
-            )
-        if not unet_wants_audio and self.audio_encoder is not None:
-            raise ValueError(
-                "MarionetteDiffusion: UNet has use_audio_context=False but an "
-                "audio_encoder was configured."
-            )
 
         if ref_unet_config is None:
             raise ValueError(
@@ -121,18 +99,10 @@ class MarionetteDiffusion(LatentDiffusion):
             ref_z = z[:, 0]        # (B, 4, h, w)   — feeds ref UNet
             gen_z = z[:, 1:]       # (B, T, 4, h, w) — denoising target
 
-            audio_context = None
-            if self.audio_encoder is not None and self.audio_key in batch:
-                audio = batch[self.audio_key]
-                if bs is not None:
-                    audio = audio[:bs]
-                audio_context = self.audio_encoder(audio)
-
             loss_mask = batch.get("mask", None)
 
         c_cond = self.cond_stage_model(batch[self.control_key])
-        c_cond["audio_context"] = audio_context
-        c_cond["ref_z"]         = ref_z
+        c_cond["ref_z"] = ref_z
 
         # Null token: zero every tensor in c_cond. CFG dropout replaces a
         # sample's conditioning with this null with probability cfg_probability.
@@ -310,8 +280,6 @@ class MarionetteDiffusion(LatentDiffusion):
     def configure_optimizers(self):
         lr = self.learning_rate
         params = list(self.model.diffusion_model.parameters())
-        if self.audio_encoder is not None:
-            params += [p for p in self.audio_encoder.parameters() if p.requires_grad]
         if self.cond_stage_trainable:
             params += [p for p in self.cond_stage_model.parameters() if p.requires_grad]
         # ref_extractor is frozen — all its params have requires_grad=False,

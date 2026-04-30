@@ -122,15 +122,15 @@ the `marionette` env:
 ```bash
 conda activate marionette
 
-# TalkVid cross-identity (A's face + B's audio)
+# HDTF cross-identity (A's face + B's audio)
 PYTHONPATH=. python experiments/sota_comparison/echomimic/run_inference.py \
-    --dataset talkvid \
+    --dataset hdtf \
     --protocol cross_identity \
-    --n_samples 125 \
-    --clip_duration_s 5.0 \
+    --n_samples 200 \
+    --clip_duration_s 3.0 \
     --seed 42
 
-# HDTF needs --clip_duration_s 3.0 since the mirror's clips are ~3.24 s
+# Same-identity reconstruction
 PYTHONPATH=. python experiments/sota_comparison/echomimic/run_inference.py \
     --dataset hdtf \
     --protocol same_identity_reconstruction \
@@ -139,25 +139,26 @@ PYTHONPATH=. python experiments/sota_comparison/echomimic/run_inference.py \
     --seed 42
 ```
 
-All four `(dataset, protocol)` combos are in the runner's docstring.
+Both protocols are in the runner's docstring.
 
 ### Protocol notes
 
 - **Audio-driven, landmark-conditioned.** Same input shape as SadTalker /
   AniTalker (image + WAV). Output mp4 has the driver's audio muxed in via
   upstream's `_withaudio.mp4` post-step.
-- **Sidecar WAV preference.** TalkVid mp4s are silent → adapter reads
-  `driver_clip.audio_path` (the sibling `.wav`). HDTF / VoxCeleb2 →
-  ffmpeg extracts from the muxed video stream. Same code path as SadTalker.
+- **Sidecar WAV preference.** When a dataset ships sidecar `.wav` files,
+  the adapter reads `driver_clip.audio_path`. HDTF and similar
+  muxed-audio datasets → ffmpeg extracts from the muxed video stream.
+  Same code path as SadTalker.
 - **Patched per-sample config.** Upstream's `infer_audio2vid.py` is
   YAML-driven (a `test_cases` mapping in `configs/prompts/animation.yaml`).
   Our adapter writes a per-sample patched config to scratch with
   `test_cases = {<source.png>: [<audio.wav>]}` (absolute paths) and points
   `--config` at it; everything else (weight paths, `inference_config`)
   stays relative and resolves against the subprocess cwd = `impl_dir`.
-- **Frame count via `-L`.** `-L = round(clip_duration_s × fps)`. At default
-  25 fps × 5 s = 125 frames. Upstream's demo default `-L 1200` is way too
-  long for our use; we override per-sample.
+- **Frame count via `-L`.** `-L = round(clip_duration_s × fps)`. At
+  25 fps × 3 s ≈ 75 frames on HDTF. Upstream's demo default `-L 1200` is
+  way too long for our use; we override per-sample.
 - **Random reference frame.** Same seeded RNG schedule as every other
   runner. `(protocol, seed, sample_id)` selects the same ref frame across
   every audio-driven baseline (SadTalker, AniTalker, EchoMimic).
@@ -181,7 +182,7 @@ outputs/sota_comparison/echomimic/<dataset>/<protocol>/run_<timestamp>/
 - `cross_identity` → `id_0457_id_0009` (ref uid, driver uid)
 
 Aligned with every other SOTA baseline + Marionette → a single glob like
-`outputs/sota_comparison/*/talkvid/cross_identity/run_<ts>/samples/id_0457_id_0009/panel.mp4`
+`outputs/sota_comparison/*/hdtf/cross_identity/run_<ts>/samples/id_0457_id_0009/panel.mp4`
 gives every model's output for the same identity pair.
 
 ## 6. Knobs exposed on the CLI
@@ -189,7 +190,7 @@ gives every model's output for the same identity pair.
 | Flag | Default | Notes |
 |---|---|---|
 | `--width / --height` | 512 / 512 | Output spatial size. Defaults match every other baseline. |
-| `--fps` | 25 | Output mp4 fps; matches TalkVid + HDTF native. |
+| `--fps` | 25 | Output mp4 fps; matches HDTF native. |
 | `--cfg` | 2.5 | Classifier-free guidance scale. |
 | `--steps` | 30 | Diffusion denoising steps. |
 | `--echomimic_seed` | 420 | EchoMimic's internal seed (independent of `--seed` which drives the runner's pair-list / ref-frame). |

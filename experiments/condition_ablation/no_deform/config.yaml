@@ -7,17 +7,8 @@
 # the model via the frozen reference UNet (K/V feature injection into every
 # self-attention block), so the conditioning tensor doesn't need to carry
 # identity.
-#
-# Audio cross-attention is DISABLED across every condition_ablation arm so
-# the conditioning-pathway comparisons are not confounded by the audio
-# variable. The reference point for comparing this arm is the `audio_off`
-# arm (full FLAME, audio off), not `marionette_baseline` (full FLAME, audio
-# on).
 
 base: marionette/configs/base.yaml
-
-overlays:
-  - marionette/configs/overlays/audio/off.yaml
 
 output_dir: outputs/condition_ablation/no_deform
 

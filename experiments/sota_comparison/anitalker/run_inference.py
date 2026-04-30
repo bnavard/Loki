@@ -32,22 +32,6 @@ dataset once via `dataset/build_manifest.py` before running these.
         --n_samples 200 \
         --clip_duration_s 3.0 \
         --seed 42
-
-    # TalkVid — same-identity reconstruction
-    PYTHONPATH=. python experiments/sota_comparison/anitalker/run_inference.py \
-        --dataset talkvid \
-        --protocol same_identity_reconstruction \
-        --n_samples 125 \
-        --clip_duration_s 5.0 \
-        --seed 42
-
-    # TalkVid — cross-identity
-    PYTHONPATH=. python experiments/sota_comparison/anitalker/run_inference.py \
-        --dataset talkvid \
-        --protocol cross_identity \
-        --n_samples 125 \
-        --clip_duration_s 5.0 \
-        --seed 42
 """
 from __future__ import annotations
 
@@ -78,13 +62,13 @@ def parse_args():
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     # Dataset / protocol
-    p.add_argument("--dataset",         default="talkvid", choices=["hdtf", "talkvid"])
+    p.add_argument("--dataset",         default="hdtf", choices=["hdtf"])
     p.add_argument("--protocol",        default="cross_identity",
                    choices=["same_identity_reconstruction", "cross_identity"])
-    p.add_argument("--n_samples",       type=int,   default=125)
-    p.add_argument("--clip_duration_s", type=float, default=5.0,
+    p.add_argument("--n_samples",       type=int,   default=212)
+    p.add_argument("--clip_duration_s", type=float, default=3.0,
                    help="Driver audio is ffmpeg-trimmed to this many seconds. "
-                        "5.0 fits TalkVid; HDTF's mirror is ~3.24 s → pass 3.0.")
+                        "HDTF's mirror is pre-chunked to ~3.24 s.")
     p.add_argument("--seed",            type=int,   default=42)
 
     # AniTalker knobs (→ AniTalkerArgs; defaults match upstream's demo)

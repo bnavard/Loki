@@ -75,12 +75,34 @@ def _extract_frame(video_path: Path, frame_idx: int, out_png: Path) -> None:
         cap.release()
 
 
+def _trim_driver_video(src: Path, out_mp4: Path, duration_s: float) -> None:
+    """Save the first `duration_s` of the driver clip as `driver.mp4`. SadTalker
+    itself doesn't read this — the model is audio-only. We write it so the
+    scratch dir matches the on-disk shape of the visual baselines (hunyuan,
+    xportrait), which lets evaluation tooling glob `*/scratch/<id>/driver.mp4`
+    uniformly across every SOTA wrapper. Re-encoding (not `-c copy`) so the
+    duration lands exactly where the audio.wav cut did, even when the source
+    GOP boundaries don't align."""
+    out_mp4.parent.mkdir(parents=True, exist_ok=True)
+    subprocess.run(
+        ["ffmpeg", "-y", "-loglevel", "error",
+         "-t", str(duration_s),
+         "-i", str(src),
+         "-an",
+         "-c:v", "libx264",
+         "-preset", "ultrafast",
+         "-pix_fmt", "yuv420p",
+         str(out_mp4)],
+        check=True,
+    )
+
+
 def _extract_audio(src: Path, out_wav: Path, duration_s: float) -> None:
     """Extract the first `duration_s` seconds of `src` as mono-16 kHz WAV.
-    `src` may be either a video with muxed audio (HDTF, VoxCeleb2, CelebV-HQ)
-    or a standalone wav (TalkVid's sidecar audio). Either way ffmpeg picks
-    the first audio stream and resamples/downmixes to 16 kHz mono — the
-    format SadTalker's wav2lip-based audio encoder expects."""
+    `src` may be either a video with muxed audio (HDTF and similar muxed-audio datasets)
+    or a standalone wav (datasets that ship sidecar audio). Either way
+    ffmpeg picks the first audio stream and resamples / downmixes to 16 kHz
+    mono — the format SadTalker's wav2lip-based audio encoder expects."""
     out_wav.parent.mkdir(parents=True, exist_ok=True)
     cmd = [
         "ffmpeg", "-y", "-loglevel", "error",
@@ -159,6 +181,7 @@ def run_one(
     Layout:
         scratch/<sample_id>/source.png             # ref_clip, frame ref_frame_idx
         scratch/<sample_id>/audio.wav              # driver_clip, first clip_duration_s
+        scratch/<sample_id>/driver.mp4             # driver_clip video, same trim
         scratch/<sample_id>/result/*.mp4           # SadTalker's raw output
         output_dir/samples/<sample_id>/panel.mp4   # canonical location
     """
@@ -171,14 +194,20 @@ def run_one(
     work       = scratch / sample.sample_id
     source_png = work / "source.png"
     driven_wav = work / "audio.wav"
+    driver_mp4 = work / "driver.mp4"
     result_dir = work / "result"
 
     _extract_frame(sample.ref_clip.video_path, ref_frame_idx, source_png)
     # Prefer the driver's sidecar audio_path when the dataset provides one
-    # (TalkVid: silent mp4s + sibling .wav files); fall back to the video
-    # itself when audio is muxed in (HDTF, VoxCeleb2, CelebV-HQ).
+    # (silent mp4s + sibling .wav files); fall back to the video itself
+    # when audio is muxed in (HDTF and similar muxed-audio datasets).
     audio_src = sample.driver_clip.audio_path or sample.driver_clip.video_path
     _extract_audio(audio_src, driven_wav, sample.clip_duration_s)
+    # `driver.mp4` is a co-output for downstream eval — SadTalker reads only
+    # `audio.wav`. Always sourced from the driver's *video* path (not
+    # `audio_path`) so the file is a proper mp4 even when audio lives in a
+    # separate sidecar.
+    _trim_driver_video(sample.driver_clip.video_path, driver_mp4, sample.clip_duration_s)
 
     raw_mp4 = _run_sadtalker_cli(
         impl_dir=impl_dir,

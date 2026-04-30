@@ -11,21 +11,13 @@
 
 base: marionette/configs/base.yaml
 
-# Default output root. The runner appends `<protocol>/run_<ts>/` so all
-# SOTA wrappers and this one share the
+# Default output root. The runner appends `<dataset>/<protocol>/run_<ts>/`
+# so all SOTA wrappers and this one share the
 # `outputs/<experiment>/.../<protocol>/run_<ts>/` pattern.
 output_dir: outputs/marionette_eval
-checkpoint: outputs/marionette_baseline/run_20260421_035445/checkpoints/th-step=030000.ckpt
+checkpoint: outputs/marionette_baseline/run_<timestamp>/checkpoints/<ckpt>.ckpt
 
 seed: 42
-
-# Per-dataset FLAME tracking root. The runner picks the entry matching
-# `--dataset`. Keeps TalkVid's tracking under `data/flame_tracking/` and
-# HDTF's under its own `data/benchmark/hdtf/flame_tracking/` so the two
-# pools don't bleed into each other.
-flame_roots:
-  talkvid: data/flame_tracking/flowface
-  hdtf:    data/benchmark/hdtf/flame_tracking/flowface
 
 inference:
   n_frames:     16     # must match UNet `time_steps` set at training time

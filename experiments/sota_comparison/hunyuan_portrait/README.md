@@ -126,15 +126,15 @@ Launch from the `marionette` env:
 ```bash
 conda activate marionette
 
-# TalkVid cross-identity (A's face doing B's motion)
+# HDTF cross-identity (A's face doing B's motion)
 PYTHONPATH=. python experiments/sota_comparison/hunyuan_portrait/run_inference.py \
-    --dataset talkvid \
+    --dataset hdtf \
     --protocol cross_identity \
-    --n_samples 125 \
-    --clip_duration_s 5.0 \
+    --n_samples 200 \
+    --clip_duration_s 3.0 \
     --seed 42
 
-# HDTF needs --clip_duration_s 3.0 since the mirror's clips are ~3.24 s
+# Same-identity reconstruction
 PYTHONPATH=. python experiments/sota_comparison/hunyuan_portrait/run_inference.py \
     --dataset hdtf \
     --protocol same_identity_reconstruction \
@@ -143,7 +143,7 @@ PYTHONPATH=. python experiments/sota_comparison/hunyuan_portrait/run_inference.p
     --seed 42
 ```
 
-All four `(dataset, protocol)` combos are in the runner's docstring.
+Both protocols are in the runner's docstring.
 
 ### Protocol notes
 
@@ -162,9 +162,8 @@ All four `(dataset, protocol)` combos are in the runner's docstring.
   the trimmed video is processed. At 25 fps × 5 s that's 125 frames
   generated.
 - **`clip_duration_s` vs dataset pool length.** The pairing module filters
-  out clips shorter than `clip_duration_s`. TalkVid's val manifest is 125
-  clips of exactly 5.0 s — passing `5.0` keeps all 125. HDTF's mirror is
-  pre-chunked to ~3.24 s — pass `3.0` (anything larger wipes the pool).
+  out clips shorter than `clip_duration_s`. HDTF's mirror is pre-chunked
+  to ~3.24 s — pass `3.0` (anything larger wipes the pool).
 
 ## 5. Output layout
 
