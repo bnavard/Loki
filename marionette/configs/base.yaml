@@ -29,8 +29,8 @@ train_dataset:
   target: marionette.data.video_dataset.TalkingHeadDataset
   params:
     clip_list_path:   "data/derived/train_clips.json"
-    video_root:       "data/benchmark/hdtf/clips"
-    flame_root:       "data/benchmark/hdtf/flame_tracking/flowface"
+    video_root:       "data/talkvid/talkvid"
+    flame_root:       "data/flame_tracking/flowface"
     n_frames:         16
     resolution:       512
     downsample_ratio: 8
@@ -41,8 +41,8 @@ val_dataset:
   target: marionette.data.video_dataset.TalkingHeadDataset
   params:
     clip_list_path:   "data/derived/val_clips.json"
-    video_root:       "data/benchmark/hdtf/clips"
-    flame_root:       "data/benchmark/hdtf/flame_tracking/flowface"
+    video_root:       "data/talkvid/talkvid"
+    flame_root:       "data/flame_tracking/flowface"
     n_frames:         16
     resolution:       512
     downsample_ratio: 8
