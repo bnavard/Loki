@@ -1,0 +1,50 @@
+# Condition ablation — "FLAME vector" arm.
+#
+# Replaces the canonical 45-channel rasterized FLAME conditioning with a
+# spatially-broadcast projection of the raw FLAME motion parameters. This is
+# the "earlier work" recipe the paper contrasts against in §4.3 — vector
+# conditioning that fails to leverage the diffusion model's spatial inductive
+# bias because every pixel of `spatial_cond` carries the same per-frame
+# value.
+#
+# The downstream ConditioningEncoder is reduced to a near-no-op: input is
+# already at the latent resolution (64×64) with C = model_channels (320),
+# so there is nothing to downsample and nothing to project widthwise. The
+# stem + 1 refine ResBlock + zero-init out-Conv that remain are what carries
+# the step-0 invariant (cond contributes exactly zero at training start) —
+# the same invariant the rasterized arms rely on.
+
+base: marionette/configs/base.yaml
+
+output_dir: outputs/condition_ablation/flame_vector
+
+train_dataset:
+  params:
+    emit_flame_params: true
+
+val_dataset:
+  params:
+    emit_flame_params: true
+
+model:
+  params:
+    unet_config:
+      params:
+        # The cond_stage emits a (B, T, 64, 64, 320) tensor directly, so the
+        # encoder takes 320-channel input at 64×64 and stays at 64×64. This
+        # collapses the 4-stage downsampling stack from base.yaml to a single
+        # stage (no downsamples). See conditioning_encoder.py for the
+        # invariant `input_resolution / 2**(len(cond_stage_channels)-1) ==
+        # output_resolution`: with cond_stage_channels=[320], that's 1 → 1.
+        condition_channels:     320
+        cond_input_resolution:   64
+        cond_latent_resolution:  64
+        cond_stage_channels:    [320]
+
+    cond_stage_config:
+      target: experiments.condition_ablation.flame_vector.conditioning.FlameVectorConditioning
+      params:
+        flame_params_dim:    77       # FLAME_PARAMS_DIM in marionette.data.video_dataset
+        model_channels:     320
+        latent_resolution:   64
+        hidden_dim:         320

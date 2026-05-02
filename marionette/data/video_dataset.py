@@ -22,6 +22,19 @@ Per-sample output:
         driver_deform : (T, V, 3)  per-vertex expression deformation, rasterized
                                     alongside the vert-position prop to yield
                                     the 3ch deform map in spatial_cond.
+        driver_flame_params : (T, FLAME_PARAMS_DIM)
+                                    [optional, only when emit_flame_params=True]
+                                    Per-frame raw FLAME motion parameters,
+                                    concatenated as
+                                        [expr(65) | rot(3) | neck_rot(3)
+                                         | jaw_rot(3) | eye_rot(3)]
+                                    with zeros substituted for missing fit
+                                    fields. Consumed by the
+                                    `flame_vector` ablation arm, which feeds
+                                    the parameter vector into the diffusion
+                                    model directly (no rasterization) — the
+                                    paper's "earlier work" baseline used to
+                                    motivate pixel-space FLAME conditioning.
 
 NDC = Normalized Device Coordinates — pytorch3d's convention: +x=left, +y=up,
 visible content in [-1, 1] per axis.
@@ -43,6 +56,19 @@ from marionette.utils import (
 
 HEAD_VERT_PATH = "data/assets/flame/head_vertices.txt"
 
+# Fixed schema for the optional `driver_flame_params` vector. Order and per-key
+# dims must stay stable across clips so the per-arm MLP (e.g. the
+# flame_vector conditioning module) can be configured with a fixed input width
+# regardless of which optional fit fields a particular clip provides.
+FLAME_PARAMS_SCHEMA = (
+    ("expr",     65),
+    ("rot",       3),
+    ("neck_rot",  3),
+    ("jaw_rot",   3),
+    ("eye_rot",   3),
+)
+FLAME_PARAMS_DIM = sum(d for _, d in FLAME_PARAMS_SCHEMA)  # 77
+
 
 class TalkingHeadDataset(Dataset):
     """
@@ -62,6 +88,13 @@ class TalkingHeadDataset(Dataset):
         ref_sampling_seed    : base seed for per-sample ref draws. Combined
                                with sample index so two workers / epochs
                                agree on which frame is the ref.
+        emit_flame_params    : if True, also emit `driver_flame_params`
+                               (T, FLAME_PARAMS_DIM) under `hint`. Used by
+                               the `flame_vector` condition-ablation arm,
+                               which feeds raw FLAME parameters to the
+                               diffusion model instead of rasterizing them.
+                               Off by default — the canonical pixel-space
+                               recipe doesn't need it.
     """
 
     def __init__(
@@ -75,6 +108,7 @@ class TalkingHeadDataset(Dataset):
         fps: float = 25.0,
         add_mouth: bool = True,
         ref_sampling_seed: int = 0,
+        emit_flame_params: bool = False,
     ):
         self.video_root = Path(video_root)
         self.flame_root = Path(flame_root)
@@ -84,6 +118,7 @@ class TalkingHeadDataset(Dataset):
         self.latent_res        = resolution // downsample_ratio
         self.fps               = fps
         self.ref_sampling_seed = ref_sampling_seed
+        self.emit_flame_params = emit_flame_params
 
         self.flame_skinner = CAP4DFlameSkinner(
             add_mouth=add_mouth,
@@ -156,6 +191,29 @@ class TalkingHeadDataset(Dataset):
         verts_ndc = verts_to_pytorch3d(verts_2d.copy(), np.array(crop_box))
         return img, verts_ndc, offsets
 
+    def _pack_flame_params(self, fit: dict, start: int, n: int) -> np.ndarray:
+        """Pack the target window's raw FLAME motion parameters into a fixed
+        (n, FLAME_PARAMS_DIM) vector. Missing optional fields are filled with
+        zeros so the per-clip dim is constant.
+
+        Schema (`FLAME_PARAMS_SCHEMA`): expr | rot | neck_rot | jaw_rot | eye_rot.
+        Not used by the canonical pixel-space recipe — gated on
+        `self.emit_flame_params`.
+        """
+        pieces = []
+        for key, dim in FLAME_PARAMS_SCHEMA:
+            if key in fit:
+                arr = np.asarray(fit[key][start:start + n], dtype=np.float32)
+                if arr.shape != (n, dim):
+                    raise ValueError(
+                        f"FLAME fit field {key!r} has shape {arr.shape}; "
+                        f"expected ({n}, {dim}). Check the fit.npz schema."
+                    )
+            else:
+                arr = np.zeros((n, dim), dtype=np.float32)
+            pieces.append(arr)
+        return np.concatenate(pieces, axis=-1)  # (n, FLAME_PARAMS_DIM)
+
     def __getitem__(self, idx: int) -> dict:
         clip_id, window_start = self.samples[idx]
         fit, n_total = self.clips[clip_id]
@@ -181,10 +239,15 @@ class TalkingHeadDataset(Dataset):
         verts   = np.stack(verts_list[1:],   axis=0)   # (T, V, 3) gen only
         offsets = np.stack(offsets_list[1:], axis=0)   # (T, V, 3) gen only
 
+        hint = {
+            "driver_verts":  torch.from_numpy(verts),
+            "driver_deform": torch.from_numpy(offsets),
+        }
+        if self.emit_flame_params:
+            params = self._pack_flame_params(fit, window_start, self.n_frames)
+            hint["driver_flame_params"] = torch.from_numpy(params)
+
         return {
             "target_video": torch.from_numpy(imgs),
-            "hint": {
-                "driver_verts":  torch.from_numpy(verts),
-                "driver_deform": torch.from_numpy(offsets),
-            },
+            "hint": hint,
         }
