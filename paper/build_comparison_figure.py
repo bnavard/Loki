@@ -18,10 +18,12 @@ Each figure has the layout:
     isn't in its outputs; its cells are grey-filled placeholders so the
     figure stays structurally complete (paper-ready).
 
-Each invocation lands in its own timestamped folder so re-rolls don't
-overwrite earlier draws:
+Each invocation lands in its own timestamped folder under the
+`sota_vs_marionette_comparison` subtree, so re-rolls don't overwrite
+earlier draws and this script's outputs stay separate from other paper
+figures (e.g. the FLAME-retargeting figures):
 
-    outputs/paper_figures/run_<YYYYMMDD_HHMMSS>/
+    outputs/paper_figures/sota_vs_marionette_comparison/run_<YYYYMMDD_HHMMSS>/
         ├── <dataset>__<protocol>__<sample_id>.png
         ├── ...
         └── _index.json     # records seed + per-figure provenance
@@ -401,7 +403,8 @@ def parse_args():
                    help="How many random samples to render per invocation.")
     p.add_argument("--seed",      type=int, default=None,
                    help="Optional seed for reproducible draws. Default: time-based.")
-    p.add_argument("--out-root",  type=Path, default=Path("outputs/paper_figures"),
+    p.add_argument("--out-root",  type=Path,
+                   default=Path("outputs/paper_figures/sota_vs_marionette_comparison"),
                    help="Parent dir; the script writes to a timestamped "
                         "<out-root>/run_<YYYYMMDD_HHMMSS>/ subdir each invocation.")
     return p.parse_args()
