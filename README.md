@@ -54,6 +54,7 @@ Tested on Linux + CUDA 12.1 with a single conda env `marionette`:
 conda create -n marionette python=3.10 -y
 conda activate marionette
 pip install -r requirements.txt
+pip install --no-index --no-cache-dir pytorch3d -f https://dl.fbaipublicfiles.com/pytorch3d/packaging/wheels/py310_cu121_pyt240/download.html
 ```
 
 Heavy dependencies worth flagging:
