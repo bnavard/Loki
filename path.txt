@@ -1,1 +1,0 @@
-/root/.cache/torch/hub/checkpoints/2DFAN4-11f355bf06.pth.tar
