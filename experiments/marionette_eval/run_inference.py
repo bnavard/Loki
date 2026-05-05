@@ -197,12 +197,48 @@ def main():
 
     # One seeded RNG drives ref-frame draws across the whole run.
     # Same seed schedule as every SOTA wrapper, so `(protocol, seed,
-    # sample_id)` picks the same ref frame across baselines.
+    # sample_id)` picks the same ref frame across baselines. We always
+    # call `rng.integers` per sample — even for samples we end up
+    # skipping (resume / missing-fit / failure) — so a resumed run
+    # produces the same ref_frame_idx the original run would have.
     rng = np.random.default_rng(seed)
 
+    flame_root_pre = Path(cfg.val_dataset.params.flame_root)
+
+    def _fit_path(clip) -> Path:
+        return flame_root_pre / clip.clip_id / "fit.npz"
+
     failed: list[tuple[str, str]] = []
+    n_resumed = 0
+    missing_fits_clips: set[str] = set()
+    n_missing_fit_skips = 0
+
     for sample in tqdm(samples, desc="marionette_eval"):
+        # Advance rng FIRST so skipped samples don't desync the schedule.
         ref_frame_idx = int(rng.integers(0, sample.ref_clip.n_frames))
+
+        # Resume: skip samples whose panel was already written. The runner
+        # is idempotent at the panel-mp4 grain — partial writes leave a
+        # zero-byte or short mp4, which a re-run would still detect via
+        # `is_file()`. Wipe the offending sample dir to force regeneration.
+        panel_mp4 = out / "samples" / sample.sample_id / "panel.mp4"
+        if panel_mp4.is_file():
+            n_resumed += 1
+            continue
+
+        # Missing-fit pre-flight: the GT FLAME-tracking root may have
+        # gaps. Skipping cleanly here costs a few microseconds; letting
+        # `Evaluator.run_one` raise costs ~100 s per missing-fit sample
+        # before the outer try/except catches the FileNotFoundError.
+        if not _fit_path(sample.ref_clip).is_file():
+            missing_fits_clips.add(sample.ref_clip.clip_id)
+            n_missing_fit_skips += 1
+            continue
+        if not _fit_path(sample.driver_clip).is_file():
+            missing_fits_clips.add(sample.driver_clip.clip_id)
+            n_missing_fit_skips += 1
+            continue
+
         title = (
             f"[{sample.sample_id}] "
             f"{'Same' if args.protocol == 'same_identity_reconstruction' else 'Cross'}-Identity "
@@ -221,6 +257,14 @@ def main():
             traceback.print_exc()
             failed.append((sample.sample_id, f"{type(e).__name__}: {e}"))
 
+    if n_resumed:
+        print(f"[marionette_eval] resumed: {n_resumed} sample(s) already had panel.mp4")
+    if missing_fits_clips:
+        miss_path = out / "missing_fits.json"
+        miss_path.write_text(json.dumps(sorted(missing_fits_clips), indent=2))
+        print(f"[marionette_eval] skipped {n_missing_fit_skips} sample(s) — "
+              f"{len(missing_fits_clips)} clip(s) missing fit.npz under "
+              f"{flame_root_pre}. List: {miss_path}")
     if failed:
         (out / "failed.json").write_text(json.dumps(failed, indent=2))
         print(f"[marionette_eval] {len(failed)} samples failed — see failed.json")

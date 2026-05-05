@@ -46,6 +46,7 @@ import torch
 from omegaconf import DictConfig
 
 from ldm_base.ldm.util import instantiate_from_config
+from marionette.data.video_dataset import FLAME_PARAMS_SCHEMA
 from marionette.flame.flame import CAP4DFlameSkinner
 from marionette.model.checkpoint_compat import strip_legacy_keys
 from marionette.retargeting import (
@@ -92,6 +93,28 @@ def _encode_h264(out_mp4: Path, frames_chw_u8: np.ndarray, fps: float) -> None:
 
 def _load_fit(path: Path) -> dict:
     return {k: v for k, v in np.load(str(path)).items()}
+
+
+def _pack_flame_params(fit: dict, start: int, n: int) -> np.ndarray:
+    """Pack the driver window's raw FLAME motion parameters into a fixed
+    `(n, FLAME_PARAMS_DIM)` vector. Mirrors
+    `TalkingHeadDataset._pack_flame_params` so the `flame_vector` ablation
+    arm sees the same 77-dim layout at eval time as at train time —
+    schema: `expr | rot | neck_rot | jaw_rot | eye_rot`.
+    """
+    pieces = []
+    for key, dim in FLAME_PARAMS_SCHEMA:
+        if key in fit:
+            arr = np.asarray(fit[key][start:start + n], dtype=np.float32)
+            if arr.shape != (n, dim):
+                raise ValueError(
+                    f"FLAME fit field {key!r} has shape {arr.shape}; "
+                    f"expected ({n}, {dim}). Check the fit.npz schema."
+                )
+        else:
+            arr = np.zeros((n, dim), dtype=np.float32)
+        pieces.append(arr)
+    return np.concatenate(pieces, axis=-1)
 
 
 def _load_checkpoint_into(model, ckpt_path: str) -> None:
@@ -155,12 +178,22 @@ class Evaluator:
         self.model.eval().to(device)
 
         # Dispatch on the config's `target` so condition_ablation arms load
-        # their own cond_stage module without any change here. The 4-row
-        # panel's third row label + slice come from the active cond_stage's
-        # `VIZ_LABEL` / `VIZ_SLICE` class attrs.
-        self.cond_module = instantiate_from_config(
-            cfg.model.params.cond_stage_config,
-        ).to(device).eval()
+        # their own cond_stage module without any change here.
+        #
+        # Use `self.model.cond_stage_model` (instantiated by the LDM base
+        # class from `cond_stage_config` and populated by the checkpoint
+        # load above) rather than a fresh `instantiate_from_config(...)`.
+        # The rasterized arms (no_posenc, no_deform, baseline) have zero
+        # `nn.Parameter`s — their state is deterministic buffers
+        # (PropRenderer faces / UVs, PositionalEncoding.freqs), so a
+        # fresh instance is byte-identical to the checkpoint-loaded one.
+        # The `flame_vector` arm differs: its MLP has parameters that,
+        # while frozen by `cond_stage_trainable=False`, are saved in the
+        # checkpoint at training-time random init. The downstream
+        # ConditioningEncoder learned to consume that specific projection,
+        # so we must use the checkpoint copy. The 4-row panel's third row
+        # label + slice come from this module's `VIZ_LABEL` / `VIZ_SLICE`.
+        self.cond_module = self.model.cond_stage_model
 
         self.flame_skinner = CAP4DFlameSkinner(
             add_mouth=True, n_shape_params=150, n_expr_params=65,
@@ -222,6 +255,14 @@ class Evaluator:
             "driver_verts":  torch.from_numpy(verts_np).unsqueeze(0).to(device),
             "driver_deform": torch.from_numpy(offsets_np).unsqueeze(0).to(device),
         }
+        # The `flame_vector` ablation arm reads `driver_flame_params` directly
+        # (raw 77-dim FLAME params, no rasterization). Always populate so any
+        # arm whose cond module needs it works without a runner-side dispatch;
+        # rasterized arms ignore the extra key via `**_unused`.
+        flame_params = _pack_flame_params(drv_fit, start=0, n=n_frames)
+        hint["driver_flame_params"] = (
+            torch.from_numpy(flame_params).unsqueeze(0).to(device)
+        )
         c_cond = self.cond_module(hint)
 
         ref_tensor = torch.from_numpy(ref_img_norm).permute(2, 0, 1).unsqueeze(0).to(device)
