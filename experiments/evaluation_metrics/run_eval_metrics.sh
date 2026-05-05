@@ -8,7 +8,10 @@
 #       └── metrics_summary.json     (aggregates)
 #
 # `<bucket>` = `marionette` for `outputs/marionette_eval/` runs, the
-# baseline name for `outputs/sota_comparison/<baseline>/` runs. A single
+# baseline name for `outputs/sota_comparison/<baseline>/` runs, and
+# `marionette_<arm>_abl` for `outputs/condition_ablation_eval/<arm>/`
+# runs (so ablations group with Marionette and can't be confused with a
+# SOTA baseline). A single
 # `outputs/test_metric/metrics/*/<dataset>/<protocol>/metrics_summary.json`
 # glob picks up every model uniformly for the comparison table.
 #
@@ -63,6 +66,7 @@ OUT_ROOT="outputs/test_metric/metrics"
 CLI="experiments/evaluation_metrics/compute_metrics.py"
 MARIONETTE_ROOT="outputs/marionette_eval"
 SOTA_ROOT="outputs/sota_comparison"
+ABLATION_ROOT="outputs/condition_ablation_eval"
 
 METRICS="${METRICS:-auto}"
 FRESH="${FRESH:-0}"
@@ -96,6 +100,17 @@ for d in "${SOTA_ROOT}"/*/hdtf/*/run_*/; do
     baseline="${rel%%/*}"
     WORK+=("${baseline}|${d}")
 done
+# Condition-ablation runs share the SOTA-style `<arm>/<dataset>/<protocol>/run_<ts>/`
+# layout. The bucket is `marionette_<arm>_abl` so ablation results group
+# next to `marionette` in the central summary tree and can't be confused
+# with a SOTA baseline.
+for d in "${ABLATION_ROOT}"/*/hdtf/*/run_*/; do
+    [[ -d "$d" ]] || continue
+    rel="${d#${ABLATION_ROOT}/}"
+    rel="${rel%/}"
+    arm="${rel%%/*}"
+    WORK+=("marionette_${arm}_abl|${d}")
+done
 N_TOTAL="${#WORK[@]}"
 
 echo "============================================================"
@@ -104,7 +119,7 @@ echo "[batch] METRICS=${METRICS}  FRESH=${FRESH}"
 echo "============================================================"
 
 if (( N_TOTAL == 0 )); then
-    echo "[batch] no run dirs found under ${MARIONETTE_ROOT} or ${SOTA_ROOT}. exiting."
+    echo "[batch] no run dirs found under ${MARIONETTE_ROOT}, ${SOTA_ROOT}, or ${ABLATION_ROOT}. exiting."
     exit 0
 fi
 
