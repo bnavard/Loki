@@ -10,11 +10,15 @@
 #
 # Usage:
 #   cd <repo_root>
-#   bash generate_exp_map/scripts/setup.sh
+#   bash -i generate_exp_map/scripts/setup.sh
+#
+# The `-i` flag is required so bash sources ~/.bashrc and picks up the
+# `conda` shell function. Without it, step 1 fails with "conda: command
+# not found" even on systems where conda is installed.
 #
 # After setup:
 #   conda activate expmapgen
-#   bash generate_exp_map/scripts/run_multi_gpu.sh
+#   bash -i generate_exp_map/scripts/run_multi_gpu.sh
 # =============================================================================
 
 set -e

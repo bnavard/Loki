@@ -45,8 +45,37 @@ def tracking_name_to_video_name(tracking_dir_name):
     return tracking_dir_name.removesuffix(TRACKING_SUFFIX)
 
 
-def find_pending(preprocessing_dir, tracking_dir, output_dir):
-    """Return tracking dirs that still need FlowFace conversion."""
+VIDEO_SUFFIXES = {".mp4", ".mkv", ".mov", ".avi", ".webm"}
+
+
+def _allowed_vid_names(data_dir):
+    """Build the set of vid_names this run is allowed to convert, from the
+    video files (or symlinks) in `data_dir`. Returns `None` (= no filter)
+    when `data_dir` is None — preserves the original "process every
+    tracking dir" behavior for callers that don't pass it."""
+    if data_dir is None:
+        return None
+    data_dir = Path(data_dir)
+    if not data_dir.is_dir():
+        return set()
+    return {
+        p.stem for p in data_dir.iterdir()
+        if p.suffix.lower() in VIDEO_SUFFIXES
+    }
+
+
+def find_pending(preprocessing_dir, tracking_dir, output_dir, data_dir=None):
+    """Return tracking dirs that still need FlowFace conversion.
+
+    `data_dir` is an optional gate: when set, only tracking dirs whose
+    `vid_name` matches a video file in `data_dir` are considered. This
+    isolates a run from leftover artifacts in the *shared* tracking dir
+    that belong to other protocols / arms / runs (the global tracking
+    dir accumulates entries across every prior tracker invocation).
+    Without this filter, Phase 2 would write fit.npz files for every
+    tracking artifact it finds into the current run's output_dir,
+    silently mixing protocols.
+    """
     tracking_dir = Path(tracking_dir)
     preprocessing_dir = Path(preprocessing_dir)
     output_dir = Path(output_dir)
@@ -54,11 +83,15 @@ def find_pending(preprocessing_dir, tracking_dir, output_dir):
     if not tracking_dir.exists():
         return []
 
+    allowed = _allowed_vid_names(data_dir)
+
     pending = []
     for d in sorted(tracking_dir.iterdir()):
         if not d.is_dir():
             continue
         vid_name = tracking_name_to_video_name(d.name)
+        if allowed is not None and vid_name not in allowed:
+            continue
         if (output_dir / vid_name / "fit.npz").exists():
             continue
         rgb_dir = preprocessing_dir / vid_name / "rgb"
@@ -111,6 +144,12 @@ def parse_args():
                    help="pixel3dmm tracking output directory")
     p.add_argument("--output_dir", required=True,
                    help="FlowFace output directory (fit.npz)")
+    p.add_argument("--data_dir", default=None,
+                   help="Restrict conversion to vid_names whose video file "
+                        "exists in this dir. Required for runs that share "
+                        "the global tracking dir with other protocols/arms; "
+                        "without it, leftover tracking artifacts from prior "
+                        "runs leak into output_dir.")
     p.add_argument("--gpus", type=int, nargs="+", default=list(range(8)))
     p.add_argument("--test", action="store_true")
     p.add_argument("--test_gpu", type=int, default=0)
@@ -121,7 +160,8 @@ def main():
     args = parse_args()
     Path(args.output_dir).mkdir(parents=True, exist_ok=True)
 
-    pending = find_pending(args.preprocessing_dir, args.tracking_dir, args.output_dir)
+    pending = find_pending(args.preprocessing_dir, args.tracking_dir,
+                           args.output_dir, data_dir=args.data_dir)
 
     if not pending:
         print("Nothing to convert.")

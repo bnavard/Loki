@@ -57,7 +57,13 @@ FAILED_LOG = Path(os.environ.get("FLAME_FAILED_LOG", "data/flame_tracking/logs/f
 
 def process_video(video_path: str, log_to_file: bool = True, gpu_id: str = "0"):
     """Process one video through the full pipeline. Returns True on success."""
-    video_path = str(Path(video_path).resolve())
+    # Use .absolute() (not .resolve()) so symlinks are preserved end-to-end:
+    # callers stage inputs as `<sample_id>.mp4 -> panel.mp4` symlinks, and
+    # pixel3dmm's preprocessing internals re-derive their own identifier
+    # from the path's basename. Resolving collapses every input to "panel"
+    # and the orphan `preprocessing/panel/` cache then short-circuits all
+    # subsequent samples ("ALREADY COMPLETE FOR panel, SKIPPING").
+    video_path = str(Path(video_path).absolute())
     vid_name = Path(video_path).stem
 
     # On-disk resume check (survives kills / log-file loss). Sentinels:

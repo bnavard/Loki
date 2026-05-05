@@ -81,10 +81,15 @@ else
 fi
 
 echo "========== Phase 2: FlowFace conversion =========="
+# Pass --data_dir so Phase 2 only converts tracking artifacts whose
+# vid_name has a matching video in the run's data dir. Without this,
+# the shared tracking dir's leftovers from prior runs (other protocols,
+# other arms) leak into output_dir.
 PYTHONPATH=. python generate_exp_map/src/convert_to_flowface_parallel.py \
     --preprocessing_dir "${PREPROCESSING_DIR}" \
     --tracking_dir "${TRACKING_DIR}" \
     --output_dir "${OUTPUT_DIR}" \
+    --data_dir "${DATA_DIR}" \
     --gpus ${GPU_LIST}
 
 echo ""
