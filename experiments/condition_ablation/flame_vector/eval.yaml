@@ -1,0 +1,58 @@
+# =============================================================================
+# Marionette evaluation config — `flame_vector` ablation arm.
+#
+# Drives `experiments/marionette_eval/run_inference.py` against the
+# flame_vector checkpoint over the curated HDTF manifest. Output goes to
+# `outputs/condition_ablation_eval/flame_vector/hdtf/<protocol>/run_<ts>/`.
+#
+# This arm consumes raw FLAME parameters (`driver_flame_params`, 77-dim)
+# instead of a rasterized 45-channel pixel-space cond. The eval adapter
+# (`experiments/marionette_eval/adapter.py::run_one`) packs the same 77-dim
+# vector from the driver fit at inference time, so no dataset-side
+# `emit_flame_params` toggle is needed here.
+#
+# Usage:
+#
+#   PYTHONPATH=. python experiments/marionette_eval/run_inference.py \
+#       --protocol cross_identity \
+#       --config experiments/condition_ablation/flame_vector/eval.yaml \
+#       --n_samples 212 --clip_duration_s 3.0 --seed 42
+# =============================================================================
+
+base: marionette/configs/base.yaml
+
+output_dir: outputs/condition_ablation_eval/flame_vector
+checkpoint: outputs/condition_ablation/flame_vector/run_20260501_042554/checkpoints/th-step=030000.ckpt
+
+seed: 42
+
+# HDTF GT FLAME tracking lives outside the talkvid training tree.
+val_dataset:
+  params:
+    flame_root: data/benchmark/hdtf/flame_tracking/flowface
+
+# Inlined from `experiments/condition_ablation/flame_vector/config.yaml` so
+# the Evaluator instantiates the arm's cond_stage module + matching
+# collapsed-encoder shape. The encoder degenerates to a single zero-init
+# Conv3×3 stem at 64×64 — see the training config for the full rationale.
+model:
+  params:
+    unet_config:
+      params:
+        condition_channels:     320
+        cond_input_resolution:   64
+        cond_latent_resolution:  64
+        cond_stage_channels:    [320]
+
+    cond_stage_config:
+      target: experiments.condition_ablation.flame_vector.conditioning.FlameVectorConditioning
+      params:
+        flame_params_dim:    77
+        model_channels:     320
+        latent_resolution:   64
+        hidden_dim:         320
+
+inference:
+  n_frames:     16
+  cfg_scale:    2.0
+  n_ddim_steps: 50

@@ -1,0 +1,48 @@
+# =============================================================================
+# Marionette evaluation config — `no_deform` ablation arm.
+#
+# Drives `experiments/marionette_eval/run_inference.py` against the
+# no_deform checkpoint over the curated HDTF manifest. Output goes to
+# `outputs/condition_ablation_eval/no_deform/hdtf/<protocol>/run_<ts>/`.
+#
+# Usage:
+#
+#   PYTHONPATH=. python experiments/marionette_eval/run_inference.py \
+#       --protocol cross_identity \
+#       --config experiments/condition_ablation/no_deform/eval.yaml \
+#       --n_samples 212 --clip_duration_s 3.0 --seed 42
+# =============================================================================
+
+base: marionette/configs/base.yaml
+
+output_dir: outputs/condition_ablation_eval/no_deform
+checkpoint: outputs/condition_ablation/no_deform/run_20260423_160140/checkpoints/th-step=030000.ckpt
+
+seed: 42
+
+# HDTF GT FLAME tracking lives outside the talkvid training tree.
+val_dataset:
+  params:
+    flame_root: data/benchmark/hdtf/flame_tracking/flowface
+
+# Inlined from `experiments/condition_ablation/no_deform/config.yaml` so the
+# Evaluator instantiates the arm's cond_stage module + matching encoder
+# stem width. Keep this in sync with the training config — the cond module
+# `target` and `condition_channels` are load-bearing for checkpoint compat.
+model:
+  params:
+    unet_config:
+      params:
+        condition_channels: 42
+
+    cond_stage_config:
+      target: experiments.condition_ablation.no_deform.conditioning.PosEncOnlyConditioning
+      params:
+        image_size: 512
+        positional_channels: 42
+        positional_multiplier: 1.0
+
+inference:
+  n_frames:     16
+  cfg_scale:    2.0
+  n_ddim_steps: 50
