@@ -4,10 +4,21 @@ Walks one `<run_dir>` produced by the SOTA-comparison or marionette-eval
 runners and routes each prediction through the metric set appropriate
 to its protocol:
 
-| Protocol                          | Metric groups               |
-|-----------------------------------|-----------------------------|
-| `same_identity_reconstruction`    | head_rot, expression        |
-| `cross_identity`                  | head_rot, expression, id    |
+| Protocol                          | Metric groups                                       |
+|-----------------------------------|-----------------------------------------------------|
+| `same_identity_reconstruction`    | head_rot, expression, psnr, ssim, lpips             |
+| `cross_identity`                  | head_rot, expression, id                            |
+
+The pixel-aligned groups (`psnr`, `ssim`, `lpips`) are HDTF-only — they
+require pred and GT to be pixel-aligned frame-for-frame, which is only
+meaningful on the same-identity protocol; and HDTF is the only dataset
+on which we report them. They are silently skipped for any other
+(dataset, protocol) combination by the HDTF gate inside `_resolve_groups`.
+
+FVD is **distribution-level** and lives outside this evaluator — see
+`compute_fvd.py` for the separate driver. It can't decompose to a
+per-sample row, so it doesn't fit the per-sample pattern this module
+implements.
 
 Per-sample metrics land at `<output_dir>/metrics.jsonl` (one JSON row per
 sample); aggregates at `<output_dir>/metrics_summary.json`.
@@ -68,23 +79,38 @@ from .io import (
 
 
 GROUPS_BY_PROTOCOL: dict[str, list[str]] = {
-    "same_identity_reconstruction": ["head_rot", "expression"],
+    "same_identity_reconstruction": [
+        "head_rot", "expression", "psnr", "ssim", "lpips",
+    ],
     "cross_identity":               ["head_rot", "expression", "id"],
 }
+
+# Pixel-aligned groups are reported on HDTF only; on any other dataset
+# they are silently dropped from the resolved set.
+HDTF_ONLY_GROUPS: set[str] = {"psnr", "ssim", "lpips"}
 
 # Detect "missing in summary" via these headline keys.
 GROUP_HEADLINE_METRIC: dict[str, str] = {
     "head_rot":   "head_rot_dist",
     "expression": "expression_l1",
     "id":         "id_cosine",
+    "psnr":       "psnr_db",
+    "ssim":       "ssim",
+    "lpips":      "lpips",
 }
 
 # Run-level aggregation: which metrics use a weighted mean and which
-# per-sample list supplies the weights.
+# per-sample list supplies the weights. The three pixel-aligned metrics
+# share `_pixel_weights` (`pixel_track_rate`), since they all read the
+# same pred / GT video and are limited by the same per-sample frame
+# coverage.
 WEIGHTED_METRICS: dict[str, str] = {
     "id_cosine":     "_id_weights",
     "head_rot_dist": "_head_rot_weights",
     "expression_l1": "_expression_weights",
+    "psnr_db":       "_pixel_weights",
+    "ssim":          "_pixel_weights",
+    "lpips":         "_pixel_weights",
 }
 
 
@@ -99,17 +125,21 @@ def _resolve_groups(
     mode: Union[str, set[str]],
     summary: dict,
     protocol: str,
+    dataset: Optional[str] = None,
 ) -> set[str]:
     """Translate the user's `metrics_mode` into a concrete set of groups
-    to compute, filtered by what's available for the protocol."""
+    to compute, filtered by what's available for the protocol and by
+    the HDTF-only gate for pixel-aligned groups."""
     available = set(GROUPS_BY_PROTOCOL[protocol])
+    if dataset != "hdtf":
+        available = available - HDTF_ONLY_GROUPS
     if mode == "all":
         return available
     if isinstance(mode, set):
         unknown = mode - available
         if unknown:
             print(f"[evaluate] groups {sorted(unknown)} not applicable to "
-                  f"protocol={protocol}; ignored.")
+                  f"protocol={protocol} dataset={dataset}; ignored.")
         return mode & available
     if mode == "auto":
         return {g for g in available if not _group_present(g, summary)}
@@ -159,14 +189,23 @@ def _read_existing_rows(metrics_path: Path) -> dict[str, dict]:
 
 
 def _derive_bucket(run_dir: Path) -> str:
-    """Recover the baseline name (= "bucket") from a run-dir path.
-    `outputs/marionette_eval/...` → "marionette".
-    `outputs/sota_comparison/<baseline>/...` → "<baseline>"."""
+    """Recover the FLAME-tracking-preds subdirectory name from a run-dir path.
+    Used to look up cached predicted FLAME fits under
+    `data/flame_tracking/preds/<bucket>/<dataset>/<protocol>/<sample_id>/fit.npz`.
+    `outputs/marionette_eval/...`                  → "marionette".
+    `outputs/sota_comparison/<baseline>/...`       → "<baseline>".
+    `outputs/condition_ablation_eval/<arm>/...`    → "<arm>"
+        (no_posenc / no_deform / flame_vector). FLAME tracking writes to
+        `data/flame_tracking/preds/<arm>/...`, so the arm name is the
+        right pred-subdir even though the metrics-tree bucket for
+        ablations is `marionette_<arm>_abl` (set in run_eval_metrics.sh)."""
     parts = run_dir.parts
     if "marionette_eval" in parts:
         return "marionette"
     if "sota_comparison" in parts:
         return parts[parts.index("sota_comparison") + 1]
+    if "condition_ablation_eval" in parts:
+        return parts[parts.index("condition_ablation_eval") + 1]
     raise ValueError(f"cannot infer bucket from run_dir={run_dir}")
 
 
@@ -194,6 +233,52 @@ def _compute_expression_pair(pred_fit_path: Path, target_fit_path: Path,
     out = expr_metric.compute_pair(pred_fit, target_fit, n_frames=n_frames)
     weight = out["n_frames"] / max(n_frames, 1)
     return out["l1"], float(weight)
+
+
+def _compute_pixel_pair(
+    pred_path: Path,
+    gt_path:   Path,
+    n_frames:  int,
+    fps:       int,
+    resolution: int,
+    psnr_fn,
+    ssim_fn,
+    lpips_fn,
+) -> dict:
+    """Run the three pixel-aligned metrics on one pred / GT pair, sharing
+    a single video decode. Any of the `*_fn` may be `None` if the caller
+    isn't computing that metric.
+
+    Returns
+    -------
+    {
+      "psnr_db":          float | None,
+      "ssim":             float | None,
+      "lpips":            float | None,
+      "pixel_track_rate": float,        # T_used / n_frames
+      "n_frames":         int,
+    }
+    """
+    if not pred_path.is_file() or not gt_path.is_file():
+        return {"psnr_db": None, "ssim": None, "lpips": None,
+                "pixel_track_rate": 0.0, "n_frames": 0}
+
+    pred = load_video(pred_path, fps, resolution, max_frames=n_frames)
+    gt   = load_video(gt_path,   fps, resolution, max_frames=n_frames)
+    T = int(min(pred.shape[0], gt.shape[0]))
+    if T < 1:
+        return {"psnr_db": None, "ssim": None, "lpips": None,
+                "pixel_track_rate": 0.0, "n_frames": 0}
+    pred = pred[:T].unsqueeze(0)   # (1, T, 3, H, W)
+    gt   = gt  [:T].unsqueeze(0)
+
+    out: dict = {"pixel_track_rate": float(T) / max(n_frames, 1), "n_frames": T}
+    out["psnr_db"] = float(psnr_fn(pred, gt)[0].item()) if psnr_fn else None
+    out["ssim"]    = float(ssim_fn(pred, gt)[0].item()) if ssim_fn else None
+    # LPIPS is a class instance with __call__, not a free function — but it
+    # consumes the same shape contract.
+    out["lpips"]   = float(lpips_fn(pred, gt)[0].item()) if lpips_fn else None
+    return out
 
 
 def _compute_head_rot_pair(pred_fit_path: Path, target_fit_path: Path,
@@ -224,15 +309,31 @@ def _eval_same_identity(
     groups:        set[str],
     existing_rows: dict[str, dict],
 ) -> dict[str, list]:
-    """Same-identity: head_rot and expression both read FLAME fits — pred
-    fit vs the GT clip's fit (= ref clip's fit, since `ref_clip == driver_clip`
-    in this protocol). No video decode, no face crop."""
+    """Same-identity: head_rot and expression read FLAME fits (no video
+    decode); psnr/ssim/lpips read pred and GT videos and compute
+    pixel-aligned scores via a shared decode. The pixel groups are
+    HDTF-only — the gate in `_resolve_groups` strips them on any other
+    dataset before this loop runs."""
     expr_metric = None
     if "expression" in groups:
         from .src.expression import ExpressionDeformationDiff
         expr_metric = ExpressionDeformationDiff(
             image_size=cfg.resolution, device=cfg.device,
         )
+    # Lazy-load LPIPS so head_rot-only / expression-only invocations
+    # don't pay the AlexNet load cost.
+    lpips_metric = None
+    if "lpips" in groups:
+        from .src.lpips import LPIPSMetric
+        lpips_metric = LPIPSMetric(net="alex", device=cfg.device)
+    psnr_fn = ssim_fn = None
+    if "psnr" in groups:
+        from .src.psnr import psnr_video
+        psnr_fn = psnr_video
+    if "ssim" in groups:
+        from .src.ssim import ssim_video
+        ssim_fn = ssim_video
+    pixel_groups_active = bool({"psnr", "ssim", "lpips"} & groups)
 
     results: dict[str, list] = {}
     if "head_rot" in groups:
@@ -246,6 +347,11 @@ def _eval_same_identity(
             "expression_l1":       [],
             "_expression_weights": [],
         })
+    if pixel_groups_active:
+        results["_pixel_weights"] = []
+    if "psnr"  in groups: results["psnr_db"] = []
+    if "ssim"  in groups: results["ssim"]    = []
+    if "lpips" in groups: results["lpips"]   = []
 
     out_rows: list[dict] = []
     desc = f"same-id ({','.join(sorted(groups))})"
@@ -279,6 +385,36 @@ def _eval_same_identity(
                 results["expression_l1"]      .append(l1)
                 results["_expression_weights"].append(w)
             new_fields["expression_l1"] = l1
+
+        if pixel_groups_active:
+            # Same-identity ⇒ ref_clip == driver_clip; either points at
+            # the GT video. One decode, three metrics share it.
+            gt_path = Path(sample.ref_clip["video_path"])
+            pix = _compute_pixel_pair(
+                pred_path  = sample.pred_path,
+                gt_path    = gt_path,
+                n_frames   = cfg.n_frames or 16,
+                fps        = cfg.fps,
+                resolution = cfg.resolution,
+                psnr_fn    = psnr_fn,
+                ssim_fn    = ssim_fn,
+                lpips_fn   = lpips_metric,
+            )
+            w_pix = float(pix["pixel_track_rate"])
+            for k_grp, k_field in (("psnr", "psnr_db"),
+                                    ("ssim", "ssim"),
+                                    ("lpips", "lpips")):
+                if k_grp in groups:
+                    new_fields[k_field] = pix[k_field]
+                    if pix[k_field] is not None:
+                        results[k_field].append(pix[k_field])
+            new_fields["pixel_track_rate"] = w_pix
+            # The shared weights list has one entry per *successful*
+            # pixel evaluation (T_used >= 1). All three metrics are
+            # produced together or not at all, so a single weights list
+            # serves all three aggregates.
+            if pix["n_frames"] >= 1:
+                results["_pixel_weights"].append(w_pix)
 
         merged = {**existing, **new_fields}
         merged.pop("skipped", None)
@@ -492,7 +628,8 @@ def evaluate(
     existing_summary = (
         json.loads(summary_path.read_text()) if summary_path.is_file() else {}
     )
-    groups = _resolve_groups(cfg.metrics_mode, existing_summary, meta.protocol)
+    groups = _resolve_groups(cfg.metrics_mode, existing_summary,
+                             meta.protocol, meta.dataset)
 
     if not groups:
         print(f"[evaluate] {meta.run_dir} — nothing to compute "
