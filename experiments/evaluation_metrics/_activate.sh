@@ -1,7 +1,6 @@
 # Source-only helper: activate the `loki` conda env and expose
 # `PYTHON` pointing at the env's interpreter. Sourced by:
 #   - run_eval_metrics.sh
-#   - sanity_check/visualize_*.sh
 #
 # All evaluation metrics run inside the same env that trains and
 # generates the model — head-rot and expression need pytorch3d (already

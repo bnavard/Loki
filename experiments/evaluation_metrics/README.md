@@ -213,22 +213,6 @@ Result is folded into the same
 `outputs/test_metric/metrics/<bucket>/hdtf/same_identity_reconstruction/metrics_summary.json`
 the per-sample evaluator writes, under `metrics.fvd_videomae` / `metrics.fvd_i3d`.
 
-## Sanity check
-
-`sanity_check/` ships visualization tools that *don't* compute the
-aggregate metrics — they render per-frame overlays so you can verify by
-eye that the metric inputs are sensible (FLAME fit alignment, expression
-substitution, head-pose deltas).
-
-```bash
-PYTHONPATH=. python experiments/evaluation_metrics/sanity_check/visualize_expression.py \
-    --target-fit data/benchmark/hdtf/flame_tracking/flowface/<clip_id>/fit.npz \
-    --pred-fit   data/flame_tracking/preds/<bucket>/hdtf/<protocol>/<sample_id>/fit.npz \
-    --target-video data/benchmark/hdtf/clips/<clip_id>.mp4 \
-    --pred-video   <run_dir>/samples/<sample_id>/panel.mp4 \
-    --out-mp4      outputs/test_metric/expr_sanity_swap/<bucket>_<sample_id>.mp4
-```
-
 ## Layout
 
 ```
@@ -253,6 +237,5 @@ experiments/evaluation_metrics/
 │       └── fvd.py                        # Fréchet Video Distance — VideoMAE-v2 / I3D
 ├── patches/
 │   └── cdfvd_videomaev2_utils.py         # HuggingFace-mirror URL patch for cdfvd's broken loader
-├── deformation_map_diff/                 # helper scripts for the expression-metric pipeline
-└── sanity_check/                         # visual debugging — NOT used by compute_metrics.py
+└── deformation_map_diff/                 # helper scripts for the expression-metric pipeline
 ```

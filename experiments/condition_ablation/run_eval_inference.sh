@@ -45,6 +45,7 @@
 
 set -u
 set -o pipefail
+shopt -s nullglob
 
 ARMS="${ARMS:-no_posenc no_deform flame_vector}"
 PROTOCOLS="${PROTOCOLS:-same_identity_reconstruction cross_identity}"
@@ -103,9 +104,8 @@ for arm in ${ARMS}; do
         if [[ -n "${RUN_DIR}" ]]; then
             pair_run_dir="${RUN_DIR}"
         elif [[ "${RESUME}" == "1" ]]; then
-            bucket_base="outputs/condition_ablation_eval/${arm}/hdtf/${proto}"
-            # shellcheck disable=SC2012
-            pair_run_dir="$(ls -1d ${bucket_base}/run_* 2>/dev/null | sort | tail -1)"
+            existing_runs=( "outputs/condition_ablation_eval/${arm}/hdtf/${proto}"/run_* )
+            (( ${#existing_runs[@]} )) && pair_run_dir="${existing_runs[-1]}"
         fi
 
         out_args=()
@@ -141,4 +141,4 @@ else
 fi
 echo "[ablation-eval] outputs under outputs/condition_ablation_eval/"
 echo "============================================================"
-exit "${fail}"
+(( fail == 0 )) && exit 0 || exit 1
