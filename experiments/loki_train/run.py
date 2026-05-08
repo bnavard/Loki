@@ -5,17 +5,17 @@ canonical recipe (`loki/configs/base.yaml`).
 Usage (from repo root):
 
     # Single GPU
-    PYTHONPATH=. python experiments/loki_baseline/run.py
+    PYTHONPATH=. python experiments/loki_train/run.py
 
     # Multi-GPU (DDP)
-    PYTHONPATH=. python experiments/loki_baseline/run.py --gpus 0 1 2 3
+    PYTHONPATH=. python experiments/loki_train/run.py --gpus 0 1 2 3
 
     # Resume from a checkpoint
-    PYTHONPATH=. python experiments/loki_baseline/run.py \
-        --resume outputs/loki_baseline/run_YYYYmmdd_HHMMSS/checkpoints/th-<step>.ckpt
+    PYTHONPATH=. python experiments/loki_train/run.py \
+        --resume outputs/loki_train/run_YYYYmmdd_HHMMSS/checkpoints/th-<step>.ckpt
 
 Outputs:
-    outputs/loki_baseline/run_<timestamp>/
+    outputs/loki_train/run_<timestamp>/
         config_resolved.yaml
         checkpoints/{th-<step>.ckpt, th-best-<step>-<val_loss>.ckpt}
         logs/ (TensorBoard)

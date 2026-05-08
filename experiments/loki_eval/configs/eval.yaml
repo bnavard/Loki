@@ -15,7 +15,7 @@ base: loki/configs/base.yaml
 # so all SOTA wrappers and this one share the
 # `outputs/<experiment>/.../<protocol>/run_<ts>/` pattern.
 output_dir: outputs/loki_eval
-checkpoint: outputs/loki_baseline/run_<timestamp>/checkpoints/<ckpt>.ckpt
+checkpoint: outputs/loki_train/run_<timestamp>/checkpoints/<ckpt>.ckpt
 
 seed: 42
 

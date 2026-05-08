@@ -20,11 +20,11 @@ set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-# shellcheck source=_activate.sh
-source "${HERE}/_activate.sh"
+# shellcheck source=src/_activate.sh
+source "${HERE}/src/_activate.sh"
 
 echo "============================================================"
-echo "[setup_fvd] activating env from _activate.sh: $(which python)"
+echo "[setup_fvd] activating env from src/_activate.sh: $(which python)"
 echo "============================================================"
 
 # -----------------------------------------------------------------------------

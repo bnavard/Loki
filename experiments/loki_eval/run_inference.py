@@ -33,7 +33,7 @@ everything.
         --n_samples 212 \
         --clip_duration_s 3.0 \
         --seed 42 \
-        --checkpoint outputs/loki_baseline/run_<ts>/checkpoints/<ckpt>.ckpt
+        --checkpoint outputs/loki_train/run_<ts>/checkpoints/<ckpt>.ckpt
 
     # Cross-identity (one panel per derangement pair)
     PYTHONPATH=. python experiments/loki_eval/run_inference.py \
@@ -41,13 +41,13 @@ everything.
         --n_samples 212 \
         --clip_duration_s 3.0 \
         --seed 42 \
-        --checkpoint outputs/loki_baseline/run_<ts>/checkpoints/<ckpt>.ckpt
+        --checkpoint outputs/loki_train/run_<ts>/checkpoints/<ckpt>.ckpt
 
     # Override CFG scale / DDIM steps on the fly:
     PYTHONPATH=. python experiments/loki_eval/run_inference.py \
         --protocol cross_identity \
         --n_samples 212 --clip_duration_s 3.0 --seed 42 \
-        --checkpoint outputs/loki_baseline/run_<ts>/checkpoints/<ckpt>.ckpt \
+        --checkpoint outputs/loki_train/run_<ts>/checkpoints/<ckpt>.ckpt \
         --cfg_scale 3.0 --n_ddim_steps 100
 """
 from __future__ import annotations

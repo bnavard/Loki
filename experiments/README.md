@@ -8,7 +8,7 @@ chews through any of those output trees.
 
 ## Contents
 
-### [`loki_baseline/`](loki_baseline/) — canonical training run
+### [`loki_train/`](loki_train/) — canonical training run
 Point-of-truth training against [`loki/configs/base.yaml`](../loki/configs/base.yaml)
 unchanged. Same-identity self-supervised video diffusion: 45-channel FLAME
 spatial conditioning, SD 2.1 generation UNet with 3D spatiotemporal

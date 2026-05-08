@@ -21,7 +21,7 @@ PYTHONPATH=. python experiments/loki_eval/run_inference.py \
     --n_samples 212 \
     --clip_duration_s 3.0 \
     --seed 42 \
-    --checkpoint outputs/loki_baseline/run_<ts>/checkpoints/<ckpt>.ckpt
+    --checkpoint outputs/loki_train/run_<ts>/checkpoints/<ckpt>.ckpt
 
 # Same-identity reconstruction
 PYTHONPATH=. python experiments/loki_eval/run_inference.py \
@@ -29,7 +29,7 @@ PYTHONPATH=. python experiments/loki_eval/run_inference.py \
     --n_samples 212 \
     --clip_duration_s 3.0 \
     --seed 42 \
-    --checkpoint outputs/loki_baseline/run_<ts>/checkpoints/<ckpt>.ckpt
+    --checkpoint outputs/loki_train/run_<ts>/checkpoints/<ckpt>.ckpt
 ```
 
 `--checkpoint` can be set in [`configs/eval.yaml`](configs/eval.yaml) to

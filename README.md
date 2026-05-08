@@ -30,7 +30,7 @@ rasterized vertex positions + per-vertex expression deformation).
 │   ├── train.py                      # training orchestrator
 │   └── generate.py                   # inference orchestrator (same- or cross-identity)
 ├── experiments/
-│   ├── loki_baseline/          # canonical full-stack training run
+│   ├── loki_train/          # canonical full-stack training run
 │   ├── condition_ablation/           # audio_off / no_flame / no_posenc / no_deform arms
 │   ├── loki_eval/              # cross + same identity eval against a checkpoint
 │   ├── sota_comparison/              # SadTalker / AniTalker / EchoMimic / HunyuanPortrait / X-Portrait wrappers

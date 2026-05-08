@@ -4,7 +4,7 @@ Training driver for the Loki talking-head diffusion model.
 Two public entry points:
 
   * run_training(cfg, output_dir=None, resume=None, gpus=(0,)) — the pure
-    function. Experiment scripts (e.g. `experiments/loki_baseline/run.py`,
+    function. Experiment scripts (e.g. `experiments/loki_train/run.py`,
     `experiments/condition_ablation/run_*.py`) import this and pass a
     pre-loaded DictConfig produced by
     `loki.config_utils.load_experiment_config`.

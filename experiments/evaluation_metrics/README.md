@@ -59,7 +59,7 @@ Runs in the `loki` conda env — no separate environment to build.
 Head-rot and expression metrics share pytorch3d with model training;
 `id_cosine` uses `onnxruntime-gpu` (pinned in [`requirements.txt`](../../requirements.txt))
 against torch's bundled cuDNN 9. The launcher scripts source
-`_activate.sh` which prepends torch's cuDNN dir to `LD_LIBRARY_PATH` so
+`src/_activate.sh` which prepends torch's cuDNN dir to `LD_LIBRARY_PATH` so
 onnxruntime-gpu's CUDAExecutionProvider can dlopen it.
 
 The pixel-aligned metrics (`psnr`, `ssim`, `lpips`) and FVD pull in
@@ -218,7 +218,6 @@ the per-sample evaluator writes, under `metrics.fvd_videomae` / `metrics.fvd_i3d
 ```
 experiments/evaluation_metrics/
 ├── README.md
-├── _activate.sh                          # sourced by launcher scripts; activates `loki`
 ├── setup_fvd.sh                          # one-time: pip install + cdfvd patch + 1.9 GB pre-stage
 ├── compute_metrics.py                    # CLI — auto-routes by protocol (per-sample)
 ├── compute_fvd.py                        # CLI — distribution-level FVD (HDTF same-id)
@@ -237,5 +236,8 @@ experiments/evaluation_metrics/
 │       └── fvd.py                        # Fréchet Video Distance — VideoMAE-v2 / I3D
 ├── patches/
 │   └── cdfvd_videomaev2_utils.py         # HuggingFace-mirror URL patch for cdfvd's broken loader
+├── src/
+│   ├── _activate.sh                      # sourced by launcher scripts; activates `loki`
+│   └── _topup_missing.sh                 # partial-rerun: fill missing metric groups across buckets
 └── deformation_map_diff/                 # helper scripts for the expression-metric pipeline
 ```

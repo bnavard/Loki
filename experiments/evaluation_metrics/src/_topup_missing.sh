@@ -22,14 +22,14 @@
 #
 # Usage (from repo root):
 #
-#     bash experiments/evaluation_metrics/_topup_missing.sh
-#     JOBS=6  bash experiments/evaluation_metrics/_topup_missing.sh
-#     GPU=1   bash experiments/evaluation_metrics/_topup_missing.sh
+#     bash experiments/evaluation_metrics/src/_topup_missing.sh
+#     JOBS=6  bash experiments/evaluation_metrics/src/_topup_missing.sh
+#     GPU=1   bash experiments/evaluation_metrics/src/_topup_missing.sh
 #     EXCLUDE_BUCKETS="loki_flame_vector_abl loki_no_deform_abl" \
-#         bash experiments/evaluation_metrics/_topup_missing.sh
+#         bash experiments/evaluation_metrics/src/_topup_missing.sh
 #
 # Background + log:
-#     bash experiments/evaluation_metrics/_topup_missing.sh \
+#     bash experiments/evaluation_metrics/src/_topup_missing.sh \
 #         > outputs/test_metric/metrics/_topup.log 2>&1 &
 #     tail -f outputs/test_metric/metrics/_topup.log
 # =============================================================================

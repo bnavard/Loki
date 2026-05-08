@@ -4,4 +4,4 @@
 base: loki/configs/base.yaml
 
 # Only the experiment-specific settings live here.
-output_dir: outputs/loki_baseline
+output_dir: outputs/loki_train

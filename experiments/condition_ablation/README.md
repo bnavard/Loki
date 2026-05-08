@@ -42,13 +42,13 @@ is untouched — arms swap the cond_stage class, they don't mutate it.
 
 ### Intended comparisons
 
-- `no_posenc` vs `loki_baseline` → **pos_enc contribution** (only the
+- `no_posenc` vs `loki_train` → **pos_enc contribution** (only the
   42ch positional encoding is dropped).
-- `no_deform` vs `loki_baseline` → **aligned deformation contribution**
+- `no_deform` vs `loki_train` → **aligned deformation contribution**
   (only the 3ch deform channels are dropped, no substitute). Identity
   reaches both arms through the ref UNet, so the cond tensor doesn't need
   to carry identity information.
-- `flame_vector` vs `loki_baseline` → **pixel-space representation
+- `flame_vector` vs `loki_train` → **pixel-space representation
   contribution** (the rasterization itself is dropped; the same parametric
   motion information is delivered as a spatially-constant tile instead).
   The §4.3 falsification test: if the rasterized arm wins, the win is
@@ -81,7 +81,7 @@ The [`ConditioningEncoder`](../../loki/model/conditioning_encoder.py)
 is the SD-style conv stack that downsamples `spatial_cond` from 512×512 to
 the UNet's 64×64 latent resolution and emits `model_channels=320` feature
 maps added to the first UNet feature map. **Its architecture must be
-identical across every rasterized arm** (`loki_baseline`, `no_posenc`,
+identical across every rasterized arm** (`loki_train`, `no_posenc`,
 `no_deform`) — the per-arm `conditioning.py` modules only decide *what
 tensor* gets fed in; they must never change the encoder itself. Concretely:
 
@@ -203,7 +203,7 @@ dispatches to the correct conditioning class automatically.
 
 ```
 outputs/
-├── loki_baseline/run_<ts>/                # canonical
+├── loki_train/run_<ts>/                # canonical
 └── condition_ablation/
     ├── no_posenc/run_<ts>/
     │   ├── config_resolved.yaml

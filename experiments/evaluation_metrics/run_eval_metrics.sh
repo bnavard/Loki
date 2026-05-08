@@ -59,8 +59,8 @@
 set -u
 set -o pipefail
 
-# shellcheck source=_activate.sh
-source "$(dirname "${BASH_SOURCE[0]}")/_activate.sh"
+# shellcheck source=src/_activate.sh
+source "$(dirname "${BASH_SOURCE[0]}")/src/_activate.sh"
 
 OUT_ROOT="outputs/test_metric/metrics"
 CLI="experiments/evaluation_metrics/compute_metrics.py"
