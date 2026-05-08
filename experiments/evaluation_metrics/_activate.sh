@@ -1,11 +1,11 @@
-# Source-only helper: activate the `marionette` conda env and expose
+# Source-only helper: activate the `loki` conda env and expose
 # `PYTHON` pointing at the env's interpreter. Sourced by:
 #   - run_eval_metrics.sh
 #   - sanity_check/visualize_*.sh
 #
 # All evaluation metrics run inside the same env that trains and
 # generates the model — head-rot and expression need pytorch3d (already
-# in marionette), and id_cosine needs `onnxruntime-gpu` against torch's
+# in loki), and id_cosine needs `onnxruntime-gpu` against torch's
 # bundled cuDNN 9. We prepend that cuDNN dir to `LD_LIBRARY_PATH` so
 # onnxruntime-gpu's CUDAExecutionProvider can dlopen
 # `libcudnn_*.so.9` at session-create time.
@@ -43,12 +43,12 @@ fi
 # shellcheck disable=SC1091
 source "${CONDA_BASE}/etc/profile.d/conda.sh"
 set +u
-conda activate marionette
+conda activate loki
 set -u
 
 PYTHON="$(command -v python)"
 if [[ -z "${PYTHON}" ]]; then
-    echo "ERROR: \`python\` not on PATH after activating marionette." >&2
+    echo "ERROR: \`python\` not on PATH after activating loki." >&2
     exit 1
 fi
 

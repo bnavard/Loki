@@ -21,7 +21,7 @@ Per sample:
 The shell-out is intentional. SadTalker's inference.py is ~140 lines of
 glue: 3DMM extraction → audio2coeff (CVAE) → facerender → ffmpeg mux.
 Calling it as a subprocess keeps deps sane (SadTalker's torch 2.1/cu121
-lives in its own conda env; the marionette env stays unpolluted) and lets
+lives in its own conda env; the loki env stays unpolluted) and lets
 upstream changes flow through without re-vendoring.
 """
 from __future__ import annotations
@@ -129,7 +129,7 @@ def _run_sadtalker_cli(
     the path to the generated mp4.
 
     `conda run -n <env> python inference.py ...` is the simplest reproducible
-    way to hop envs from within the marionette runner. `--no-capture-output`
+    way to hop envs from within the loki runner. `--no-capture-output`
     streams SadTalker's stdout/stderr so the 3DMM / facerender progress
     prints reach the terminal.
     """

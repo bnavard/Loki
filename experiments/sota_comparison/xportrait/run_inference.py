@@ -3,7 +3,7 @@ X-Portrait evaluation runner.
 
 Builds a deterministic list of `EvalSample`s from the chosen dataset +
 protocol, then invokes X-Portrait's inference one sample at a time via the
-adapter. Output layout mirrors `marionette_eval/` and the other SOTA
+adapter. Output layout mirrors `loki_eval/` and the other SOTA
 baselines.
 
 Protocol semantics (motion-driven, NOT audio-driven):
@@ -13,7 +13,7 @@ Protocol semantics (motion-driven, NOT audio-driven):
                                     from identity B ≠ A (derangement pair).
                                     Output: A's face doing B's motion.
 
-Usage (from repo root, `marionette` env — NOT `xportrait`; the subprocess
+Usage (from repo root, `loki` env — NOT `xportrait`; the subprocess
 hops into the xportrait env itself). Build the curated manifest for each
 dataset once via `dataset/build_manifest.py` before running these.
 

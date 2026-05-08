@@ -8,7 +8,7 @@
 # self-attention block), so the conditioning tensor doesn't need to carry
 # identity.
 
-base: marionette/configs/base.yaml
+base: loki/configs/base.yaml
 
 output_dir: outputs/condition_ablation/no_deform
 

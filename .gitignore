@@ -196,7 +196,7 @@ cython_debug/
 .cursorignore
 .cursorindexingignore
 
-# ==== Marionette ====
+# ==== Loki ====
 **/pixel3dmm
 
 # Data folder: ignore every subdirectory except `assets/` and `weights/`.

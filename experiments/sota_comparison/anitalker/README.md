@@ -4,7 +4,7 @@ Runs AniTalker (SJTU X-LANCE, [paper](https://arxiv.org/abs/2405.03121),
 [code](https://github.com/X-LANCE/AniTalker),
 [HuggingFace](https://huggingface.co/taocode/anitalker_ckpts)) against our
 benchmark datasets under a uniform CLI so its outputs sit next to
-Marionette's, SadTalker's, HunyuanPortrait's, and X-Portrait's for
+Loki's, SadTalker's, HunyuanPortrait's, and X-Portrait's for
 apples-to-apples comparison.
 
 ## At a glance
@@ -104,10 +104,10 @@ any of the other stage-2 shards if you want to ablate.
 
 The runner lives outside the `anitalker` env — it orchestrates, builds the
 pair list, and hops into the env per sample via `conda run`. Launch from
-the `marionette` env:
+the `loki` env:
 
 ```bash
-conda activate marionette
+conda activate loki
 
 # HDTF cross-identity (A's face + B's audio)
 PYTHONPATH=. python experiments/sota_comparison/anitalker/run_inference.py \

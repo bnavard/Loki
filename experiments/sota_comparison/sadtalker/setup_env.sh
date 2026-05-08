@@ -19,8 +19,8 @@
 # After it finishes:
 #
 #   conda activate sadtalker     # only if you want to poke at the env directly
-#   # otherwise launch the runner from the marionette env:
-#   conda activate marionette
+#   # otherwise launch the runner from the loki env:
+#   conda activate loki
 #   PYTHONPATH=. python experiments/sota_comparison/sadtalker/run_inference.py \
 #       --dataset hdtf --protocol same_identity_reconstruction --n_samples 346
 # =============================================================================
@@ -133,7 +133,7 @@ echo "============================================================"
 echo "[setup_env.sh] SadTalker setup complete."
 echo ""
 echo "Next steps (from repo root):"
-echo "  conda activate marionette"
+echo "  conda activate loki"
 echo "  PYTHONPATH=. python experiments/sota_comparison/sadtalker/run_inference.py \\"
 echo "      --dataset hdtf \\"
 echo "      --protocol same_identity_reconstruction \\"

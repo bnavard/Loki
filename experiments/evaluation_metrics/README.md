@@ -1,7 +1,7 @@
 # Evaluation Metrics
 
 Quantitative metrics for any run dir produced by the SOTA-comparison or
-marionette-eval runners. The CLI reads `<run_dir>/config_resolved.json` to
+loki-eval runners. The CLI reads `<run_dir>/config_resolved.json` to
 recover `dataset` + `protocol`, then routes the right metric set:
 
 | Protocol                          | Metrics                                                                                |
@@ -55,7 +55,7 @@ sample); aggregates at `<output_dir>/metrics_summary.json`.
 
 ## Setup
 
-Runs in the `marionette` conda env — no separate environment to build.
+Runs in the `loki` conda env — no separate environment to build.
 Head-rot and expression metrics share pytorch3d with model training;
 `id_cosine` uses `onnxruntime-gpu` (pinned in [`requirements.txt`](../../requirements.txt))
 against torch's bundled cuDNN 9. The launcher scripts source
@@ -94,15 +94,15 @@ PYTHONPATH=. python experiments/evaluation_metrics/compute_metrics.py \
     --metrics head_rot
 ```
 
-### Unified sweep — Marionette + every SOTA baseline (multi-GPU)
+### Unified sweep — Loki + every SOTA baseline (multi-GPU)
 
 `run_eval_metrics.sh` walks both
-`outputs/marionette_eval/<dataset>/<protocol>/run_*/` and
+`outputs/loki_eval/<dataset>/<protocol>/run_*/` and
 `outputs/sota_comparison/<baseline>/<dataset>/<protocol>/run_*/` into a
 single round-robin queue across the available GPUs (default 8). Every
 artifact lands in a centralized tree under
 `outputs/test_metric/metrics/<bucket>/<dataset>/<protocol>/`, where
-`<bucket>` is `marionette` or one of the SOTA baseline names — a single
+`<bucket>` is `loki` or one of the SOTA baseline names — a single
 glob `outputs/test_metric/metrics/*/<dataset>/<protocol>/metrics_summary.json`
 picks up every model uniformly for comparison.
 
@@ -206,7 +206,7 @@ PYTHONPATH=. python experiments/evaluation_metrics/compute_fvd.py --i3d
 
 # Single bucket.
 PYTHONPATH=. python experiments/evaluation_metrics/compute_fvd.py \
-    --run-dir outputs/marionette_eval/hdtf/same_identity_reconstruction/run_<ts>/
+    --run-dir outputs/loki_eval/hdtf/same_identity_reconstruction/run_<ts>/
 ```
 
 Result is folded into the same
@@ -234,11 +234,11 @@ PYTHONPATH=. python experiments/evaluation_metrics/sanity_check/visualize_expres
 ```
 experiments/evaluation_metrics/
 ├── README.md
-├── _activate.sh                          # sourced by launcher scripts; activates `marionette`
+├── _activate.sh                          # sourced by launcher scripts; activates `loki`
 ├── setup_fvd.sh                          # one-time: pip install + cdfvd patch + 1.9 GB pre-stage
 ├── compute_metrics.py                    # CLI — auto-routes by protocol (per-sample)
 ├── compute_fvd.py                        # CLI — distribution-level FVD (HDTF same-id)
-├── run_eval_metrics.sh                   # unified multi-GPU sweep (Marionette + SOTA)
+├── run_eval_metrics.sh                   # unified multi-GPU sweep (Loki + SOTA)
 ├── metrics/
 │   ├── __init__.py
 │   ├── io.py                             # video decode + run-tree walk

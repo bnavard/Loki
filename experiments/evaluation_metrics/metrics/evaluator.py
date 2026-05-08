@@ -1,6 +1,6 @@
 """Unified protocol-aware evaluator with metric-group abstraction.
 
-Walks one `<run_dir>` produced by the SOTA-comparison or marionette-eval
+Walks one `<run_dir>` produced by the SOTA-comparison or loki-eval
 runners and routes each prediction through the metric set appropriate
 to its protocol:
 
@@ -192,16 +192,16 @@ def _derive_bucket(run_dir: Path) -> str:
     """Recover the FLAME-tracking-preds subdirectory name from a run-dir path.
     Used to look up cached predicted FLAME fits under
     `data/flame_tracking/preds/<bucket>/<dataset>/<protocol>/<sample_id>/fit.npz`.
-    `outputs/marionette_eval/...`                  → "marionette".
+    `outputs/loki_eval/...`                  → "loki".
     `outputs/sota_comparison/<baseline>/...`       → "<baseline>".
     `outputs/condition_ablation_eval/<arm>/...`    → "<arm>"
         (no_posenc / no_deform / flame_vector). FLAME tracking writes to
         `data/flame_tracking/preds/<arm>/...`, so the arm name is the
         right pred-subdir even though the metrics-tree bucket for
-        ablations is `marionette_<arm>_abl` (set in run_eval_metrics.sh)."""
+        ablations is `loki_<arm>_abl` (set in run_eval_metrics.sh)."""
     parts = run_dir.parts
-    if "marionette_eval" in parts:
-        return "marionette"
+    if "loki_eval" in parts:
+        return "loki"
     if "sota_comparison" in parts:
         return parts[parts.index("sota_comparison") + 1]
     if "condition_ablation_eval" in parts:

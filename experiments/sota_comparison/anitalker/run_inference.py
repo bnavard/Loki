@@ -3,7 +3,7 @@ AniTalker evaluation runner.
 
 Builds a deterministic list of `EvalSample`s from the chosen dataset +
 protocol, then invokes AniTalker's inference one sample at a time via the
-adapter. Output layout mirrors `marionette_eval/` and the other SOTA
+adapter. Output layout mirrors `loki_eval/` and the other SOTA
 baselines.
 
 Protocol semantics (AniTalker is audio-driven, like SadTalker):
@@ -13,7 +13,7 @@ Protocol semantics (AniTalker is audio-driven, like SadTalker):
                                     from identity B ≠ A. Output: A's face
                                     lip-synced to B's speech.
 
-Usage (from repo root, `marionette` env — NOT `anitalker`; the subprocess
+Usage (from repo root, `loki` env — NOT `anitalker`; the subprocess
 hops into the anitalker env itself). Build the curated manifest for each
 dataset once via `dataset/build_manifest.py` before running these.
 

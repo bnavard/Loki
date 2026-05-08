@@ -30,8 +30,8 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-from marionette.config_utils import load_experiment_config
-from marionette.train import run_training
+from loki.config_utils import load_experiment_config
+from loki.train import run_training
 
 
 HERE = Path(__file__).resolve().parent

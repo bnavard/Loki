@@ -1,7 +1,7 @@
-# marionette requirements
+# loki requirements
 # Create conda env first:
-#   conda create -n marionette python=3.10 -y
-#   conda activate marionette
+#   conda create -n loki python=3.10 -y
+#   conda activate loki
 #   pip install -r requirements.txt
 
 # PyTorch 2.4.1 + CUDA 12.1

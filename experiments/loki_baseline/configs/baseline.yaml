@@ -1,0 +1,7 @@
+# Loki baseline — uses loki/configs/base.yaml unchanged.
+# This experiment IS the canonical v3 training recipe.
+
+base: loki/configs/base.yaml
+
+# Only the experiment-specific settings live here.
+output_dir: outputs/loki_baseline

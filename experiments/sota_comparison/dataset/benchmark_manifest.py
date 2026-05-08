@@ -14,7 +14,7 @@ This module produces, saves, and loads that curated pool. Once
 `build_benchmark_manifest` is written to
 `experiments/sota_comparison/manifests/<dataset>.json`, the UIDs are frozen
 for that dataset + that seed; downstream runners (`sadtalker/run_inference.py`,
-future baselines, Marionette's own eval) all consume the same manifest and
+future baselines, Loki's own eval) all consume the same manifest and
 inherit the same UID scheme. That is what makes a single glob over
 `outputs/**/samples/<uid>/panel.mp4` align every model against every other
 model at the identity level.

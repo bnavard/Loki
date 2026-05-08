@@ -4,7 +4,7 @@
 # positions; keeps only the 3-channel per-vertex expression deformation map.
 # The UNet's ConditioningEncoder drops from 45 input channels to 3.
 
-base: marionette/configs/base.yaml
+base: loki/configs/base.yaml
 
 output_dir: outputs/condition_ablation/no_posenc
 

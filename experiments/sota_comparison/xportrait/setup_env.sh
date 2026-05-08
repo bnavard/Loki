@@ -20,7 +20,7 @@
 #
 # After it finishes:
 #
-#   conda activate marionette
+#   conda activate loki
 #   PYTHONPATH=. python experiments/sota_comparison/xportrait/run_inference.py \
 #       --dataset hdtf --protocol cross_identity --n_samples 200 \
 #       --clip_duration_s 3.0 --seed 42
@@ -162,7 +162,7 @@ echo "============================================================"
 echo "[setup_env.sh] X-Portrait setup complete."
 echo ""
 echo "Next steps (from repo root):"
-echo "  conda activate marionette"
+echo "  conda activate loki"
 echo "  PYTHONPATH=. python experiments/sota_comparison/xportrait/run_inference.py \\"
 echo "      --dataset hdtf \\"
 echo "      --protocol cross_identity \\"

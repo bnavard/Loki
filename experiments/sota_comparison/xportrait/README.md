@@ -3,7 +3,7 @@
 Runs X-Portrait (ByteDance, [paper](https://arxiv.org/abs/2403.15931),
 [code](https://github.com/bytedance/X-Portrait),
 [project page](https://byteaigc.github.io/x-portrait/)) against our benchmark
-datasets under a uniform CLI so its outputs sit next to Marionette's,
+datasets under a uniform CLI so its outputs sit next to Loki's,
 SadTalker's, and HunyuanPortrait's for apples-to-apples comparison.
 
 ## At a glance
@@ -95,10 +95,10 @@ impl/
 
 The runner lives outside the `xportrait` env — it orchestrates, builds the
 pair list, and hops into the env per sample via `conda run`. Launch from
-the `marionette` env:
+the `loki` env:
 
 ```bash
-conda activate marionette
+conda activate loki
 
 # HDTF cross-identity (A's face doing B's motion)
 PYTHONPATH=. python experiments/sota_comparison/xportrait/run_inference.py \

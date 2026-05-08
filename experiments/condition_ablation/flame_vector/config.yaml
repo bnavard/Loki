@@ -14,7 +14,7 @@
 # the step-0 invariant (cond contributes exactly zero at training start) —
 # the same invariant the rasterized arms rely on.
 
-base: marionette/configs/base.yaml
+base: loki/configs/base.yaml
 
 output_dir: outputs/condition_ablation/flame_vector
 
@@ -44,7 +44,7 @@ model:
     cond_stage_config:
       target: experiments.condition_ablation.flame_vector.conditioning.FlameVectorConditioning
       params:
-        flame_params_dim:    77       # FLAME_PARAMS_DIM in marionette.data.video_dataset
+        flame_params_dim:    77       # FLAME_PARAMS_DIM in loki.data.video_dataset
         model_channels:     320
         latent_resolution:   64
         hidden_dim:         320

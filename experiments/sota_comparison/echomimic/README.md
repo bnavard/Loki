@@ -4,7 +4,7 @@ Runs EchoMimicV1 (Ant Group / Alipay, [paper](https://arxiv.org/abs/2407.08136),
 [code](https://github.com/antgroup/echomimic),
 [HuggingFace](https://huggingface.co/BadToBest/EchoMimic)) against our
 benchmark datasets under a uniform CLI so its outputs sit next to
-Marionette's, SadTalker's, AniTalker's, HunyuanPortrait's, and X-Portrait's
+Loki's, SadTalker's, AniTalker's, HunyuanPortrait's, and X-Portrait's
 for apples-to-apples comparison.
 
 ## At a glance
@@ -117,10 +117,10 @@ If you later want to ablate the pose-driven or accelerated variants, add
 
 The runner lives outside the `echomimic` env — it orchestrates, builds the
 pair list, and hops into the env per sample via `conda run`. Launch from
-the `marionette` env:
+the `loki` env:
 
 ```bash
-conda activate marionette
+conda activate loki
 
 # HDTF cross-identity (A's face + B's audio)
 PYTHONPATH=. python experiments/sota_comparison/echomimic/run_inference.py \
@@ -181,7 +181,7 @@ outputs/sota_comparison/echomimic/<dataset>/<protocol>/run_<timestamp>/
 - `same_identity_reconstruction` → `id_0457`
 - `cross_identity` → `id_0457_id_0009` (ref uid, driver uid)
 
-Aligned with every other SOTA baseline + Marionette → a single glob like
+Aligned with every other SOTA baseline + Loki → a single glob like
 `outputs/sota_comparison/*/hdtf/cross_identity/run_<ts>/samples/id_0457_id_0009/panel.mp4`
 gives every model's output for the same identity pair.
 

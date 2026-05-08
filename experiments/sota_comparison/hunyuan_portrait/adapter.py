@@ -31,7 +31,7 @@ Cross-baseline alignment
 The output `panel.mp4` is HunyuanPortrait's `cropped.mp4` (the pure 512×512
 face-crop generation), NOT `full_resolution.mp4` (their paste-back onto the
 original source image). Reasons:
-  * SadTalker and Marionette both produce face-cropped 512×512 output.
+  * SadTalker and Loki both produce face-cropped 512×512 output.
     Metric sweeps on lip-sync / identity / sharpness expect that common
     surface.
   * HunyuanPortrait's paste-back layer is useful for demo videos but

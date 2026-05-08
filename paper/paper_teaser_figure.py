@@ -1,35 +1,35 @@
-r"""Marionette teaser figure — two cross-identity reenactment examples.
+r"""Loki teaser figure — two cross-identity reenactment examples.
 
-Marionette-only (no SOTA comparison). Each figure has two stacked blocks,
+Loki-only (no SOTA comparison). Each figure has two stacked blocks,
 both showing cross-identity retargeting (different ref / driver pairs);
 each block has a reference column on the left spanning two rows, with
-driver frames on the upper row and Marionette generations on the lower:
+driver frames on the upper row and Loki generations on the lower:
 
     Block 1 — Cross-Identity Retargeting (pair A)
         ┌─────┬──────┬──────┬──────┬──────┐
         │     │ d_1  │ d_2  │ d_3  │ d_4  │   driver frames
         │ ref ├──────┼──────┼──────┼──────┤
-        │     │ g_1  │ g_2  │ g_3  │ g_4  │   Marionette generated
+        │     │ g_1  │ g_2  │ g_3  │ g_4  │   Loki generated
         └─────┴──────┴──────┴──────┴──────┘
 
     Block 2 — Cross-Identity Retargeting (pair B)
         (same layout, a different ref / driver pair)
 
-All three streams come from the Marionette eval run itself:
+All three streams come from the Loki eval run itself:
   * `panel.mp4`              — generated 16-frame video (the prediction)
   * `scratch/.../source.png` — face-cropped reference frame the model saw
   * `scratch/.../driver.mp4` — face-cropped driver clip the model saw
 
 Reading the eval's own scratch artifacts (rather than re-cropping raw
 source clips) is what makes the driver column actually correspond to the
-frames Marionette generated against — same crop box, same 16 frames, same
+frames Loki generated against — same crop box, same 16 frames, same
 fps. Re-cropping the source video would diverge on every variable-fps clip.
 
 Each invocation lands in its own timestamped folder under
 `outputs/paper_figures/teaser/run_<YYYYmmdd_HHMMSS>/` and writes an
 `_index.json` recording the seed and per-figure provenance.
 
-Usage (from repo root, inside the marionette conda env):
+Usage (from repo root, inside the loki conda env):
 
     # default — 1 figure, two random cross-identity picks across all datasets
     PYTHONPATH=. python paper/paper_teaser_figure.py
@@ -68,11 +68,11 @@ from experiments.evaluation_metrics.metrics.io import DEFAULT_FPS, load_video
 ALL_DATASETS = ["hdtf", "talkvid"]
 PROTOCOL     = "cross_identity"
 
-# Frame indices sampled per row (1st, 4th, 8th, 16th of Marionette's window).
+# Frame indices sampled per row (1st, 4th, 8th, 16th of Loki's window).
 SAMPLED_FRAME_INDICES = [0, 3, 7, 15]
 N_FRAMES_PER_ROW      = len(SAMPLED_FRAME_INDICES)
 
-MARIONETTE_ROOT = Path("outputs/marionette_eval")
+LOKI_ROOT = Path("outputs/loki_eval")
 
 
 # ---------------------------------------------------------------------------
@@ -81,7 +81,7 @@ MARIONETTE_ROOT = Path("outputs/marionette_eval")
 
 @dataclass
 class TeaserPick:
-    """One cross-identity Marionette eval sample. Every path points into
+    """One cross-identity Loki eval sample. Every path points into
     the eval run itself — no cross-referencing source videos."""
     dataset:    str
     sample_id:  str
@@ -111,12 +111,12 @@ def _split_sample_id(sample_id: str) -> tuple[str, str]:
 
 
 def discover_picks(datasets: list[str]) -> list[TeaserPick]:
-    """Walk the latest Marionette cross-identity eval run per dataset and
+    """Walk the latest Loki cross-identity eval run per dataset and
     enumerate every sample that has a complete `panel.mp4` + scratch
     `source.png` + scratch `driver.mp4` triple."""
     pool: list[TeaserPick] = []
     for dataset in datasets:
-        run = _latest_run(MARIONETTE_ROOT / dataset / PROTOCOL)
+        run = _latest_run(LOKI_ROOT / dataset / PROTOCOL)
         if run is None:
             continue
         samples_root = run / "samples"
@@ -165,7 +165,7 @@ def _stride_indices(T: int) -> list[int]:
 
 def _load_video_strided(path: Path) -> np.ndarray:
     """Load a 25fps face-cropped video from the eval scratch tree (or the
-    Marionette panel) and return stride-sampled uint8 frames `(n, H, W, 3)`."""
+    Loki panel) and return stride-sampled uint8 frames `(n, H, W, 3)`."""
     video = load_video(path, fps=DEFAULT_FPS, resolution=None)
     indices = _stride_indices(video.shape[0])
     return _video_to_uint8_frames(video[indices])
@@ -197,7 +197,7 @@ def _draw_block(
     driver_grid: np.ndarray,
     mario_grid:  np.ndarray,
 ) -> None:
-    """Render one (ref column + driver row + Marionette row) block."""
+    """Render one (ref column + driver row + Loki row) block."""
     r_drv, r_gen = block_rows
 
     ax_ref = fig.add_subplot(gs[r_drv:r_gen + 1, 0])
@@ -260,13 +260,13 @@ def render_figure(
 
 def parse_args():
     p = argparse.ArgumentParser(
-        description="Render Marionette-only teaser figures (two stacked "
+        description="Render Loki-only teaser figures (two stacked "
                     "cross-identity blocks per figure).",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     p.add_argument("--datasets",  nargs="+", default=ALL_DATASETS,
                    choices=ALL_DATASETS,
-                   help="Datasets to source Marionette cross-identity samples from.")
+                   help="Datasets to source Loki cross-identity samples from.")
     p.add_argument("--n_figures", type=int, default=1,
                    help="Number of figures to render in random mode (default 1).")
     p.add_argument("--seed",      type=int, default=None,
@@ -301,7 +301,7 @@ def _validate_modes(args, pool: list[TeaserPick]) -> str:
     if len(pool) < 2:
         raise SystemExit(
             "Need at least 2 cross-identity samples in the pool. Check that "
-            "Marionette eval ran cross_identity on the requested datasets, "
+            "Loki eval ran cross_identity on the requested datasets, "
             "and that each sample has a panel.mp4 + scratch/source.png + "
             "scratch/driver.mp4 triple."
         )

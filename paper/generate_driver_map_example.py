@@ -16,7 +16,7 @@ of the driver map:
 A shared colorbar on the right shows the Δ_expr magnitude range
 (0 → vmax, 99.5th percentile of ||Δ||₂ across all picked frames).
 
-Usage (from repo root, marionette conda env):
+Usage (from repo root, loki conda env):
 
     # Default: 1 random clip, 4 expressive frames as columns.
     PYTHONPATH=. python paper/generate_driver_map_example.py --seed 7
@@ -51,11 +51,11 @@ import torch
 from matplotlib.collections import LineCollection
 from matplotlib.colors import Normalize
 
-from marionette.conditioning.conditioning import SpatialConditioning
-from marionette.conditioning.mesh2img import PropRenderer
-from marionette.flame.flame import CAP4DFlameSkinner, compute_flame
-from marionette.retargeting import prepare_reference
-from marionette.utils import (
+from loki.conditioning.conditioning import SpatialConditioning
+from loki.conditioning.mesh2img import PropRenderer
+from loki.flame.flame import CAP4DFlameSkinner, compute_flame
+from loki.retargeting import prepare_reference
+from loki.utils import (
     crop_image, get_bbox_from_verts, load_frame,
     rescale_image, verts_to_pytorch3d,
 )

@@ -3,7 +3,7 @@ EchoMimic evaluation runner.
 
 Builds a deterministic list of `EvalSample`s from the chosen dataset +
 protocol, then invokes EchoMimic's `infer_audio2vid.py` one sample at a
-time via the adapter. Output layout mirrors `marionette_eval/` and the
+time via the adapter. Output layout mirrors `loki_eval/` and the
 other SOTA baselines.
 
 Protocol semantics (audio-driven, like SadTalker / AniTalker):
@@ -13,7 +13,7 @@ Protocol semantics (audio-driven, like SadTalker / AniTalker):
                                     audio from identity B ≠ A. Output:
                                     A's face lip-synced to B's speech.
 
-Usage (from repo root, `marionette` env — NOT `echomimic`; the subprocess
+Usage (from repo root, `loki` env — NOT `echomimic`; the subprocess
 hops into the echomimic env itself). Build the curated manifest for each
 dataset once via `dataset/build_manifest.py` before running these.
 

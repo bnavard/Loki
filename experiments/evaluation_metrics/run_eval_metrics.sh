@@ -1,16 +1,16 @@
 #!/bin/bash
 # =============================================================================
-# Unified multi-GPU metrics runner — Marionette + every SOTA baseline in
+# Unified multi-GPU metrics runner — Loki + every SOTA baseline in
 # one parallel sweep.
 #
 #   outputs/test_metric/metrics/<bucket>/<dataset>/<protocol>/
 #       ├── metrics.jsonl            (one row per sample)
 #       └── metrics_summary.json     (aggregates)
 #
-# `<bucket>` = `marionette` for `outputs/marionette_eval/` runs, the
+# `<bucket>` = `loki` for `outputs/loki_eval/` runs, the
 # baseline name for `outputs/sota_comparison/<baseline>/` runs, and
-# `marionette_<arm>_abl` for `outputs/condition_ablation_eval/<arm>/`
-# runs (so ablations group with Marionette and can't be confused with a
+# `loki_<arm>_abl` for `outputs/condition_ablation_eval/<arm>/`
+# runs (so ablations group with Loki and can't be confused with a
 # SOTA baseline). A single
 # `outputs/test_metric/metrics/*/<dataset>/<protocol>/metrics_summary.json`
 # glob picks up every model uniformly for the comparison table.
@@ -28,7 +28,7 @@
 #                                                  first, then `auto` recomputes
 #
 # Frame coverage: every metric is computed on the **first 16 frames**
-# of each prediction, matching Marionette's `cfg.inference.n_frames=16`.
+# of each prediction, matching Loki's `cfg.inference.n_frames=16`.
 # SOTA generations longer than 16 frames are silently truncated.
 #
 # Per-GPU memory: ~600 MB (InsightFace buffalo_l + FLAME skinner +
@@ -64,7 +64,7 @@ source "$(dirname "${BASH_SOURCE[0]}")/_activate.sh"
 
 OUT_ROOT="outputs/test_metric/metrics"
 CLI="experiments/evaluation_metrics/compute_metrics.py"
-MARIONETTE_ROOT="outputs/marionette_eval"
+LOKI_ROOT="outputs/loki_eval"
 SOTA_ROOT="outputs/sota_comparison"
 ABLATION_ROOT="outputs/condition_ablation_eval"
 
@@ -90,8 +90,8 @@ N_GPUS="${#GPU_LIST[@]}"
 # Build the unified work queue. Each entry is "<bucket>|<run_dir>".
 # -----------------------------------------------------------------------------
 WORK=()
-for d in "${MARIONETTE_ROOT}"/hdtf/*/run_*/; do
-    [[ -d "$d" ]] && WORK+=("marionette|${d}")
+for d in "${LOKI_ROOT}"/hdtf/*/run_*/; do
+    [[ -d "$d" ]] && WORK+=("loki|${d}")
 done
 for d in "${SOTA_ROOT}"/*/hdtf/*/run_*/; do
     [[ -d "$d" ]] || continue
@@ -101,15 +101,15 @@ for d in "${SOTA_ROOT}"/*/hdtf/*/run_*/; do
     WORK+=("${baseline}|${d}")
 done
 # Condition-ablation runs share the SOTA-style `<arm>/<dataset>/<protocol>/run_<ts>/`
-# layout. The bucket is `marionette_<arm>_abl` so ablation results group
-# next to `marionette` in the central summary tree and can't be confused
+# layout. The bucket is `loki_<arm>_abl` so ablation results group
+# next to `loki` in the central summary tree and can't be confused
 # with a SOTA baseline.
 for d in "${ABLATION_ROOT}"/*/hdtf/*/run_*/; do
     [[ -d "$d" ]] || continue
     rel="${d#${ABLATION_ROOT}/}"
     rel="${rel%/}"
     arm="${rel%%/*}"
-    WORK+=("marionette_${arm}_abl|${d}")
+    WORK+=("loki_${arm}_abl|${d}")
 done
 N_TOTAL="${#WORK[@]}"
 
@@ -119,7 +119,7 @@ echo "[batch] METRICS=${METRICS}  FRESH=${FRESH}"
 echo "============================================================"
 
 if (( N_TOTAL == 0 )); then
-    echo "[batch] no run dirs found under ${MARIONETTE_ROOT}, ${SOTA_ROOT}, or ${ABLATION_ROOT}. exiting."
+    echo "[batch] no run dirs found under ${LOKI_ROOT}, ${SOTA_ROOT}, or ${ABLATION_ROOT}. exiting."
     exit 0
 fi
 

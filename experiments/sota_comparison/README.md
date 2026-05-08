@@ -1,7 +1,7 @@
 # SOTA Comparison Suite
 
 Uniform wrappers around state-of-the-art talking-head models so their
-outputs sit next to Marionette's under a common layout for apples-to-apples
+outputs sit next to Loki's under a common layout for apples-to-apples
 comparison. One folder per baseline; one command per `(baseline, dataset,
 protocol)` triple.
 
@@ -64,9 +64,9 @@ output trees refers to the same physical identity (or identity pair)**, so
 downstream metric sweeps can glob `outputs/**/samples/id_0457/panel.mp4`
 and diff results 1-to-1.
 
-Mirrors `experiments/marionette_eval/`'s layout so downstream metric sweeps
+Mirrors `experiments/loki_eval/`'s layout so downstream metric sweeps
 can glob `outputs/**/samples/**/panel.mp4` uniformly across baselines and
-Marionette.
+Loki.
 
 ## Protocols
 
@@ -110,7 +110,7 @@ one clip per identity (longest-clip rule), capped at `--n_samples_cap`
 once per dataset and commit the JSON — UIDs are then frozen forever.
 
 ```bash
-conda activate marionette
+conda activate loki
 PYTHONPATH=. python experiments/sota_comparison/dataset/build_manifest.py \
     --dataset hdtf
 ```
@@ -148,13 +148,13 @@ Idempotent (per-file sentinels on the big downloads) — safe to re-run after
 any transient failure. See the baseline's own README for the manual
 step-by-step if you need to debug.
 
-The orchestrator launches from the `marionette` env — the baseline's env
+The orchestrator launches from the `loki` env — the baseline's env
 only hosts its inference subprocess, hopped into via `conda run -n <env>`.
 `--n_samples` caps the pair list (independent of the manifest's identity
 count), so short debug runs don't need to regenerate the manifest.
 
 ```bash
-conda activate marionette
+conda activate loki
 PYTHONPATH=. python experiments/sota_comparison/<baseline>/run_inference.py \
     --dataset         hdtf \
     --protocol        same_identity_reconstruction \

@@ -1,10 +1,10 @@
-r"""Render paper-ready Marionette-vs-SOTA comparison figures.
+r"""Render paper-ready Loki-vs-SOTA comparison figures.
 
 Each figure has the layout:
 
                   ┌──────────────────────────────────────────────┐
                   │ d_0 d_3 d_7 d_15   Driving Video
-                  │ m_0 m_3 m_7 m_15   Marionette
+                  │ m_0 m_3 m_7 m_15   Loki
   [Reference]     │ a_0 a_3 a_7 a_15   AniTalker
                   │ e_0 e_3 e_7 e_15   EchoMimic
                   │ h_0 h_3 h_7 h_15   HunyuanPortrait
@@ -19,16 +19,16 @@ Each figure has the layout:
     figure stays structurally complete (paper-ready).
 
 Each invocation lands in its own timestamped folder under the
-`sota_vs_marionette_comparison` subtree, so re-rolls don't overwrite
+`sota_vs_loki_comparison` subtree, so re-rolls don't overwrite
 earlier draws and this script's outputs stay separate from other paper
 figures (e.g. the FLAME-retargeting figures):
 
-    outputs/paper_figures/sota_vs_marionette_comparison/run_<YYYYMMDD_HHMMSS>/
+    outputs/paper_figures/sota_vs_loki_comparison/run_<YYYYMMDD_HHMMSS>/
         ├── <dataset>__<protocol>__<sample_id>.png
         ├── ...
         └── _index.json     # records seed + per-figure provenance
 
-Usage (from repo root, inside the `marionette` conda env):
+Usage (from repo root, inside the `loki` conda env):
 
     PYTHONPATH=. python paper/build_comparison_figure.py
     PYTHONPATH=. python paper/build_comparison_figure.py --n-figures 10
@@ -91,7 +91,7 @@ SOTA_BASELINES_ORDERED = [
 
 DISPLAY_NAMES = {
     "driving":          "Driving\nVideo",
-    "marionette":       "Marionette",
+    "loki":       "Loki",
     "anitalker":        "AniTalker",
     "echomimic":        "EchoMimic",
     "hunyuan_portrait": "HunyuanPortrait",
@@ -107,10 +107,10 @@ SAMPLED_FRAME_INDICES = [0, 3, 7, 15]
 N_FRAMES_PER_ROW      = len(SAMPLED_FRAME_INDICES)
 
 SOTA_ROOT       = Path("outputs/sota_comparison")
-MARIONETTE_ROOT = Path("outputs/marionette_eval")
+LOKI_ROOT = Path("outputs/loki_eval")
 MANIFEST_DIR    = Path("experiments/sota_comparison/manifests")
 
-# Marionette's `panel.mp4` is the generated 512×512 video directly
+# Loki's `panel.mp4` is the generated 512×512 video directly
 # (16 frames at 25 fps). Earlier versions emitted a 4-row composite
 # panel; the current adapter writes only the generation.
 
@@ -130,7 +130,7 @@ class FigurePick:
     ref_uid:    str
     drv_uid:    str
     ref_clip:   dict             # manifest entry for ref UID
-    marionette: Path             # path to Marionette panel.mp4
+    loki: Path             # path to Loki panel.mp4
     driver:     Path             # path to driver clip (any sample dir's driver.mp4 or source)
     sota:       dict[str, Optional[Path]]   # baseline -> panel.mp4 or None
 
@@ -164,16 +164,16 @@ def discover_picks(
     datasets:  list[str],
     protocols: list[str],
 ) -> list[FigurePick]:
-    """Walk Marionette + every SOTA tree, build the pool of available
+    """Walk Loki + every SOTA tree, build the pool of available
     (dataset, protocol, sample_id) combinations. A combo enters the pool
-    iff Marionette has a `panel.mp4` for it; SOTA presence is recorded
+    iff Loki has a `panel.mp4` for it; SOTA presence is recorded
     per-baseline (missing rows render as placeholders)."""
     picks: list[FigurePick] = []
     for dataset in datasets:
         manifest = _load_manifest(dataset)
 
         for protocol in protocols:
-            mario_run = _latest_run(MARIONETTE_ROOT / dataset / protocol)
+            mario_run = _latest_run(LOKI_ROOT / dataset / protocol)
             if mario_run is None:
                 continue
             mario_samples_root = mario_run / "samples"
@@ -199,7 +199,7 @@ def discover_picks(
 
                 # Find any baseline that has a `driver.mp4` (the populate
                 # script wrote it next to every panel.mp4 across SOTA).
-                # Marionette runs don't have it, so we borrow from
+                # Loki runs don't have it, so we borrow from
                 # whichever SOTA tree has the sample.
                 driver_path: Optional[Path] = None
                 sota_panels: dict[str, Optional[Path]] = {}
@@ -226,7 +226,7 @@ def discover_picks(
                     ref_uid    = ref_uid,
                     drv_uid    = drv_uid,
                     ref_clip   = manifest[ref_uid],
-                    marionette = mario_panel,
+                    loki = mario_panel,
                     driver     = driver_path,
                     sota       = sota_panels,
                 ))
@@ -251,10 +251,10 @@ def _stride_indices(T: int) -> list[int]:
     return [min(i, T - 1) for i in SAMPLED_FRAME_INDICES]
 
 
-def _peek_marionette_panel_length(path: Path) -> int:
-    """How many time-axis frames Marionette's panel.mp4 carries. The crop
+def _peek_loki_panel_length(path: Path) -> int:
+    """How many time-axis frames Loki's panel.mp4 carries. The crop
     and stride for every other row are derived from this — every row in
-    the final figure shares Marionette's wall-clock coverage."""
+    the final figure shares Loki's wall-clock coverage."""
     return load_video(path, fps=DEFAULT_FPS, resolution=None).shape[0]
 
 
@@ -267,7 +267,7 @@ def _load_and_sample(
     uint8 frames as `(n, H, W, 3)`. Returns None if `path` is missing.
 
     `max_frames` caps the time axis BEFORE the index pick, so SOTA
-    panels (75–125 frames) get cut to Marionette's panel length (16)
+    panels (75–125 frames) get cut to Loki's panel length (16)
     first, then frames at the fixed `SAMPLED_FRAME_INDICES` are taken.
     Columns then align in wall-clock content across rows.
 
@@ -287,8 +287,8 @@ def _load_and_sample(
     return _video_to_uint8_frames(video[indices])
 
 
-def _load_marionette_generated(path: Optional[Path]) -> Optional[np.ndarray]:
-    """Marionette's `panel.mp4` is the 512×512 generated video as-is."""
+def _load_loki_generated(path: Optional[Path]) -> Optional[np.ndarray]:
+    """Loki's `panel.mp4` is the 512×512 generated video as-is."""
     return _load_and_sample(path, crop=False)
 
 
@@ -320,19 +320,19 @@ def _strip_axis(ax, edgecolor="black", facecolor="white"):
 
 def render_figure(pick: FigurePick, out_path: Path) -> None:
     """Render one figure for one pick and save to `out_path`."""
-    n_rows  = 1 + 1 + len(SOTA_BASELINES_ORDERED)   # driving + marionette + 5 SOTA
+    n_rows  = 1 + 1 + len(SOTA_BASELINES_ORDERED)   # driving + loki + 5 SOTA
 
     # ------------- gather pixel data -------------
-    # Cap every non-Marionette row to Marionette's actual panel length so
-    # the columns align in wall-clock content. With Marionette's default
+    # Cap every non-Loki row to Loki's actual panel length so
+    # the columns align in wall-clock content. With Loki's default
     # `n_frames=16` at 25 fps, that's 0.64 s; SOTA panels (75–125 frames)
     # would otherwise span 3–5 s and the row contents wouldn't match
     # in time.
-    T_mario = _peek_marionette_panel_length(pick.marionette)
+    T_mario = _peek_loki_panel_length(pick.loki)
 
     ref_image   = _load_reference_image(pick.ref_clip)
     driver_grid = _load_and_sample(pick.driver, crop=True, max_frames=T_mario)
-    mario_grid  = _load_marionette_generated(pick.marionette)
+    mario_grid  = _load_loki_generated(pick.loki)
     sota_grids  = {
         b: _load_and_sample(p, crop=False, max_frames=T_mario)
         for b, p in pick.sota.items()
@@ -340,7 +340,7 @@ def render_figure(pick: FigurePick, out_path: Path) -> None:
 
     row_data: list[tuple[str, Optional[np.ndarray]]] = [
         ("driving",    driver_grid),
-        ("marionette", mario_grid),
+        ("loki", mario_grid),
     ]
     for b in SOTA_BASELINES_ORDERED:
         row_data.append((b, sota_grids.get(b)))
@@ -392,7 +392,7 @@ def render_figure(pick: FigurePick, out_path: Path) -> None:
 
 def parse_args():
     p = argparse.ArgumentParser(
-        description="Render Marionette-vs-SOTA comparison figures.",
+        description="Render Loki-vs-SOTA comparison figures.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     p.add_argument("--datasets",  nargs="+", default=ALL_DATASETS,
@@ -404,7 +404,7 @@ def parse_args():
     p.add_argument("--seed",      type=int, default=None,
                    help="Optional seed for reproducible draws. Default: time-based.")
     p.add_argument("--out-root",  type=Path,
-                   default=Path("outputs/paper_figures/sota_vs_marionette_comparison"),
+                   default=Path("outputs/paper_figures/sota_vs_loki_comparison"),
                    help="Parent dir; the script writes to a timestamped "
                         "<out-root>/run_<YYYYMMDD_HHMMSS>/ subdir each invocation.")
     return p.parse_args()
@@ -419,7 +419,7 @@ def main():
     if not pool:
         raise SystemExit(
             f"No (dataset, protocol, sample_id) combinations found. Datasets: "
-            f"{args.datasets}  protocols: {args.protocols}. Did Marionette eval "
+            f"{args.datasets}  protocols: {args.protocols}. Did Loki eval "
             f"and the SOTA backfill run?"
         )
 
@@ -448,7 +448,7 @@ def main():
             "drv_uid":   pick.drv_uid,
             "rows": {
                 "driver":     str(pick.driver),
-                "marionette": str(pick.marionette),
+                "loki": str(pick.loki),
                 **{b: (str(p) if p else None) for b, p in pick.sota.items()},
             },
             "out_png":   str(out_path),

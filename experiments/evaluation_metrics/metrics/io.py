@@ -4,7 +4,7 @@ Two responsibilities:
 
 1. **Decode an mp4 to a `(T, 3, H, W)` float32 tensor in `[0, 1]`** at fixed
    fps + resolution. Defaults match this repo's prediction surface — every
-   Marionette / SOTA-wrapper `panel.mp4` is 25 fps at 512×512. HDTF source
+   Loki / SOTA-wrapper `panel.mp4` is 25 fps at 512×512. HDTF source
    clips arrive at the manifest's native rate; the resampler normalizes
    them to the prediction's rate so paired ops line up frame-for-frame.
    Uses `decord` (fast random access); falls back to `imageio.v3` if
@@ -32,7 +32,7 @@ import torch
 import torch.nn.functional as F
 
 
-# Every prediction in this repo (Marionette + 5 SOTA wrappers) lands at
+# Every prediction in this repo (Loki + 5 SOTA wrappers) lands at
 # 25 fps and 512×512. Defaults match that surface so the GT side is
 # normalized to the prediction's rate / resolution rather than the other
 # way around.
@@ -150,7 +150,7 @@ def load_run_metadata(run_dir: Path) -> RunMetadata:
     then load + index the curated manifest. Fail loud if it's missing —
     we'd rather refuse to run than silently mis-route metrics.
 
-    Every runner in this repo (marionette_eval + the 5 SOTA wrappers)
+    Every runner in this repo (loki_eval + the 5 SOTA wrappers)
     writes a `config_resolved.json` at the run root with at least
     `dataset` and `protocol` populated.
     """

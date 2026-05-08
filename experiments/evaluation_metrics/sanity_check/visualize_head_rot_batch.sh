@@ -3,7 +3,7 @@
 # Sanity-check batch driver for the head-rotation visualizer.
 #
 # Picks N (default 5) sample IDs per `protocol` cell from the 6-way
-# intersection of "samples Marionette + every SOTA baseline produced",
+# intersection of "samples Loki + every SOTA baseline produced",
 # so each chosen sample renders a comparable side-by-side overlay across
 # every model. Default seed = 42.
 #
@@ -50,7 +50,7 @@ mapfile -t WORK < <(
 import random
 from pathlib import Path
 
-BASELINES = ["marionette", "anitalker", "echomimic", "hunyuan_portrait",
+BASELINES = ["loki", "anitalker", "echomimic", "hunyuan_portrait",
              "sadtalker", "xportrait"]
 DATASET   = "hdtf"
 PROTOCOLS = ["same_identity_reconstruction", "cross_identity"]
@@ -60,7 +60,7 @@ def latest(p):
     return runs[-1] if runs else None
 
 def discover(pr, b):
-    root = (Path("outputs/marionette_eval") / DATASET / pr if b == "marionette"
+    root = (Path("outputs/loki_eval") / DATASET / pr if b == "loki"
             else Path("outputs/sota_comparison") / b / DATASET / pr)
     run = latest(root)
     if run is None:

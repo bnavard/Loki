@@ -28,9 +28,9 @@ from __future__ import annotations
 import numpy as np
 import torch
 
-from marionette.conditioning.conditioning import SpatialConditioning
-from marionette.flame.flame import CAP4DFlameSkinner, compute_flame
-from marionette.utils import get_bbox_from_verts, verts_to_pytorch3d
+from loki.conditioning.conditioning import SpatialConditioning
+from loki.flame.flame import CAP4DFlameSkinner, compute_flame
+from loki.utils import get_bbox_from_verts, verts_to_pytorch3d
 
 HEAD_VERT_PATH = "data/assets/flame/head_vertices.txt"
 

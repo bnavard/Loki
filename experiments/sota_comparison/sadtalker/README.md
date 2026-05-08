@@ -2,7 +2,7 @@
 
 Runs SadTalker (Zhang et al., CVPR 2023 — [paper](https://arxiv.org/abs/2211.12194),
 [code](https://github.com/OpenTalker/SadTalker)) against our benchmark
-datasets under a uniform CLI so its outputs sit next to Marionette's for
+datasets under a uniform CLI so its outputs sit next to Loki's for
 apples-to-apples comparison.
 
 ## At a glance
@@ -74,17 +74,17 @@ identity pool with stable `id_XXXX` UIDs. Build it once per dataset (committed
 to git, frozen after that):
 
 ```bash
-conda activate marionette
+conda activate loki
 PYTHONPATH=. python experiments/sota_comparison/dataset/build_manifest.py \
     --dataset hdtf
 ```
 
 The runner lives outside the `sadtalker` env — it orchestrates, builds the
 pair list from the manifest, and hops into the `sadtalker` env per sample
-via `conda run`. So you run it from the `marionette` env:
+via `conda run`. So you run it from the `loki` env:
 
 ```bash
-conda activate marionette
+conda activate loki
 
 # Paper protocol (same-identity reconstruction) — first pass
 PYTHONPATH=. python experiments/sota_comparison/sadtalker/run_inference.py \
@@ -122,7 +122,7 @@ PYTHONPATH=. python experiments/sota_comparison/sadtalker/run_inference.py \
   samples keeps the comparison reproducible. If you want to study how
   style choice changes identity metrics later, sweep this as a separate
   axis.
-- **`size = 512`, `preprocess = crop`** — matches Marionette's 512×512
+- **`size = 512`, `preprocess = crop`** — matches Loki's 512×512
   face-cropped output so the two models' panels are visually directly
   comparable.
 
@@ -144,7 +144,7 @@ outputs/sota_comparison/sadtalker/hdtf/<protocol>/run_<timestamp>/
 Because UIDs come from the frozen benchmark manifest, `id_0457/panel.mp4`
 refers to the same physical person in every baseline's output tree — a
 single `outputs/**/samples/id_0457/panel.mp4` glob compares SadTalker,
-LivePortrait, Marionette, etc. 1-to-1 on the same identity.
+LivePortrait, Loki, etc. 1-to-1 on the same identity.
 
 ## 6. Knobs exposed on the CLI
 

@@ -26,7 +26,7 @@ Per sample:
   5. AniTalker writes `<result_path>/<image_stem>-<audio_stem>.mp4` at
      256×256, or additionally `<image_stem>-<audio_stem>_SR.mp4` at 512×512
      when `--face_sr` is passed. We prefer the SR output when present (it
-     matches the 512×512 surface every other baseline and Marionette
+     matches the 512×512 surface every other baseline and Loki
      produce); otherwise we fall back to the 256 file.
 
 Modality

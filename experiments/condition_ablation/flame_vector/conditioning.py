@@ -114,7 +114,7 @@ class FlameVectorConditioning(nn.Module):
             raise ValueError(
                 f"FlameVectorConditioning expected last dim "
                 f"{self.flame_params_dim}, got {flame.shape[-1]}. Check "
-                f"FLAME_PARAMS_SCHEMA in marionette.data.video_dataset and "
+                f"FLAME_PARAMS_SCHEMA in loki.data.video_dataset and "
                 f"`flame_params_dim` in this arm's config."
             )
 

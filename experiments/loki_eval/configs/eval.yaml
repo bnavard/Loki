@@ -1,0 +1,25 @@
+# Loki evaluation — single config used by `run_inference.py` for both
+# protocols (same_identity_reconstruction and cross_identity).
+#
+# Inherits the model + dataset paths from `loki/configs/base.yaml`
+# (so `val_dataset.params.flame_root` and friends come from there). The CLI
+# selects the protocol; this config holds the model architecture knobs that
+# can't go on argparse.
+#
+# `checkpoint` must be populated before running — either here or via
+# `--checkpoint <path>` on the CLI.
+
+base: loki/configs/base.yaml
+
+# Default output root. The runner appends `<dataset>/<protocol>/run_<ts>/`
+# so all SOTA wrappers and this one share the
+# `outputs/<experiment>/.../<protocol>/run_<ts>/` pattern.
+output_dir: outputs/loki_eval
+checkpoint: outputs/loki_baseline/run_<timestamp>/checkpoints/<ckpt>.ckpt
+
+seed: 42
+
+inference:
+  n_frames:     16     # must match UNet `time_steps` set at training time
+  cfg_scale:    2.0
+  n_ddim_steps: 50

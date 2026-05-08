@@ -4,7 +4,7 @@ Runs HunyuanPortrait (Tencent, [paper](https://arxiv.org/abs/2503.18860),
 [code](https://github.com/Tencent-Hunyuan/HunyuanPortrait),
 [HuggingFace](https://huggingface.co/tencent/HunyuanPortrait)) against our
 benchmark datasets under a uniform CLI so its outputs sit next to
-Marionette's and SadTalker's for apples-to-apples comparison.
+Loki's and SadTalker's for apples-to-apples comparison.
 
 ## At a glance
 
@@ -121,10 +121,10 @@ Total ~5–6 GB.
 
 The runner lives outside the `hunyuan_portrait` env — it orchestrates,
 builds the pair list, and hops into the env per sample via `conda run`.
-Launch from the `marionette` env:
+Launch from the `loki` env:
 
 ```bash
-conda activate marionette
+conda activate loki
 
 # HDTF cross-identity (A's face doing B's motion)
 PYTHONPATH=. python experiments/sota_comparison/hunyuan_portrait/run_inference.py \
@@ -186,7 +186,7 @@ outputs/sota_comparison/hunyuan_portrait/<dataset>/<protocol>/run_<timestamp>/
 
 `panel.mp4` is HunyuanPortrait's `cropped.mp4` (512×512 face-crop
 generation), NOT `full_resolution.mp4` (paste-back onto original source).
-The cropped face is the surface every other baseline and Marionette
+The cropped face is the surface every other baseline and Loki
 produce, so cross-model metric sweeps operate on a common representation.
 
 ## 6. Knobs exposed on the CLI

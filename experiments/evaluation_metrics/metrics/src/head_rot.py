@@ -147,7 +147,7 @@ def head_axes_in_image(rot_aa: np.ndarray, neck_aa: np.ndarray,
     the rendered video.
 
     `opencv2pytorch3d` is the diag(1, -1, -1) basis change living at
-    `marionette.flame.flame.OPENCV2PYTORCH3D[:3, :3]`."""
+    `loki.flame.flame.OPENCV2PYTORCH3D[:3, :3]`."""
     R_p3d = _head_R(rot_aa, neck_aa)
     M = opencv2pytorch3d
     return M @ R_p3d @ M    # M is its own inverse for diag(±1)

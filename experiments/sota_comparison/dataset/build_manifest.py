@@ -4,7 +4,7 @@ Build the curated benchmark manifest for a dataset.
 Produces `experiments/sota_comparison/manifests/<dataset>.json` — one clip
 per identity, capped at `--n_samples_cap` (default 1000), with a stable
 `id_XXXX` UID attached to each entry. Downstream runners (SadTalker,
-LivePortrait, Marionette eval, …) load this file and inherit the same
+LivePortrait, Loki eval, …) load this file and inherit the same
 UID-to-identity mapping, so `outputs/**/samples/id_0457/` refers to the
 same physical person across every baseline.
 

@@ -7,16 +7,16 @@
 # the curated HDTF manifest.
 #
 # Sequential by design — single H100 in this environment. Each arm reuses
-# the same `experiments/marionette_eval/run_inference.py` runner against
+# the same `experiments/loki_eval/run_inference.py` runner against
 # its own per-arm `eval.yaml`. Output goes to
 # `outputs/condition_ablation_eval/<arm>/hdtf/<protocol>/run_<ts>/`,
 # matching the layout the metrics evaluator's `_derive_bucket` recognises.
 #
-# Conda env: `marionette` (the inference path is local, in-process).
+# Conda env: `loki` (the inference path is local, in-process).
 #
 # Usage (from repo root):
 #
-#     conda activate marionette
+#     conda activate loki
 #     bash experiments/condition_ablation/run_eval_inference.sh
 #
 # Background + log:
@@ -70,7 +70,7 @@ if [[ -n "${RUN_DIR}" ]]; then
 fi
 
 ROOT="experiments/condition_ablation"
-RUNNER="experiments/marionette_eval/run_inference.py"
+RUNNER="experiments/loki_eval/run_inference.py"
 
 mkdir -p outputs/condition_ablation_eval
 

@@ -29,8 +29,8 @@ import einops
 import torch
 import torch.nn as nn
 
-from marionette.conditioning.conditioning import PositionalEncoding
-from marionette.conditioning.mesh2img import PropRenderer
+from loki.conditioning.conditioning import PositionalEncoding
+from loki.conditioning.mesh2img import PropRenderer
 
 
 class PosEncOnlyConditioning(nn.Module):

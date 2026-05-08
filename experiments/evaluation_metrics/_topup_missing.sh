@@ -17,7 +17,7 @@
 # AlexNet on top, so JOBS=4 is comfortable on a 16 GB card; bump to 6–8
 # on 24 GB+. Tune with the JOBS env var.
 #
-# Excludes marionette_flame_vector_abl by default (override via
+# Excludes loki_flame_vector_abl by default (override via
 # EXCLUDE_BUCKETS).
 #
 # Usage (from repo root):
@@ -25,7 +25,7 @@
 #     bash experiments/evaluation_metrics/_topup_missing.sh
 #     JOBS=6  bash experiments/evaluation_metrics/_topup_missing.sh
 #     GPU=1   bash experiments/evaluation_metrics/_topup_missing.sh
-#     EXCLUDE_BUCKETS="marionette_flame_vector_abl marionette_no_deform_abl" \
+#     EXCLUDE_BUCKETS="loki_flame_vector_abl loki_no_deform_abl" \
 #         bash experiments/evaluation_metrics/_topup_missing.sh
 #
 # Background + log:
@@ -42,7 +42,7 @@ source "${HERE}/_activate.sh"
 JOBS="${JOBS:-4}"
 GPU="${GPU:-0}"
 METRICS="${METRICS:-auto}"
-EXCLUDE_BUCKETS="${EXCLUDE_BUCKETS:-marionette_flame_vector_abl}"
+EXCLUDE_BUCKETS="${EXCLUDE_BUCKETS:-loki_flame_vector_abl}"
 
 OUT_ROOT="outputs/test_metric/metrics"
 CLI="experiments/evaluation_metrics/compute_metrics.py"
@@ -54,11 +54,11 @@ CLI="experiments/evaluation_metrics/compute_metrics.py"
 bucket_to_runroot() {
     local b="$1"
     case "$b" in
-        marionette)
-            echo "outputs/marionette_eval"
+        loki)
+            echo "outputs/loki_eval"
             ;;
-        marionette_*_abl)
-            local arm="${b#marionette_}"
+        loki_*_abl)
+            local arm="${b#loki_}"
             arm="${arm%_abl}"
             echo "outputs/condition_ablation_eval/${arm}"
             ;;

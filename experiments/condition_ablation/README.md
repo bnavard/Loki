@@ -2,7 +2,7 @@
 
 Single-variable ablations on the FLAME conditioning pathway feeding the gen
 UNet. All arms inherit from
-[`marionette/configs/base.yaml`](../../marionette/configs/base.yaml) — same
+[`loki/configs/base.yaml`](../../loki/configs/base.yaml) — same
 seed, dataset, SD 2.1 init, optimizer, schedule, batch size, n_steps — and
 differ in exactly one property of the conditioning, by design.
 
@@ -16,7 +16,7 @@ The arms split into two groups:
   *representation itself*, replacing the rasterized 45ch tensor with a
   spatially-broadcast projection of raw FLAME parameters. Tests §4.3.
 
-> **Paper note — what this folder is for.** Marionette's canonical recipe
+> **Paper note — what this folder is for.** Loki's canonical recipe
 > hangs its motion-conditioning on a FLAME mesh that is rasterized in the
 > *reference's* camera / crop box. That rasterization lives in the same
 > pixel frame the model is denoising into, so every pixel of `spatial_cond`
@@ -37,18 +37,18 @@ The arms split into two groups:
 Each arm's conditioning implementation is a single standalone module under
 its arm subfolder (`<arm>/conditioning.py`), imported via the arm's config
 `cond_stage_config.target`. The baseline module
-[`marionette/conditioning/conditioning.py::SpatialConditioning`](../../marionette/conditioning/conditioning.py)
+[`loki/conditioning/conditioning.py::SpatialConditioning`](../../loki/conditioning/conditioning.py)
 is untouched — arms swap the cond_stage class, they don't mutate it.
 
 ### Intended comparisons
 
-- `no_posenc` vs `marionette_baseline` → **pos_enc contribution** (only the
+- `no_posenc` vs `loki_baseline` → **pos_enc contribution** (only the
   42ch positional encoding is dropped).
-- `no_deform` vs `marionette_baseline` → **aligned deformation contribution**
+- `no_deform` vs `loki_baseline` → **aligned deformation contribution**
   (only the 3ch deform channels are dropped, no substitute). Identity
   reaches both arms through the ref UNet, so the cond tensor doesn't need
   to carry identity information.
-- `flame_vector` vs `marionette_baseline` → **pixel-space representation
+- `flame_vector` vs `loki_baseline` → **pixel-space representation
   contribution** (the rasterization itself is dropped; the same parametric
   motion information is delivered as a spatially-constant tile instead).
   The §4.3 falsification test: if the rasterized arm wins, the win is
@@ -77,11 +77,11 @@ Everything else downstream is identical.
 
 ### Load-bearing invariant: one ConditioningEncoder architecture for the rasterized arms
 
-The [`ConditioningEncoder`](../../marionette/model/conditioning_encoder.py)
+The [`ConditioningEncoder`](../../loki/model/conditioning_encoder.py)
 is the SD-style conv stack that downsamples `spatial_cond` from 512×512 to
 the UNet's 64×64 latent resolution and emits `model_channels=320` feature
 maps added to the first UNet feature map. **Its architecture must be
-identical across every rasterized arm** (`marionette_baseline`, `no_posenc`,
+identical across every rasterized arm** (`loki_baseline`, `no_posenc`,
 `no_deform`) — the per-arm `conditioning.py` modules only decide *what
 tensor* gets fed in; they must never change the encoder itself. Concretely:
 
@@ -183,7 +183,7 @@ parametric content of the conditioning.
 ## Launch
 
 ```bash
-conda activate marionette
+conda activate loki
 PYTHONPATH=. python experiments/condition_ablation/run_no_posenc.py     --gpus 0 1 2 3
 PYTHONPATH=. python experiments/condition_ablation/run_no_deform.py     --gpus 0 1 2 3
 PYTHONPATH=. python experiments/condition_ablation/run_flame_vector.py  --gpus 0 1 2 3
@@ -195,7 +195,7 @@ matches the baseline's default launch.
 ## Evaluating the arms
 
 Each checkpoint is a drop-in for the existing
-[`experiments/marionette_eval/`](../marionette_eval/) pipeline. The
+[`experiments/loki_eval/`](../loki_eval/) pipeline. The
 evaluator reads `cond_stage_config.target` from the resolved config and
 dispatches to the correct conditioning class automatically.
 
@@ -203,7 +203,7 @@ dispatches to the correct conditioning class automatically.
 
 ```
 outputs/
-├── marionette_baseline/run_<ts>/                # canonical
+├── loki_baseline/run_<ts>/                # canonical
 └── condition_ablation/
     ├── no_posenc/run_<ts>/
     │   ├── config_resolved.yaml

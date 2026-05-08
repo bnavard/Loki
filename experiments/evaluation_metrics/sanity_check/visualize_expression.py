@@ -42,9 +42,9 @@ import cv2
 import numpy as np
 import torch
 
-from marionette.conditioning.conditioning import SpatialConditioning
-from marionette.flame.flame import CAP4DFlameSkinner, compute_flame
-from marionette.utils import (
+from loki.conditioning.conditioning import SpatialConditioning
+from loki.flame.flame import CAP4DFlameSkinner, compute_flame
+from loki.utils import (
     crop_image, get_bbox_from_verts, load_frame, rescale_image,
     verts_to_pytorch3d,
 )

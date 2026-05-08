@@ -1,4 +1,4 @@
-# Marionette — Identity-Preserving Talking-Head Video Diffusion
+# Loki — Identity-Preserving Talking-Head Video Diffusion
 
 A latent video diffusion model for identity-preserving talking-head generation.
 Given a reference portrait and a driver clip, the model produces video of the
@@ -19,7 +19,7 @@ rasterized vertex positions + per-vertex expression deformation).
 
 ```
 .
-├── marionette/                       # the video diffusion model (training + inference)
+├── loki/                       # the video diffusion model (training + inference)
 │   ├── configs/base.yaml             # canonical config
 │   ├── conditioning/conditioning.py  # SpatialConditioning — 45ch (pos_enc + driver_deform)
 │   ├── model/{diffusion,unet,ref_unet,conditioning_encoder,audio_encoder,attention}.py
@@ -30,9 +30,9 @@ rasterized vertex positions + per-vertex expression deformation).
 │   ├── train.py                      # training orchestrator
 │   └── generate.py                   # inference orchestrator (same- or cross-identity)
 ├── experiments/
-│   ├── marionette_baseline/          # canonical full-stack training run
+│   ├── loki_baseline/          # canonical full-stack training run
 │   ├── condition_ablation/           # audio_off / no_flame / no_posenc / no_deform arms
-│   ├── marionette_eval/              # cross + same identity eval against a checkpoint
+│   ├── loki_eval/              # cross + same identity eval against a checkpoint
 │   ├── sota_comparison/              # SadTalker / AniTalker / EchoMimic / HunyuanPortrait / X-Portrait wrappers
 │   └── evaluation_metrics/           # SyncNet lip-sync evaluation
 ├── scripts/                          # data-prep pipeline: download → preprocess → manifest
@@ -43,16 +43,16 @@ rasterized vertex positions + per-vertex expression deformation).
 └── outputs/                          # training runs (gitignored)
 ```
 
-See [marionette/README.md](marionette/README.md) for architecture details,
+See [loki/README.md](loki/README.md) for architecture details,
 training, and inference usage.
 
 ## Installation
 
-Tested on Linux + CUDA 12.1 with a single conda env `marionette`:
+Tested on Linux + CUDA 12.1 with a single conda env `loki`:
 
 ```bash
-conda create -n marionette python=3.10 -y
-conda activate marionette
+conda create -n loki python=3.10 -y
+conda activate loki
 pip install -r requirements.txt
 pip install --no-index --no-cache-dir pytorch3d -f https://dl.fbaipublicfiles.com/pytorch3d/packaging/wheels/py310_cu121_pyt240/download.html
 ```
@@ -60,7 +60,7 @@ pip install --no-index --no-cache-dir pytorch3d -f https://dl.fbaipublicfiles.co
 Heavy dependencies worth flagging:
 - **pytorch3d** — used by `SpatialConditioning` for GPU mesh rasterization +
   UV lookup. Must be built against the torch version you install.
-- **decord** — video reading. Lazy-imported in `marionette/utils/video_io.py`
+- **decord** — video reading. Lazy-imported in `loki/utils/video_io.py`
   to avoid CUDA-init ordering issues.
 
 ## Data Layout

@@ -3,14 +3,14 @@ SadTalker evaluation runner.
 
 Builds a deterministic list of `EvalSample`s from the chosen dataset +
 protocol, then invokes SadTalker's inference one sample at a time via the
-adapter. Output layout mirrors `marionette_eval/`:
+adapter. Output layout mirrors `loki_eval/`:
 
     outputs/sota_comparison/sadtalker/<dataset>/<protocol>/run_<ts>/
     ├── config_resolved.json     # full args + git rev
     ├── scratch/                 # per-sample working dir (source.png, audio.wav)
     └── samples/<sample_id>/panel.mp4
 
-Usage (from repo root, `marionette` env — NOT `sadtalker`; the subprocess
+Usage (from repo root, `loki` env — NOT `sadtalker`; the subprocess
 hops into the sadtalker env itself). Build the curated manifest for each
 dataset once via `dataset/build_manifest.py` before running these.
 

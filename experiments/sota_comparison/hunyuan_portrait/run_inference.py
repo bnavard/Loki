@@ -3,7 +3,7 @@ HunyuanPortrait evaluation runner.
 
 Builds a deterministic list of `EvalSample`s from the chosen dataset +
 protocol, then invokes HunyuanPortrait's inference one sample at a time via
-the adapter. Output layout mirrors `marionette_eval/` and the other SOTA
+the adapter. Output layout mirrors `loki_eval/` and the other SOTA
 baselines.
 
 Protocol semantics (motion-driven, NOT audio-driven):
@@ -14,7 +14,7 @@ Protocol semantics (motion-driven, NOT audio-driven):
                                     from identity B ≠ A (derangement pair).
                                     Output: A's face doing B's motion.
 
-Usage (from repo root, `marionette` env — NOT `hunyuan_portrait`; the
+Usage (from repo root, `loki` env — NOT `hunyuan_portrait`; the
 subprocess hops into the hunyuan_portrait env itself). Build the curated
 manifest for each dataset once via `dataset/build_manifest.py` before
 running these.

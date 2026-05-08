@@ -1,7 +1,7 @@
 # Data Preparation Pipeline
 
 Scripts that take raw YouTube URLs to the training-ready data layout consumed
-by `marionette/`. Run in the order shown.
+by `loki/`. Run in the order shown.
 
 ```
   download/       →  preprocess/       →  [FLAME tracking]    →  manifest/

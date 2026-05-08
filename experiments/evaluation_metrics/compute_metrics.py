@@ -93,7 +93,7 @@ def parse_args():
     p.add_argument("--n-frames",   type=int, default=16,
                    help="Cap pred to this many frames so SOTA's 75–125-frame "
                         "outputs are scored on the same temporal coverage as "
-                        "Marionette's 16-frame panel. Set to 0 for tool-native length.")
+                        "Loki's 16-frame panel. Set to 0 for tool-native length.")
     p.add_argument("--output-dir", type=Path, default=None,
                    help="Where to write metrics.jsonl + metrics_summary.json. "
                         "Default: inside the run dir.")

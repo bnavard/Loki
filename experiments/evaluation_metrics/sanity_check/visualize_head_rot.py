@@ -21,7 +21,7 @@ Usage
 -----
 
     PYTHONPATH=. python experiments/evaluation_metrics/sanity_check/visualize_head_rot.py \
-        --baseline marionette \
+        --baseline loki \
         --dataset hdtf \
         --protocol cross_identity \
         --sample-id id_0042_id_0099
@@ -51,11 +51,11 @@ from experiments.evaluation_metrics.metrics.evaluator import (
 from experiments.evaluation_metrics.metrics.src.head_rot import (
     _head_R, _quat_angular_dist_deg, head_axes_in_image,
 )
-from marionette.flame.flame import OPENCV2PYTORCH3D, CAP4DFlameSkinner, compute_flame
+from loki.flame.flame import OPENCV2PYTORCH3D, CAP4DFlameSkinner, compute_flame
 
 
 SOTA_ROOT       = Path("outputs/sota_comparison")
-MARIONETTE_ROOT = Path("outputs/marionette_eval")
+LOKI_ROOT = Path("outputs/loki_eval")
 MANIFEST_DIR    = Path("experiments/sota_comparison/manifests")
 HEAD_VERT_PATH  = "data/assets/flame/head_vertices.txt"
 N_FRAMES        = 16
@@ -110,7 +110,7 @@ def _latest_run(parent: Path) -> Optional[Path]:
 
 def _resolve_pred_video(baseline: str, dataset: str, protocol: str,
                         sample_id: str) -> tuple[Optional[Path], Optional[Path]]:
-    parent = (MARIONETTE_ROOT / dataset / protocol if baseline == "marionette"
+    parent = (LOKI_ROOT / dataset / protocol if baseline == "loki"
               else SOTA_ROOT / baseline / dataset / protocol)
     run = _latest_run(parent)
     if run is None:

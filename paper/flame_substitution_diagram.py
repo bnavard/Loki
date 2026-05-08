@@ -24,7 +24,7 @@ Reading left to right:
 
 All four Δ_expr panels share one signed diverging colormap + colorbar.
 
-Usage (from repo root, marionette conda env):
+Usage (from repo root, loki conda env):
 
     # Random pair selection (driver frames score-ranked by motion magnitude).
     PYTHONPATH=. python paper/flame_substitution_diagram.py --seed 7
@@ -56,11 +56,11 @@ from matplotlib.collections import LineCollection
 from matplotlib.colors import Normalize
 import re
 
-from marionette.conditioning.conditioning import SpatialConditioning
-from marionette.conditioning.mesh2img import PropRenderer
-from marionette.flame.flame import CAP4DFlameSkinner, compute_flame
-from marionette.retargeting import prepare_reference
-from marionette.utils import (
+from loki.conditioning.conditioning import SpatialConditioning
+from loki.conditioning.mesh2img import PropRenderer
+from loki.flame.flame import CAP4DFlameSkinner, compute_flame
+from loki.retargeting import prepare_reference
+from loki.utils import (
     crop_image, get_bbox_from_verts, load_frame,
     rescale_image, verts_to_pytorch3d,
 )

@@ -35,7 +35,7 @@ Usage (from repo root):
 
     # One specific bucket.
     PYTHONPATH=. python experiments/evaluation_metrics/compute_fvd.py \
-        --run-dir outputs/marionette_eval/hdtf/same_identity_reconstruction/run_<ts>/
+        --run-dir outputs/loki_eval/hdtf/same_identity_reconstruction/run_<ts>/
 
     # Re-use a previously cached GT-side stats blob (skip the 2-GB pass).
     PYTHONPATH=. python experiments/evaluation_metrics/compute_fvd.py \
@@ -57,7 +57,7 @@ from typing import Optional
 
 
 OUT_ROOT          = Path("outputs/test_metric/metrics")
-MARIONETTE_ROOT   = Path("outputs/marionette_eval")
+LOKI_ROOT   = Path("outputs/loki_eval")
 SOTA_ROOT         = Path("outputs/sota_comparison")
 ABLATION_ROOT     = Path("outputs/condition_ablation_eval")
 
@@ -65,18 +65,18 @@ ABLATION_ROOT     = Path("outputs/condition_ablation_eval")
 def _bucket_for_run_dir(run_dir: Path) -> str:
     """Mirror `run_eval_metrics.sh`'s bucket-derivation rules so the
     metrics-tree path matches up exactly:
-        marionette_eval/...                  → "marionette"
+        loki_eval/...                  → "loki"
         sota_comparison/<baseline>/...       → "<baseline>"
-        condition_ablation_eval/<arm>/...    → "marionette_<arm>_abl"
+        condition_ablation_eval/<arm>/...    → "loki_<arm>_abl"
     """
     parts = run_dir.parts
-    if "marionette_eval" in parts:
-        return "marionette"
+    if "loki_eval" in parts:
+        return "loki"
     if "sota_comparison" in parts:
         return parts[parts.index("sota_comparison") + 1]
     if "condition_ablation_eval" in parts:
         arm = parts[parts.index("condition_ablation_eval") + 1]
-        return f"marionette_{arm}_abl"
+        return f"loki_{arm}_abl"
     raise ValueError(f"cannot infer bucket from {run_dir}")
 
 
@@ -87,7 +87,7 @@ def _discover_run_dirs() -> list[Path]:
     runs of the same arm would both write FVD into the same
     `metrics_summary.json` and the second silently overwrite the first."""
     candidates: list[Path] = []
-    for d in MARIONETTE_ROOT.glob("hdtf/same_identity_reconstruction/run_*/"):
+    for d in LOKI_ROOT.glob("hdtf/same_identity_reconstruction/run_*/"):
         if d.is_dir(): candidates.append(d)
     for d in SOTA_ROOT.glob("*/hdtf/same_identity_reconstruction/run_*/"):
         if d.is_dir(): candidates.append(d)
