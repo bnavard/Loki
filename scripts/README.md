@@ -47,12 +47,6 @@ Clip IDs are parsed to extract the YouTube video ID across several naming
 conventions (`ID_NA_timestamp`, `language_X_videovideo{VID}_scene*`, etc.)
 so identity leakage is prevented across train/val.
 
-### `tools/` — devops utilities
-
-- `inspect_clip_data.py` — parallel validator with per-clip timeout, catches
-  corrupt videos that would hang decord under DDP.
-- `parallel_pull155.sh` — chunked parallel scp between GPU boxes.
-
 ## Output layout
 
 ```
@@ -69,6 +63,5 @@ scripts/
 ├── README.md
 ├── download/            # YouTube scraping
 ├── preprocess/          # face crop + resample
-├── manifest/            # build_manifest + partition_dataset
-└── tools/               # inspect_clip_data + parallel_pull155
+└── manifest/            # build_manifest + partition_dataset
 ```
