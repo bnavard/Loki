@@ -60,6 +60,11 @@ import numpy as np
 
 from experiments.evaluation_metrics.metrics.io import DEFAULT_FPS, load_video
 
+from src.eval_picks import (
+    LOKI_ROOT, N_FRAMES_PER_ROW,
+    latest_run, split_sample_id, stride_indices, video_to_uint8_frames,
+)
+
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -67,12 +72,6 @@ from experiments.evaluation_metrics.metrics.io import DEFAULT_FPS, load_video
 
 ALL_DATASETS = ["hdtf", "talkvid"]
 PROTOCOL     = "cross_identity"
-
-# Frame indices sampled per row (1st, 4th, 8th, 16th of Loki's window).
-SAMPLED_FRAME_INDICES = [0, 3, 7, 15]
-N_FRAMES_PER_ROW      = len(SAMPLED_FRAME_INDICES)
-
-LOKI_ROOT = Path("outputs/loki_eval")
 
 
 # ---------------------------------------------------------------------------
@@ -96,27 +95,13 @@ class TeaserPick:
 # Discovery
 # ---------------------------------------------------------------------------
 
-def _latest_run(parent: Path) -> Optional[Path]:
-    runs = sorted([d for d in parent.glob("run_*") if d.is_dir()])
-    return runs[-1] if runs else None
-
-
-def _split_sample_id(sample_id: str) -> tuple[str, str]:
-    """Cross-identity sample_id = `<ref_uid>_id_<drv_uid_tail>`
-    (e.g. `id_0001_id_0026`)."""
-    if "_id_" not in sample_id:
-        raise ValueError(f"cross-id sample_id missing `_id_` separator: {sample_id}")
-    ref, drv_tail = sample_id.split("_id_", 1)
-    return ref, f"id_{drv_tail}"
-
-
 def discover_picks(datasets: list[str]) -> list[TeaserPick]:
     """Walk the latest Loki cross-identity eval run per dataset and
     enumerate every sample that has a complete `panel.mp4` + scratch
     `source.png` + scratch `driver.mp4` triple."""
     pool: list[TeaserPick] = []
     for dataset in datasets:
-        run = _latest_run(LOKI_ROOT / dataset / PROTOCOL)
+        run = latest_run(LOKI_ROOT / dataset / PROTOCOL)
         if run is None:
             continue
         samples_root = run / "samples"
@@ -134,7 +119,7 @@ def discover_picks(datasets: list[str]) -> list[TeaserPick]:
             if not (panel_mp4.is_file() and source_png.is_file() and driver_mp4.is_file()):
                 continue
 
-            ref_uid, drv_uid = _split_sample_id(sid)
+            ref_uid, drv_uid = split_sample_id(sid)
             pool.append(TeaserPick(
                 dataset    = dataset,
                 sample_id  = sid,
@@ -151,24 +136,12 @@ def discover_picks(datasets: list[str]) -> list[TeaserPick]:
 # Frame extraction
 # ---------------------------------------------------------------------------
 
-def _video_to_uint8_frames(video_tensor) -> np.ndarray:
-    """`(T, 3, H, W)` float32 in `[0, 1]` → `(T, H, W, 3)` uint8."""
-    return (video_tensor.permute(0, 2, 3, 1).cpu().numpy() * 255).clip(0, 255).astype(np.uint8)
-
-
-def _stride_indices(T: int) -> list[int]:
-    """`SAMPLED_FRAME_INDICES`, clamped to `T-1` for short clips."""
-    if T <= 0:
-        return []
-    return [min(i, T - 1) for i in SAMPLED_FRAME_INDICES]
-
-
 def _load_video_strided(path: Path) -> np.ndarray:
     """Load a 25fps face-cropped video from the eval scratch tree (or the
     Loki panel) and return stride-sampled uint8 frames `(n, H, W, 3)`."""
     video = load_video(path, fps=DEFAULT_FPS, resolution=None)
-    indices = _stride_indices(video.shape[0])
-    return _video_to_uint8_frames(video[indices])
+    indices = stride_indices(video.shape[0])
+    return video_to_uint8_frames(video[indices])
 
 
 def _load_source_png(path: Path) -> np.ndarray:

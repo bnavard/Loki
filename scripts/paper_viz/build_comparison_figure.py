@@ -56,6 +56,11 @@ from experiments.evaluation_metrics.metrics.io import (
     DEFAULT_FPS, DEFAULT_RESOLUTION, load_video,
 )
 
+from src.eval_picks import (
+    LOKI_ROOT, N_FRAMES_PER_ROW, SAMPLED_FRAME_INDICES,
+    latest_run, split_sample_id, stride_indices, video_to_uint8_frames,
+)
+
 
 def _center_square_resize(video, resolution: int = DEFAULT_RESOLUTION):
     """Center-square crop `(T, 3, H, W)` then bilinear-resize to
@@ -102,13 +107,8 @@ DISPLAY_NAMES = {
 ALL_DATASETS  = ["hdtf"]
 ALL_PROTOCOLS = ["same_identity_reconstruction", "cross_identity"]
 
-# Explicit frame indices (0-based) sampled per row: 1st, 4th, 8th, 16th.
-SAMPLED_FRAME_INDICES = [0, 3, 7, 15]
-N_FRAMES_PER_ROW      = len(SAMPLED_FRAME_INDICES)
-
-SOTA_ROOT       = Path("outputs/sota_comparison")
-LOKI_ROOT = Path("outputs/loki_eval")
-MANIFEST_DIR    = Path("experiments/sota_comparison/manifests")
+SOTA_ROOT    = Path("outputs/sota_comparison")
+MANIFEST_DIR = Path("experiments/sota_comparison/manifests")
 
 # Loki's `panel.mp4` is the generated 512×512 video directly
 # (16 frames at 25 fps). Earlier versions emitted a 4-row composite
@@ -140,24 +140,10 @@ class FigurePick:
 # ---------------------------------------------------------------------------
 
 
-def _latest_run(parent: Path) -> Optional[Path]:
-    runs = sorted([d for d in parent.glob("run_*") if d.is_dir()])
-    return runs[-1] if runs else None
-
-
 def _load_manifest(dataset: str) -> dict[str, dict]:
     p = MANIFEST_DIR / f"{dataset}.json"
     m = json.loads(p.read_text())
     return {c["uid"]: c for c in m["clips"]}
-
-
-def _split_sample_id(sample_id: str, protocol: str) -> tuple[str, str]:
-    if protocol == "same_identity_reconstruction":
-        return sample_id, sample_id
-    if "_id_" not in sample_id:
-        raise ValueError(f"cross-id sample_id without `_id_` separator: {sample_id}")
-    ref, drv = sample_id.split("_id_", 1)
-    return ref, f"id_{drv}"
 
 
 def discover_picks(
@@ -173,7 +159,7 @@ def discover_picks(
         manifest = _load_manifest(dataset)
 
         for protocol in protocols:
-            mario_run = _latest_run(LOKI_ROOT / dataset / protocol)
+            mario_run = latest_run(LOKI_ROOT / dataset / protocol)
             if mario_run is None:
                 continue
             mario_samples_root = mario_run / "samples"
@@ -181,7 +167,7 @@ def discover_picks(
                 continue
 
             sota_runs = {
-                b: _latest_run(SOTA_ROOT / b / dataset / protocol)
+                b: latest_run(SOTA_ROOT / b / dataset / protocol)
                 for b in SOTA_BASELINES_ORDERED
             }
 
@@ -193,7 +179,7 @@ def discover_picks(
                 if not mario_panel.is_file():
                     continue
 
-                ref_uid, drv_uid = _split_sample_id(sid, protocol)
+                ref_uid, drv_uid = split_sample_id(sid, protocol)
                 if ref_uid not in manifest or drv_uid not in manifest:
                     continue
 
@@ -238,19 +224,6 @@ def discover_picks(
 # ---------------------------------------------------------------------------
 
 
-def _video_to_uint8_frames(video_tensor) -> np.ndarray:
-    """`(T, 3, H, W)` float32 in `[0, 1]` → `(T, H, W, 3)` uint8."""
-    return (video_tensor.permute(0, 2, 3, 1).cpu().numpy() * 255).clip(0, 255).astype(np.uint8)
-
-
-def _stride_indices(T: int) -> list[int]:
-    """Return the explicit `SAMPLED_FRAME_INDICES`, clamped to `T-1` for
-    short clips."""
-    if T <= 0:
-        return []
-    return [min(i, T - 1) for i in SAMPLED_FRAME_INDICES]
-
-
 def _peek_loki_panel_length(path: Path) -> int:
     """How many time-axis frames Loki's panel.mp4 carries. The crop
     and stride for every other row are derived from this — every row in
@@ -281,10 +254,10 @@ def _load_and_sample(
                        max_frames=max_frames)
     if crop:
         video = _center_square_resize(video)
-    indices = _stride_indices(video.shape[0])
+    indices = stride_indices(video.shape[0])
     if not indices:
         return None
-    return _video_to_uint8_frames(video[indices])
+    return video_to_uint8_frames(video[indices])
 
 
 def _load_loki_generated(path: Optional[Path]) -> Optional[np.ndarray]:
@@ -300,7 +273,7 @@ def _load_reference_image(ref_clip: dict) -> Optional[np.ndarray]:
         return None
     video = load_video(src, fps=DEFAULT_FPS, resolution=None, max_frames=1)
     video = _center_square_resize(video)
-    return _video_to_uint8_frames(video[:1])[0]
+    return video_to_uint8_frames(video[:1])[0]
 
 
 # ---------------------------------------------------------------------------

@@ -35,11 +35,14 @@ rasterized vertex positions + per-vertex expression deformation).
 │   ├── loki_eval/              # cross + same identity eval against a checkpoint
 │   ├── sota_comparison/              # SadTalker / AniTalker / EchoMimic / HunyuanPortrait / X-Portrait wrappers
 │   └── evaluation_metrics/           # SyncNet lip-sync evaluation
-├── scripts/                          # data-prep pipeline: download → preprocess → manifest
+├── scripts/
+│   ├── download/                     # YouTube clip scraping (yt-dlp)
+│   ├── preprocess/                   # face crop + 512×512 / 25fps resample
+│   ├── manifest/                     # build_manifest + identity-based train/val split
+│   └── paper_viz/                    # paper figure rendering (comparison, teaser, driver-map, FLAME substitution)
 ├── generate_exp_map/                 # FLAME tracking (pixel3dmm) — upstream, produces fit.npz
 ├── ldm_base/                         # vendored SD 2.1 LDM utilities
 ├── data/                             # data / models / derived (mostly .gitignored symlinks)
-├── instructions/                     # design docs + paper context
 └── outputs/                          # training runs (gitignored)
 ```
 

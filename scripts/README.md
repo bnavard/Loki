@@ -47,6 +47,20 @@ Clip IDs are parsed to extract the YouTube video ID across several naming
 conventions (`ID_NA_timestamp`, `language_X_videovideo{VID}_scene*`, etc.)
 so identity leakage is prevented across train/val.
 
+### `paper_viz/` — paper figure rendering
+
+Standalone matplotlib scripts that render the paper figures from already-computed
+eval outputs (no training, no inference). Each script is independent — invoke directly:
+
+- `build_comparison_figure.py` — Loki vs. SOTA grid (driver / Loki / 5 baselines × frames).
+- `flame_substitution_diagram.py` — cross-identity FLAME-substitution method diagram.
+- `generate_driver_map_example.py` — single-clip driver-map decomposition (RGB / wireframe / mesh / Δ_expr / posenc).
+- `paper_teaser_figure.py` — Loki-only cross-identity teaser (two ref/driver pairs).
+
+```bash
+PYTHONPATH=. python scripts/paper_viz/build_comparison_figure.py --help
+```
+
 ## Output layout
 
 ```
@@ -63,5 +77,6 @@ scripts/
 ├── README.md
 ├── download/            # YouTube scraping
 ├── preprocess/          # face crop + resample
-└── manifest/            # build_manifest + partition_dataset
+├── manifest/            # build_manifest + partition_dataset
+└── paper_viz/           # paper figure rendering
 ```
