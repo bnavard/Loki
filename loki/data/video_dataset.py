@@ -47,8 +47,8 @@ import numpy as np
 import torch
 from torch.utils.data import Dataset
 
-from marionette.flame.flame import CAP4DFlameSkinner, compute_flame
-from marionette.utils import (
+from loki.flame.flame import FlameSkinnerExtended, compute_flame
+from loki.utils import (
     load_frame, crop_image, rescale_image,
     get_bbox_from_verts, verts_to_pytorch3d,
 )
@@ -120,7 +120,7 @@ class TalkingHeadDataset(Dataset):
         self.ref_sampling_seed = ref_sampling_seed
         self.emit_flame_params = emit_flame_params
 
-        self.flame_skinner = CAP4DFlameSkinner(
+        self.flame_skinner = FlameSkinnerExtended(
             add_mouth=add_mouth,
             n_shape_params=150,
             n_expr_params=65,
