@@ -88,9 +88,11 @@ To produce `fit.npz` from raw videos, see [generate_exp_map/README.md](generate_
 
 ## Acknowledgements
 
-This codebase inherits from [CAP4D](https://github.com/felixtaubner/cap4d)
-(CVPR 2025) — we adopt their SD 2.1 UNet + 3D attention scaffold and FLAME
-rasterization utilities. The reference-UNet identity pathway follows
-[AnimateAnyone](https://arxiv.org/abs/2311.17117) (Hu et al., 2024). The
-reorganisation and the combined ReferenceNet + FLAME + audio recipe are
-specific to this branch.
+This codebase builds on:
+
+- **[CAP4D](https://github.com/felixtaubner/cap4d/)** (Taubner et al., CVPR 2025) — SD 2.1 UNet + 3D attention scaffold, FLAME rasterization utilities, and the FLAME skinner we extend in [loki/flame/flame.py](loki/flame/flame.py).
+- **[pixel3dmm](https://github.com/SimonGiebenhain/pixel3dmm)** (Giebenhain et al.) — vendored under [generate_exp_map/pixel3dmm/](generate_exp_map/pixel3dmm/) for FLAME tracking on raw videos.
+- **[FLAME](https://flame.is.tue.mpg.de/)** (Li et al., 2017) — the underlying 3DMM head model.
+- **[AnimateAnyone](https://arxiv.org/abs/2311.17117)** (Hu et al., 2024) — the reference-UNet identity pathway pattern.
+
+The reorganisation and the combined ReferenceNet + FLAME + audio recipe are specific to this branch.

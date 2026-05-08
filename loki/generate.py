@@ -42,7 +42,7 @@ import cv2
 from omegaconf import OmegaConf
 
 from ldm_base.ldm.util import instantiate_from_config
-from loki.flame.flame import CAP4DFlameSkinner
+from loki.flame.flame import FlameSkinnerExtended
 from loki.model.checkpoint_compat import strip_legacy_keys
 from loki.retargeting import (
     prepare_reference, retarget_driver_verts, prepare_driver_frames,
@@ -125,7 +125,7 @@ def main():
     # experiments/condition_ablation/) load their own cond_stage module
     # without any change here.
     cond_module = instantiate_from_config(cfg.model.params.cond_stage_config).to(device).eval()
-    flame_skinner = CAP4DFlameSkinner(add_mouth=True, n_shape_params=150, n_expr_params=65)
+    flame_skinner = FlameSkinnerExtended(add_mouth=True, n_shape_params=150, n_expr_params=65)
     head_vert_ids = np.genfromtxt(HEAD_VERT_PATH).astype(int)
 
     flame_root = Path(args.flame_root)

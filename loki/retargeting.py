@@ -25,7 +25,7 @@ from pathlib import Path
 
 import numpy as np
 
-from loki.flame.flame import CAP4DFlameSkinner, compute_flame
+from loki.flame.flame import FlameSkinnerExtended, compute_flame
 from loki.utils import (
     load_frame, crop_image, rescale_image, get_bbox_from_verts, verts_to_pytorch3d,
 )
@@ -36,7 +36,7 @@ def prepare_reference(
     ref_frame: int,
     video_path: Path,
     resolution: int,
-    flame_skinner: CAP4DFlameSkinner,
+    flame_skinner: FlameSkinnerExtended,
     head_vert_ids: np.ndarray,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """Load the reference frame image + compute its NDC verts + face crop box.
@@ -81,7 +81,7 @@ def retarget_driver_verts(
     driver_fit: dict,
     crop_box: np.ndarray,
     n_frames: int,
-    flame_skinner: CAP4DFlameSkinner,
+    flame_skinner: FlameSkinnerExtended,
     driver_start: int = 0,
 ) -> tuple[np.ndarray, np.ndarray]:
     """Per-frame FLAME: β_ref + ψ_driver[t] + θ_driver[t] under the ref's camera.
@@ -129,7 +129,7 @@ def prepare_driver_frames(
     video_path: Path,
     n_frames: int,
     resolution: int,
-    flame_skinner: CAP4DFlameSkinner,
+    flame_skinner: FlameSkinnerExtended,
     head_vert_ids: np.ndarray,
     driver_start: int = 0,
 ) -> np.ndarray:

@@ -35,9 +35,9 @@ from scipy.spatial.transform import Rotation as R
 from tqdm import tqdm
 import trimesh
 
-# Use our repo's FLAME code (no external flowface/cap4d dependency)
+# Use our repo's FLAME code (no external flowface dependency)
 from loki.flame.flame import (
-    CAP4DFlameSkinner, OPENCV2PYTORCH3D, transform_vertices,
+    FlameSkinnerExtended, OPENCV2PYTORCH3D, transform_vertices,
 )
 
 # Dependencies co-located in generate_exp_map/src/
@@ -57,7 +57,7 @@ ORBIT_AMPLITUDE_PITCH = 20
 
 
 # ============================================================================
-# FrameReader (inlined from cap4d/datasets/utils.py)
+# FrameReader (vendored video reader helper)
 # ============================================================================
 
 class FrameReader:
@@ -195,7 +195,7 @@ def fit_flame(verts_3d, gaze_directions, cam_rt, use_jaw_rotation=False,
     if use_jaw_rotation:
         flame_path = "data/assets/flame/flame2023.pkl"
 
-    flame = CAP4DFlameSkinner(
+    flame = FlameSkinnerExtended(
         flame_path, n_shape_params=n_shape_params, n_expr_params=n_expr_params,
         blink_blendshape_path="data/assets/flame/blink_blendshape.npy",
     ).to(device)

@@ -29,7 +29,7 @@ import numpy as np
 import torch
 
 from loki.conditioning.conditioning import SpatialConditioning
-from loki.flame.flame import CAP4DFlameSkinner, compute_flame
+from loki.flame.flame import FlameSkinnerExtended, compute_flame
 from loki.utils import get_bbox_from_verts, verts_to_pytorch3d
 
 HEAD_VERT_PATH = "data/assets/flame/head_vertices.txt"
@@ -83,7 +83,7 @@ class ExpressionDeformationDiff:
 
         # Skinner stays on CPU (matches video_dataset usage; compute_flame
         # returns CPU tensors). Only the rasterizer needs GPU.
-        self.skinner = CAP4DFlameSkinner(
+        self.skinner = FlameSkinnerExtended(
             add_mouth=True, n_shape_params=150, n_expr_params=65,
         ).eval()
         self.cond = SpatialConditioning(image_size=image_size).to(device).eval()

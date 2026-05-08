@@ -54,7 +54,7 @@ import numpy as np
 import torch
 from matplotlib.colors import Normalize
 
-from loki.flame.flame import CAP4DFlameSkinner, compute_flame
+from loki.flame.flame import FlameSkinnerExtended, compute_flame
 from loki.retargeting import prepare_reference
 from loki.utils import (
     crop_image, get_bbox_from_verts, load_frame,
@@ -75,7 +75,7 @@ from src.flame_render import (
 
 def load_driver_frame(
     driver_fit: dict, t: int, video_path: Path, resolution: int,
-    flame_skinner: CAP4DFlameSkinner, head_vert_ids: np.ndarray,
+    flame_skinner: FlameSkinnerExtended, head_vert_ids: np.ndarray,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """Load + crop one driver RGB frame at time `t` under the driver's own
     FLAME geometry; return cropped image plus per-frame NDC verts and
@@ -96,7 +96,7 @@ def load_driver_frame(
 
 def retargeted_verts_offsets(
     ref_fit: dict, driver_fit: dict, t: int,
-    ref_crop_box: np.ndarray, flame_skinner: CAP4DFlameSkinner,
+    ref_crop_box: np.ndarray, flame_skinner: FlameSkinnerExtended,
 ) -> tuple[np.ndarray, np.ndarray]:
     """Run FLAME with REF identity (β_ref, camera_ref) under the DRIVER's
     motion (ψ, θ) at time `t`; return per-frame NDC verts (in REF crop
@@ -229,7 +229,7 @@ def gather_pair(
     spec: PairSpec,
     flame_root: Path,
     video_root: Path,
-    flame_skinner: CAP4DFlameSkinner,
+    flame_skinner: FlameSkinnerExtended,
     head_vert_ids: np.ndarray,
     cond_module: SpatialConditioning,
     phong_renderer: PropRenderer,
@@ -468,7 +468,7 @@ def main():
 
     # Skinner stays on CPU — `compute_flame` wraps inputs with `torch.tensor(...)`
     # without moving them, so a GPU-resident skinner would mismatch device.
-    flame_skinner = CAP4DFlameSkinner(
+    flame_skinner = FlameSkinnerExtended(
         add_mouth=True, n_shape_params=150, n_expr_params=65,
     ).eval()
     head_vert_ids = np.genfromtxt(HEAD_VERT_PATH).astype(int)

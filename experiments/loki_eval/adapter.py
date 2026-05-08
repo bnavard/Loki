@@ -47,7 +47,7 @@ from omegaconf import DictConfig
 
 from ldm_base.ldm.util import instantiate_from_config
 from loki.data.video_dataset import FLAME_PARAMS_SCHEMA
-from loki.flame.flame import CAP4DFlameSkinner
+from loki.flame.flame import FlameSkinnerExtended
 from loki.model.checkpoint_compat import strip_legacy_keys
 from loki.retargeting import (
     prepare_driver_frames, prepare_reference, retarget_driver_verts,
@@ -195,7 +195,7 @@ class Evaluator:
         # label + slice come from this module's `VIZ_LABEL` / `VIZ_SLICE`.
         self.cond_module = self.model.cond_stage_model
 
-        self.flame_skinner = CAP4DFlameSkinner(
+        self.flame_skinner = FlameSkinnerExtended(
             add_mouth=True, n_shape_params=150, n_expr_params=65,
         )
         self.head_vert_ids = np.genfromtxt(HEAD_VERT_PATH).astype(int)

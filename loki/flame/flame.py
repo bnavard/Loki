@@ -1,11 +1,10 @@
 """
 FLAME 3DMM skinning and projection.
 
-Contains the base FlameSkinner (originally from flowface/cap4d), the extended
-CAP4DFlameSkinner with mouth vertices and expression offsets, and all supporting
-utilities (Rodrigues, vertex projection, pkl loading, coordinate transforms).
-
-Everything is self-contained — no external flowface dependency.
+Contains the base FlameSkinner, the extended FlameSkinnerExtended (optional
+mouth + lower-jaw geometry, returns per-vertex offsets and per-bone
+transforms), and supporting utilities (Rodrigues, vertex projection, pkl
+loading, coordinate transforms). Self-contained — no external dependency.
 """
 
 import pickle
@@ -301,11 +300,43 @@ class FlameSkinner(torch.nn.Module):
             return verts
 
 
-# =============================================================================
-# CAP4DFlameSkinner (extended with mouth vertices and expression offsets)
-# =============================================================================
+class FlameSkinnerExtended(FlameSkinner):
+    """FLAME skinner with optional mouth + lower-jaw geometry, exposing
+    per-vertex deformation offsets and per-bone transforms in addition to
+    skinned verts.
 
-class CAP4DFlameSkinner(FlameSkinner):
+    Extends the base ``FlameSkinner`` with three concerns the reference UNet
+    + spatial-conditioning pipeline depend on:
+
+    * ``add_mouth=True`` — appends mouth-cavity vertices (``FlameMouth``)
+      to the output mesh so the rasterized conditioning map covers the
+      inside of the mouth.
+    * ``add_lower_jaw=True`` — appends a second ``FlameMouth`` driven by
+      a learned ``jaw_regressor`` that maps expression coefficients to a
+      jaw rotation, giving an articulating lower-jaw mesh.
+    * Richer ``forward()`` return: ``[verts, offsets?, transforms?]`` so
+      callers can rasterize per-vertex deformation magnitudes and per-bone
+      transforms (used for the 45-channel conditioning tensor).
+
+    Based on the FLAME skinner from CAP4D (Taubner et al., CVPR 2025) — we
+    extend its template skinning with the mouth/jaw attachments and the
+    offsets/transforms outputs needed for spatial conditioning.
+
+    Reference:
+        @inproceedings{taubner2025cap4d,
+            author    = {Taubner, Felix and Zhang, Ruihang and Tuli, Mathieu
+                         and Lindell, David B.},
+            title     = {{CAP4D}: Creating Animatable {4D} Portrait Avatars
+                         with Morphable Multi-View Diffusion Models},
+            booktitle = {Proceedings of the IEEE/CVF Conference on Computer
+                         Vision and Pattern Recognition (CVPR)},
+            month     = {June},
+            year      = {2025},
+            pages     = {5318-5330},
+        }
+        https://github.com/felixtaubner/cap4d/
+    """
+
     def __init__(
         self,
         flame_pkl_path: str = FLAME_PKL_PATH,
@@ -388,7 +419,7 @@ class CAP4DFlameSkinner(FlameSkinner):
         return output
 
 def compute_flame(
-    flame: CAP4DFlameSkinner,
+    flame: FlameSkinnerExtended,
     fit_3d: Dict[str, np.ndarray],
 ):
     flame_sequence = {
