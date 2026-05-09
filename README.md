@@ -46,8 +46,7 @@ rasterized vertex positions + per-vertex expression deformation).
 └── outputs/                          # training runs (gitignored)
 ```
 
-See [loki/README.md](loki/README.md) for architecture details,
-training, and inference usage.
+See [loki/README.md](loki/README.md) for architecture details and per-module documentation.
 
 ## Installation
 
@@ -85,6 +84,67 @@ data/
 
 To produce `fit.npz` from raw videos, see [generate_exp_map/README.md](generate_exp_map/README.md)
 (pixel3dmm-based pipeline, separate env).
+
+## Training
+
+Same-identity self-supervised: each sample's reference frame, target window, and driver motion all come from the same clip — the reference is sampled from a different position in the clip than the target window, so the model learns an identity prior that generalises across expression/pose mismatch (which is what cross-identity inference presents at test time). Loss is uniform ε-MSE over the T target slots; the reference lives in the frozen ref UNet, not in the output tensor.
+
+```bash
+conda activate loki
+
+# Single GPU
+PYTHONPATH=. python experiments/loki_train/run.py
+
+# Multi-GPU (DDP)
+PYTHONPATH=. python experiments/loki_train/run.py --gpus 0 1 2 3
+
+# Resume from a checkpoint
+PYTHONPATH=. python experiments/loki_train/run.py \
+    --resume outputs/loki_train/run_YYYYmmdd_HHMMSS/checkpoints/th-<step>.ckpt
+```
+
+Defaults from [loki/configs/base.yaml](loki/configs/base.yaml): `gpu_batch_size=2`, `virtual_batch_size=2`, `n_frames=16`, `n_steps=30000`, `val_every_n_steps=3000`, `save_every_n_steps=10000`, SD 2.1 init from `data/models/v2-1_512-ema-pruned.ckpt`.
+
+Each run writes to `outputs/loki_train/run_<timestamp>/` with:
+
+```
+outputs/loki_train/run_<timestamp>/
+├── config_resolved.yaml         # snapshot at run start
+├── log.txt                      # mirrored stdout/stderr (rank 0)
+├── checkpoints/
+│   ├── th-<step>.ckpt           # every save_every_n_steps (periodic)
+│   └── th-best-<step>-<val>.ckpt  # top-1 by val/loss
+├── logs/                        # TensorBoard
+└── visualizations/
+    └── step_<step>/
+        ├── sample_NN.png        # 4-row grid (Reference | GT | <cond preview> | Generated)
+        └── sample_NN.mp4        # same rows, silent
+```
+
+For ablation arms (FLAME conditioning variants), see [experiments/condition_ablation/](experiments/condition_ablation/).
+
+## Inference
+
+```bash
+PYTHONPATH=. python loki/generate.py \
+    --checkpoint  outputs/loki_train/run_<ts>/checkpoints/<ckpt>.ckpt \
+    --config      loki/configs/base.yaml \
+    --ref_clip    <reference_clip_id> \
+    --ref_frame   0 \
+    --driver_clip <driver_clip_id> \
+    --output_dir  outputs/generated/
+```
+
+- **Same-identity reconstruction**: `--ref_clip == --driver_clip`.
+- **Cross-identity retargeting**: different clips. `generate.py` builds per-frame verts from `β_ref + ψ_driver[t] + θ_driver[t]` under the ref's camera, so the FLAME conditioning carries the driver's motion in the reference's shape and camera frame regardless of identity. Identity flows through the ref UNet; motion flows through `spatial_cond`.
+
+Both clip IDs must have:
+
+- `data/flame_tracking/flowface/{clip_id}/fit.npz` — FLAME params
+- `data/talkvid/talkvid/{clip_id}.mp4` — face-cropped 512×512 / 25fps video
+
+
+For benchmark-scale evaluation against checkpoints (cross + same-identity protocols, panel.mp4 outputs), see [experiments/loki_eval/](experiments/loki_eval/) and [experiments/evaluation_metrics/](experiments/evaluation_metrics/).
 
 ## Acknowledgements
 
